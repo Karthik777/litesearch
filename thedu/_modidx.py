@@ -5,4 +5,9 @@ d = { 'settings': { 'branch': 'main',
                 'doc_host': 'https://Karthik777.github.io',
                 'git_url': 'https://github.com/Karthik777/thedu',
                 'lib_path': 'thedu'},
-  'syms': {'thedu.core': {'thedu.core.foo': ('core.html#foo', 'thedu/core.py')}}}
+  'syms': { 'thedu.core': { 'thedu.core.Content': ('core.html#content', 'thedu/core.py'),
+                            'thedu.core.Docs': ('core.html#docs', 'thedu/core.py'),
+                            'thedu.core.mk_docs': ('core.html#mk_docs', 'thedu/core.py'),
+                            'thedu.core.setup_db': ('core.html#setup_db', 'thedu/core.py')},
+            'thedu.ingest': { 'thedu.ingest._read_page': ('ingest.html#_read_page', 'thedu/ingest.py'),
+                              'thedu.ingest.read_pdf': ('ingest.html#read_pdf', 'thedu/ingest.py')}}}
