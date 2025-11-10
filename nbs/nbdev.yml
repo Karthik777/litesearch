@@ -2,8 +2,8 @@ project:
   output-dir: _docs
 
 website:
-  title: "thedu"
-  site-url: "https://Karthik777.github.io/thedu"
+  title: "litesearch"
+  site-url: "https://Karthik777.github.io/litesearch"
   description: "search through files with fts5, vectors and get reranked results. Fast"
   repo-branch: main
-  repo-url: "https://github.com/Karthik777/thedu"
+  repo-url: "https://github.com/Karthik777/litesearch"
