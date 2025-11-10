@@ -70,11 +70,13 @@ distance calculations using simd(means fast, real fast)
 
 ``` python
 db: Database = setup_db(':memory:')
-db.q('select distance_cosine_f16(:vec1,:vec2)',
-     dict(vec1=np.ones(512, np.float16).tobytes(), vec2=np.zeros(512, np.float16).tobytes()))
+embs = dict(v1=np.ones(512).tobytes(), v2=np.zeros(512).tobytes())
+db.q('''select
+    distance_cosine_f16(:v1,:v2) as diff,
+    distance_cosine_f16(:v1,:v1) as same ''',embs)
 ```
 
-    [{'distance_cosine_f16(:vec1,:vec2)': 1.0}]
+    [{'diff': 1.0, 'same': 0.0}]
 
 There are way more functions you can run now. Checkout:
 https://unum-cloud.github.io/USearch/sqlite/index.html
@@ -95,9 +97,10 @@ store.schema
     'CREATE TABLE [content] (\n   [id] INTEGER PRIMARY KEY,\n   [content] TEXT NOT NULL,\n   [embedding] BLOB,\n   [metadata] TEXT,\n   [uploaded_at] FLOAT DEFAULT CURRENT_TIMESTAMP\n)'
 
 ``` python
-store.insert_all([
-    dict(content=c, embedding=np.full(512, i)) for i, c in enumerate(['this is a text', "I'm hungry", "Let's play! shall we?"])
-    ])
+txts = ['this is a text', "I'm hungry", "Let's play! shall we?"]
+embs = [np.full(512, i) for i in range(3)]
+rows = [dict(content=t, embedding=e) for t,e in zip(txts,embs)]
+store.insert_all(rows)
 ```
 
     <Table content (id, content, embedding, metadata, uploaded_at)>
