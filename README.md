@@ -35,7 +35,7 @@ Install latest from the GitHub
 $ pip install git+https://github.com/Karthik777/litesearch.git
 ```
 
-or from [pypi](https://pypi.org/project/litesearch/)
+or from [pypi](https://pypi.org/project/litesearch/) ,
 
 ``` sh
 $ pip install litesearch
