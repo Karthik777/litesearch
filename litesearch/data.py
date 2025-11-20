@@ -67,9 +67,9 @@ def pg2chunks(
     return chunk(self.get_text(), fn)
 
 @patch()
-def content(self:Chunk, xtra:dict):
+def content(self:Chunk, xtra:dict=None):
 	meta = dict(tokens=self.token_count, start_index=self.start_index,
-	            end_index=self.end_index, context=self.context, **xtra)
+	            end_index=self.end_index, context=self.context, **(xtra or dict()))
 	return dict(content=self.text, embedding=self.embedding.tobytes(), metadata=meta)
 
 @patch
