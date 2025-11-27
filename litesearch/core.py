@@ -6,6 +6,7 @@ __all__ = ['setup_db']
 # %% ../nbs/01_core.ipynb 4
 from fastlite import *
 from apswutils.utils import cursor_row2dict
+import numpy as np
 
 # %% ../nbs/01_core.ipynb 5
 @patch
@@ -56,13 +57,17 @@ def search(self: Database,      # database connection
            where_args:dict=None,# args for where clause
            lim=50,              # limit on number of results
            tbl='content',       # table name
-           rrf=True             # need to rerank results with reciprocal rank fusion
+           emb_col='embedding', # embedding column name
+           rrf=True,            # need to rerank results with reciprocal rank fusion
+           dtype=np.float16     # embedding dtype
            ):
     if not q.strip(): return None
     content = self.mk_store(tbl)
-    fts = dict2obj(L(content.search(q, order_by='rank', columns=columns, limit=lim, where=where, where_args=where_args)))
-    vecs = L(dict2obj(content(select=','.join(columns), where='embedding is not null' + (' AND ' + where if where else ''),
-                   where_args=dict(qvec=emb, **(where_args or {})), order_by='distance_cosine_f32(embedding, :qvec)',limit=lim)))
-    if not rrf: return dict(fts=fts, vec=vecs)
-    ranked = (fts + vecs).groupby('content')
-    return L(ranked.items()).map(lambda kv: first(kv[1]))
+    if not columns: columns = ['content', 'metadata', 'embedding']
+    fts = content.search(q, order_by='rank', columns=columns, limit=lim, where=where, where_args=where_args, quote=True)
+    df='i8' if dtype==np.int8 else 'f16' if dtype==np.float16 else 'f64' if dtype==np.float64 else 'f32'
+    vecs = content(select=','.join(columns), where=f'{emb_col} is not null' + (' AND ' + where if where else ''),
+                   where_args=dict(qvec=emb, **(where_args or {})), order_by=f'distance_cosine_{df}({emb_col}, :qvec)',limit=lim)
+    if not rrf: return dict(fts=[f for f in fts], vec=vecs)
+    ranked = (dict2obj(L(fts)) + L(dict2obj(vecs))).groupby('content')
+    return [first(kv[1]) for kv in ranked.items()][:lim]
