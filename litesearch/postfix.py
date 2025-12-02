@@ -7,8 +7,14 @@ __all__ = ['usearch_fix']
 import os, subprocess, platform
 
 # %% ../nbs/00_postfix.ipynb 5
+_usearch_fix_applied = False
+
 def usearch_fix():
-    """Apply usearch macOS fix if on macOS."""
+    """Apply usearch macOS fix if on macOS. Safe to call multiple times."""
+    global _usearch_fix_applied
+    if _usearch_fix_applied:
+        return  # Already applied
+    
     print('Applying usearch macOS fix if required...')
     try:
         from usearch import sqlite_path
@@ -16,15 +22,21 @@ def usearch_fix():
         print('usearch dylib path: ', dylib_path)
         if platform.system() != "Darwin": 
             print('Not on macOS, skipping usearch fix.')
+            _usearch_fix_applied = True
             return
         cmd = ['install_name_tool', '-add_rpath', '/usr/lib', dylib_path]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         if r.returncode == 0:  print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
         else: print(f'✗ Failed to apply fix: {r.stderr}')
+        _usearch_fix_applied = True
     except ImportError as ie:
         print('Warning: usearch not installed or import failed. you might need to install libsqlite3-dev. '
               'For macs do `brew install libsqlite3-dev`. For linux `apt install libsqlite3-dev`. ', ie)
     except subprocess.CalledProcessError as e: 
+        # rpath already exists is not an error
+        if 'duplicate' in str(e.stderr):
+            _usearch_fix_applied = True
+            return
         print(f'✗ install_name_tool failed: {e}')
         print(f'Command output: {e.output}')
         print(f'Command stderr: {e.stderr}')

@@ -44,7 +44,8 @@ class FastEncode:
         prompt = prompt or (model_dict.prompt if model_dict else AttrDictDefault())
         store_attr()
         try: self.md = download_model(repo_id=repo_id, md=md, token=hf_token)
-        except Exception as ex: print(f'model download failed: {ex}. hint: is hf_token set')
+        except Exception as ex:
+            raise RuntimeError(f'Failed to download model {repo_id}: {ex}. Hint: is HF_TOKEN set?') from ex
         self._load_enc()
     def _load_enc(self):
         try:
@@ -56,8 +57,7 @@ class FastEncode:
             self._load_tok()
             self.sess = ort.InferenceSession(onnx_p, sess_opt, providers=["CPUExecutionProvider"])
         except Exception as ex:
-            print(f'Encoding setup errored out with exception: {ex}')
-            self.sess = None
+            raise RuntimeError(f'Failed to initialize ONNX session: {ex}') from ex
     def _load_tok(self):
         cfg = json.load(open(os.path.join(self.md, "config.json")))
         tok_cfg = json.load(open(os.path.join(self.md, "tokenizer_config.json")))
@@ -80,7 +80,8 @@ class FastEncode:
         sum_mask = np.clip(np.sum(input_mask_expanded, axis=1), a_min=1e-9, a_max=None)
         return sum_embeddings / sum_mask
     def encode(self, lns:list, **kw):
-        if not self.sess: print('ONNX session not initialized properly. Fix error during initialisation'); return None
+        if not self.sess:
+            raise RuntimeError('ONNX session not initialized. Check initialization errors.')
         if not lns: return np.zeros((0, self.sess.get_outputs()[0].shape[-1]), dtype=self.dtype)
         ids, msk = self._enc(lns)
         if ids.ndim ==1: ids, msk = np.expand_dims(ids, axis=0), np.expand_dims(msk, axis=0)

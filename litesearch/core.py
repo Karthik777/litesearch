@@ -41,6 +41,9 @@ def setup_db(pth_or_uri:str=':memory:',  # the database name or URL
     _db = Database(pth_or_uri, **kw)
     if wal: _db.enable_wal()
     if not sem_search: return _db
+    # Lazy initialization: apply usearch fix only when semantic search is enabled
+    from .postfix import usearch_fix
+    usearch_fix()
     from usearch import sqlite_path
     _db.conn.enableloadextension(True)
     _db.conn.loadextension(sqlite_path())
