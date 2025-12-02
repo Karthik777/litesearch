@@ -30,7 +30,7 @@ def ext_im(self: Document, it=None):
         if pix0.alpha: pix0 = Pixmap(pix0, 0)  # remove alpha channel
         mask = Pixmap(self.extract_image(smask)['image'])
         try: pix = Pixmap(pix0, mask)
-        except: pix = Pixmap(self.extract_image(xref)['image'])
+        except (RuntimeError, ValueError, KeyError): pix = Pixmap(self.extract_image(xref)['image'])
         ext = 'pam' if pix0.n > 3 else 'png'
         return dict(ext=ext, colorspace=pix.colorspace.n, image=pix.tobytes(ext))
     if '/ColorSpace' in self.xref_object(xref, compressed=True):
@@ -91,22 +91,28 @@ def pdf_ingest(
 
 # %% ../nbs/02_data.ipynb 7
 def clean(q:str  # query to be passed for fts search
-          ):
-    '''Clean the query by removing * and returning None for empty queries.'''
-    return q.replace('*', '') if q.strip() else None
+          ) -> str:
+    '''Clean the query by removing * and returning empty string for empty queries.'''
+    if not q or not q.strip():
+        return ''
+    return q.replace('*', '')
 
 def add_wc(q:str  # query to be passed for fts search
-           ):
+           ) -> str:
     '''Add wild card * to each word in the query.'''
+    if not q or not q.strip():
+        return ''
     return ' '.join(map(lambda w: w + '*', q.split(' ')))
 
 def mk_wider(q:str  # query to be passed for fts search
-             ):
+             ) -> str:
     '''Widen the query by joining words with OR operator.'''
+    if not q or not q.strip():
+        return ''
     return ' OR '.join(map(lambda w: f'{w}', q.split(' ')))
 
 def kw(q:str  # query to be passed for fts search
-       ):
+       ) -> str:
     '''Extract keywords from the query using YAKE library.'''
     from yake import KeywordExtractor as KW
     return ' '.join((set(concat([k.split(' ') for k, s in KW().extract_keywords(q)]))))
@@ -115,10 +121,11 @@ def pre(q:str,          # query to be passed for fts search
         wc=True,        # add wild card to each word
         wide=True,      # widen the query with OR operator
         extract_kw=True # extract keywords from the query
-        ):
+        ) -> str:
     '''Preprocess the query for fts search.'''
     q = clean(q)
-    if not q.strip(): return ''
+    if not q:
+        return ''
     if extract_kw: q = kw(q)
     if wc: q = add_wc(q)
     if wide: q = mk_wider(q)

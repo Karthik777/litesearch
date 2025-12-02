@@ -11,5 +11,13 @@ dynamic = [ "keywords", "description", "version", "dependencies", "optional-depe
 cache-keys = [{ file = "pyproject.toml" }, { file = "settings.ini" }, { file = "setup.py" }]
 
 
+[tool.ruff]
+line-length = 129
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "SIM"]
+ignore = ["F403", "F405"]
+
 [dependency-groups]
-dev = ["notebook>=7.4.7","nbdev","jupyterlab","jupyterlab-quarto"]
+dev = ["notebook>=7.4.7","nbdev","jupyterlab","jupyterlab-quarto","pytest>=8.0","pytest-cov>=4.0","ruff>=0.1.0"]
