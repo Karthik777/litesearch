@@ -1,10 +1,14 @@
 # Release notes
-Improved db search, added fast encoding capabilities, coding assistant that you can use in examples
-Pypi release for litesearch
 <!-- do not remove -->
 
-## 0.0.5
+## 0.0.6
+Improved layout, removed unwanted dependencies, added documentation
 
+
+
+## 0.0.5
+Improved db search, added fast encoding capabilities, coding assistant that you can use in examples
+Pypi release for litesearch
 
 
 
