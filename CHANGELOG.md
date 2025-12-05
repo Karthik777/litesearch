@@ -1,6 +1,11 @@
 # Release notes
 <!-- do not remove -->
 
+## 0.0.7
+Postfix script fixed
+
+
+
 ## 0.0.6
 Improved layout, removed unwanted dependencies, added documentation
 
