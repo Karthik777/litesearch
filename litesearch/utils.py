@@ -101,6 +101,6 @@ def download_model(repo_id=embedding_gemma.model,   # model repo on HF
                    token=None                       # HF token. you can also set HF_TOKEN env variable
 ):
     '''Download model from HF hub'''
+    if Path(md).exists(): return md
     import huggingface_hub as hf
-    hf.login(token=token or os.getenv('HF_TOKEN',''))
-    return hf.snapshot_download(repo_id=repo_id, cache_dir=md)
+    return hf.snapshot_download(repo_id=repo_id, local_dir=md, token=token or os.getenv('HF_TOKEN'))
