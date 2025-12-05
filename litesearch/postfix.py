@@ -7,26 +7,30 @@ __all__ = ['usearch_fix']
 import os, subprocess, platform
 
 # %% ../nbs/00_postfix.ipynb 5
-def usearch_fix(q=True):
+def usearch_fix(v:bool=False):
     """Apply usearch macOS fix if on macOS."""
-    if not q: print('Applying usearch macOS fix if required...')
+    if v: print('Applying usearch macOS fix if required...')
     try:
         from usearch import sqlite_path
-        dylib = sqlite_path()+'.dylib'
-        if not q: print('usearch dylib path: ', dylib)
+        dylib_path = sqlite_path()+'.dylib'
+        if v: print('usearch dylib path: ', dylib_path)
         if platform.system() != "Darwin":
-            if not q: print('Not on macOS, skipping usearch fix.')
+            if v: print('Not on macOS, skipping usearch fix.')
             return
-        out = subprocess.run(['otool', '-l', dylib], capture_output=True, text=True).stdout
-        if '/usr/lib' in out:
-            if not q: print('rpath already present. Skip.')
-            return
-        cmd = ['install_name_tool', '-add_rpath', '/usr/lib', dylib]
+        cmd = ['install_name_tool', '-add_rpath', '/usr/lib', dylib_path]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if r.returncode == 0:  print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib}') if not q else None
-        else: print(f'✗ Failed to apply fix: {r.stderr}') if not q else None
+        if r.returncode == 0:
+	        if v: print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
+        else: print(f'✗ Failed to apply fix: {r.stderr}')
     except ImportError as ie:
         print('Warning: usearch not installed or import failed. you might need to install libsqlite3-dev. '
-              'For macs do `brew install libsqlite3-dev`. For linux `apt install libsqlite3-dev`. ', ie) if not q else None
-    except subprocess.CalledProcessError as e: print(f'✗ install_name_tool failed: {e} \n\n {e.stderr}')
+              'For macs do `brew install libsqlite3-dev`. For linux `apt install libsqlite3-dev`. ', ie)
+    except subprocess.CalledProcessError as e:
+        out = subprocess.run(['otool', '-l', dylib_path], capture_output=True, text=True).stdout
+        if '/usr/lib' in out:
+            if v: print('rpath already present. Skipping.')
+            return
+        print(f'✗ install_name_tool failed: {e}')
+        print(f'Command output: {e.output}')
+        print(f'Command stderr: {e.stderr}')
     except Exception as e: print(f'Unexpected error during fix: {e}')
