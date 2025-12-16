@@ -4,8 +4,8 @@
 __all__ = ['database']
 
 # %% ../nbs/01_core.ipynb 4
-from fastcore.all import first, dict2obj, L, Path, Generator
-from fastlite import Database, patch, Optional, Union, Iterable
+from fastcore.all import first, dict2obj, L, Path, Generator, patch, Optional, Union, Iterable
+from fastlite import Database
 from apswutils.utils import cursor_row2dict
 import numpy as np
 
