@@ -1,6 +1,11 @@
 # Release notes
 <!-- do not remove -->
 
+## 0.0.9
+cuda oredering
+
+
+
 ## 0.0.8
 fixing fastlite imports, cuda and coreml providers.
 
