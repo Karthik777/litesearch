@@ -105,7 +105,9 @@ store.schema
 Let’s use a naive embedder for testing. \> Checkout
 [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
 in `utils` module for onnx based text encoders. \> Check the `examples`
-folder for usage.
+folder for usage. \> if you have a gpu available, you can use
+`dtype=np.float16` for faster performance and
+`pip install onnxruntime-gpu`
 
 ``` python
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -113,8 +115,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 ``` python
 txts, q = ['this is a text', "I'm hungry", "Let's play! shall we?"], 'playing hungry'
+
 # this is naive vectoriser intended to showcase litesearch. In practice, use a proper text encoder.
-def embed_texts(texts): return TfidfVectorizer(max_features=20000, stop_words='english').fit_transform(texts).toarray().astype(np.float16)
+def embed_texts(texts):
+    tfdiff = TfidfVectorizer(max_features=20000, stop_words='english')
+    return tfdiff.fit_transform(texts).toarray().astype(np.float16)
+
 embs = embed_texts(txts + [q])  # last one is query
 embs
 ```

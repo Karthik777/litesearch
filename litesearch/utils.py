@@ -54,7 +54,7 @@ class FastEncode:
 			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 			sess_opt.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 			self._load_tok()
-			pr = filter_ex(ort.get_available_providers(),lambda x: x in ['CUDAExecutionProvider', 'CoreMLExecutionProvider', 'CPUExecutionProvider'])
+			pr = filter_ex(ort.get_available_providers(),lambda x: x in ['CUDAExecutionProvider', 'CPUExecutionProvider'])
 			try: self.sess = ort.InferenceSession(onnx_p, sess_opt, pr)
 			except: self.sess = ort.InferenceSession(onnx_p, sess_opt, providers=["CPUExecutionProvider"])
 		except Exception as ex:
