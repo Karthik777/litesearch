@@ -1,6 +1,11 @@
 # Release notes
 <!-- do not remove -->
 
+## 0.0.11
+add tokenizers
+
+
+
 ## 0.0.10
 onnx gpu fix
 
