@@ -22,10 +22,9 @@ capabilities. We’re using its sqlite extensions here to provide fast
 vector search capabilities.
 
 Lite search provides a simple way to setup this database using the
-[`database()`](https://Karthik777.github.io/litesearch/core.html#database)
-method. You get a store with FTS5 and vector search capabilities using
-the `get_store()` method and you can search through the contents using
-the `search()` method.
+`database()` method. You get a store with FTS5 and vector search
+capabilities using the `get_store()` method and you can search through
+the contents using the `search()` method.
 
 Litesearch also provides document and code manipulation tools as part of
 the `data` module and onnx based text encoders as part of the `utils`
@@ -102,9 +101,8 @@ store.schema
 
     'CREATE TABLE [store] (\n   [content] TEXT NOT NULL,\n   [embedding] BLOB,\n   [metadata] TEXT,\n   [uploaded_at] FLOAT DEFAULT CURRENT_TIMESTAMP,\n   [id] INTEGER PRIMARY KEY\n)'
 
-Let’s use a naive embedder for testing. \> Checkout
-[`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
-in `utils` module for onnx based text encoders. \> Check the `examples`
+Let’s use a naive embedder for testing. \> Checkout `FastEncode` in
+`utils` module for onnx based text encoders. \> Check the `examples`
 folder for usage. \> if you have a gpu available, you can use
 `dtype=np.float16` for faster performance and
 `pip install onnxruntime-gpu`
