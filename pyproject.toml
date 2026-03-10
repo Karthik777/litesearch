@@ -1,15 +1,53 @@
 [build-system]
-requires = ["setuptools>=64.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name="litesearch"
-requires-python=">=3.10"
-dynamic = [ "keywords", "description", "version", "dependencies", "optional-dependencies", "readme", "license", "authors", "classifiers", "entry-points", "scripts", "urls"]
+name = "litesearch"
+dynamic = ["version"]
+description = "search through files with fts5, vectors and get reranked results. Fast"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "71293", email = "karthik.rajgopal@hotmail.com"}]
+keywords = ['nbdev', 'jupyter', 'notebook', 'python']
+classifiers = ["Natural Language :: English", "Intended Audience :: Developers", "Development Status :: 3 - Alpha", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only"]
+dependencies = [
+    'fastlite',
+    'usearch',
+    'yake',
+    'pymupdf',
+    'onnxruntime',
+    'tokenizers',
+    'model2vec[distill]',
+    "notebook",
+]
 
-[tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "settings.ini" }, { file = "setup.py" }]
+[project.urls]
+Repository = "https://github.com/Karthik777/litesearch"
+Documentation = "https://Karthik777.github.io/litesearch"
 
+[project.entry-points.nbdev]
+litesearch = "litesearch._modidx:d"
 
 [dependency-groups]
-dev = ["notebook>=7.4.7","nbdev","jupyterlab","jupyterlab-quarto"]
+dev = [
+    'notebook',
+    'nbdev',
+    'jupyterlab',
+    'jupyterlab-quarto',
+    'selectolax',
+    'lisette',
+    'ddgs',
+    'pyperclip',
+    "chonkie",
+    'flashrank',
+]
+
+[tool.hatch.version]
+path = "litesearch/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+include = ["litesearch"]
+
+[tool.nbdev]

@@ -22,10 +22,9 @@ capabilities. We’re using its sqlite extensions here to provide fast
 vector search capabilities.
 
 Lite search provides a simple way to setup this database using the
-[`database()`](https://Karthik777.github.io/litesearch/core.html#database)
-method. You get a store with FTS5 and vector search capabilities using
-the `get_store()` method and you can search through the contents using
-the `search()` method.
+`database()` method. You get a store with FTS5 and vector search
+capabilities using the `get_store()` method and you can search through
+the contents using the `search()` method.
 
 Litesearch also provides document and code manipulation tools as part of
 the `data` module and onnx based text encoders as part of the `utils`
@@ -44,6 +43,9 @@ you do not have it already.
 !pip install litesearch -qq
 ```
 
+    ERROR: Could not find a version that satisfies the requirement fastlite (from litesearch) (from versions: none)
+    ERROR: No matching distribution found for fastlite
+
 Litesearch only adds dependencies it needs, so you can use import \*
 from litesearch without worrying about heavy dependencies. \> First time
 import will try to setup usearch extensions and installing libsqlite3 if
@@ -61,7 +63,7 @@ db = database()
 db.q('select sqlite_version() as sqlite_version')
 ```
 
-    [{'sqlite_version': '3.51.1'}]
+    [{'sqlite_version': '3.52.0'}]
 
 Let’s try some of usearch’s distance functions
 
@@ -102,39 +104,40 @@ store.schema
 
     'CREATE TABLE [store] (\n   [content] TEXT NOT NULL,\n   [embedding] BLOB,\n   [metadata] TEXT,\n   [uploaded_at] FLOAT DEFAULT CURRENT_TIMESTAMP,\n   [id] INTEGER PRIMARY KEY\n)'
 
-Let’s use a naive embedder for testing. \> Checkout
-[`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
-in `utils` module for onnx based text encoders. \> Check the `examples`
-folder for usage. \> if you have a gpu available, you can use
-`dtype=np.float16` for faster performance and
+Let’s use `model2vec` for fast semantic embeddings. \> Checkout
+`FastEncode` in `utils` module for onnx based text encoders. \> Check
+the `examples` folder for usage. \> if you have a gpu available, you can
+use `dtype=np.float16` for faster performance and
 `pip install onnxruntime-gpu`
 
 ``` python
-from sklearn.feature_extraction.text import TfidfVectorizer
+from model2vec import StaticModel
+enc = StaticModel.from_pretrained("minishlab/potion-retrieval-32M")
 ```
+
+    /Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+      from .autonotebook import tqdm as notebook_tqdm
 
 ``` python
 txts, q = ['this is a text', "I'm hungry", "Let's play! shall we?"], 'playing hungry'
-
-# this is naive vectoriser intended to showcase litesearch. In practice, use a proper text encoder.
-def embed_texts(texts):
-    tfdiff = TfidfVectorizer(max_features=20000, stop_words='english')
-    return tfdiff.fit_transform(texts).toarray().astype(np.float16)
-
-embs = embed_texts(txts + [q])  # last one is query
+embs = enc.encode(txts + [q])  # shape (4, 256), float32
 embs
 ```
 
-    array([[0.   , 0.   , 0.   , 0.   , 0.   , 1.   ],
-           [1.   , 0.   , 0.   , 0.   , 0.   , 0.   ],
-           [0.   , 0.577, 0.577, 0.   , 0.577, 0.   ],
-           [0.619, 0.   , 0.   , 0.785, 0.   , 0.   ]], dtype=float16)
+    array([[-0.00419094, -0.01899163, -0.07627466, ...,  0.03772586,
+            -0.01589733,  0.00763395],
+           [-0.07912003, -0.03846852,  0.00235392, ..., -0.00180434,
+            -0.03562816,  0.0555767 ],
+           [-0.09269759,  0.02909932,  0.03291405, ...,  0.00456874,
+            -0.02399384,  0.02755835],
+           [-0.10443158, -0.09687435,  0.02284234, ..., -0.03197551,
+             0.02392859,  0.03887533]], shape=(4, 512), dtype=float32)
 
 > usearch also works with json embeddings, but using bytes leverages
 > simd well.
 
 ``` python
-rows = [dict(content=t, embedding=e.ravel().tobytes()) for t,e in zip(txts,embs[:-1])]
+rows = [dict(content=t, embedding=e.tobytes()) for t,e in zip(txts,embs[:-1])]
 store.insert_all(rows)
 ```
 
@@ -146,29 +149,37 @@ You can search through results using the `search` method of the
 database. the results are automatically reranked. Turn it ooff by
 passing `rrf=False`
 
-> These results are not very meaningful since we’re using a naive tfidf
-> vectoriser. Check the examples folder for more meaningful examples
-> with onnx based text encoders.
-
 ``` python
-db.search(q, embs[-1].ravel().tobytes(), columns=['id', 'content'])
+db.search(q, embs[-1].tobytes(), columns=['id', 'content'])
 ```
 
-    [{'id': 2, 'content': "I'm hungry"},
-     {'id': 1, 'content': 'this is a text'},
-     {'id': 3, 'content': "Let's play! shall we?"}]
+    [{'rowid': 1,
+      'id': 1,
+      'content': 'this is a text',
+      '_dist': None,
+      '_rrf_score': 0.016666666666666666},
+     {'rowid': 2,
+      'id': 2,
+      'content': "I'm hungry",
+      '_dist': None,
+      '_rrf_score': 0.01639344262295082},
+     {'rowid': 3,
+      'id': 3,
+      'content': "Let's play! shall we?",
+      '_dist': None,
+      '_rrf_score': 0.016129032258064516}]
 
 Turning off reranking can help you understand where the results are
 coming from.
 
 ``` python
-db.search(q, embs[-1].ravel().tobytes(), columns=['id', 'content'], rrf=False)
+db.search(q, embs[-1].tobytes(), columns=['id', 'content'], rrf=False)
 ```
 
     {'fts': [],
-     'vec': [{'id': 2, 'content': "I'm hungry"},
-      {'id': 1, 'content': 'this is a text'},
-      {'id': 3, 'content': "Let's play! shall we?"}]}
+     'vec': [{'id': 1, 'content': 'this is a text', '_dist': None},
+      {'id': 2, 'content': "I'm hungry", '_dist': None},
+      {'id': 3, 'content': "Let's play! shall we?", '_dist': None}]}
 
 ## Next steps
 
