@@ -28,8 +28,8 @@ def ext_im(self: Document, it=None):
     if isinstance(it, dict) and 'image' in it: return it
     img = it if isinstance(it, (bytes, bytearray)) else None
     if not img and isinstance(it, tuple) and len(it) > 0 and isinstance(it[0], (bytes, bytearray)): img = it[0]
-    assert img, 'Invalid image tuple'
-    return dict(ext='bin', colorspace=None, image=bytes(img))
+    assert img, 'Invalid image data'
+    return dict(ext='raw', colorspace=None, image=bytes(img))
 
 @patch
 def ext_imgs(self: Document, st=0, end=-1):
