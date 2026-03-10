@@ -16,7 +16,7 @@ dependencies = [
     'fastlite',
     'usearch',
     'yake',
-    'pymupdf',
+    'pdf_oxide',
     'onnxruntime',
     'tokenizers',
     'model2vec[distill]',

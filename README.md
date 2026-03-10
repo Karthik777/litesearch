@@ -28,7 +28,7 @@ the contents using the `search()` method.
 
 Litesearch also provides document and code manipulation tools as part of
 the `data` module and onnx based text encoders as part of the `utils`
-module. - litesearch extends pymupdf Document and Page classes to
+module. - litesearch extends pdf_oxide PdfDocument class to
 extract texts, images and links easily. - litesearch provides onnx based
 text encoders which can be used to generate embeddings for documents and
 queries. - litesearch provides a quick code parsing utility to parse

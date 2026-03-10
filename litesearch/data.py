@@ -6,39 +6,35 @@ __all__ = ['py_dir_skip_re', 'py_file_skip_re', 'py_glob', 'skip_py_glob', 'pypa
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str
-from pymupdf import Document, Pixmap, csRGB, Page
+from pdf_oxide import PdfDocument as Document
+
+def _page_idxs(doc, st=0, end=-1): return list(range(doc.page_count()))[st:end]
 
 # %% ../nbs/02_data.ipynb #fc014ece1162af13
 @patch
 def get_texts(self: Document, st=0, end=-1, **kw):
-	return L(self[st:end]).map(lambda p: p.get_text(**kw))
+	return L(_page_idxs(self, st, end)).map(lambda i: self.extract_text(i, region=kw.get('region')))
 
 @patch
 def get_links(self: Document, st=0, end=-1):
-	return L(self[st:end]).map(lambda p: p.get_links()).concat()
+    def _links(i):
+        anns = self.page(i).annotations()
+        return [dict(page=i, subtype=a.subtype, contents=a.contents, rect=a.rect) for a in anns if a.subtype == 'Link']
+    return L(_page_idxs(self, st, end)).map(_links).concat()
 
 @patch
 def ext_im(self: Document, it=None):
     if not it: return None
-    assert isinstance(it, tuple) and len(it) > 2, 'Invalid image tuple'
-    xref, smask = it[0], it[1]
-    if smask > 0:
-        pix0 = Pixmap(self.extract_image(xref)['image'])
-        if pix0.alpha: pix0 = Pixmap(pix0, 0)  # remove alpha channel
-        mask = Pixmap(self.extract_image(smask)['image'])
-        try: pix = Pixmap(pix0, mask)
-        except: pix = Pixmap(self.extract_image(xref)['image'])
-        ext = 'pam' if pix0.n > 3 else 'png'
-        return dict(ext=ext, colorspace=pix.colorspace.n, image=pix.tobytes(ext))
-    if '/ColorSpace' in self.xref_object(xref, compressed=True):
-        pix = Pixmap(csRGB, Pixmap(self, xref))
-        return dict(ext='png', colorspace=3, image=pix.tobytes('png'))
-    return self.extract_image(xref)
+    if isinstance(it, dict) and 'image' in it: return it
+    img = it if isinstance(it, (bytes, bytearray)) else None
+    if not img and isinstance(it, tuple) and len(it) > 0 and isinstance(it[0], (bytes, bytearray)): img = it[0]
+    assert img, 'Invalid image tuple'
+    return dict(ext='bin', colorspace=None, image=bytes(img))
 
 @patch
 def ext_imgs(self: Document, st=0, end=-1):
-	f = lambda p: [ext_im(self,it) for it in p.get_images(full=True)]
-	return L(self[st:end]).map(f).concat()
+	f = lambda i: [ext_im(self, it) for it in self.extract_image_bytes(i)]
+	return L(_page_idxs(self, st, end)).map(f).concat()
 
 # %% ../nbs/02_data.ipynb #2d62e37b470a1055
 def pyparse(p:Path=None,    # path to a python file
