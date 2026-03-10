@@ -1,5 +1,12 @@
-# Release notes
-<!-- do not remove -->
+# Release notes <!-- do not remove -->
+
+## 0.0.12
+use uv for package management
+split vec and fts search
+add rrf merge with rowid
+use model2vec as default static embeddings
+
+
 
 ## 0.0.11
 add tokenizers
