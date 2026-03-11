@@ -60,6 +60,3 @@ exclude = [
 ]
 
 [tool.nbdev]
-
-[tool.uv.sources]
-claude-plugins = { path = "../personal/claude-plugins" }
