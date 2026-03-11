@@ -10,17 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [{name = "71293", email = "karthik.rajgopal@hotmail.com"}]
-keywords = ['nbdev', 'jupyter', 'notebook', 'python']
+keywords = ['nbdev', 'jupyter', 'notebook', 'python', 'fts+vectors', 'semantic search', 'vector search', 'text search', 'document search']
 classifiers = ["Natural Language :: English", "Intended Audience :: Developers", "Development Status :: 3 - Alpha", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only"]
 dependencies = [
-    'fastlite',
-    'usearch',
-    'yake',
-    'pymupdf',
-    'onnxruntime',
-    'tokenizers',
-    'model2vec[distill]',
-    "notebook",
+    "fastlite>=0.2.4",
+    "model2vec[distill]>=0.7.0",
+    "onnxruntime>=1.24.3",
+    "pdf-oxide>=0.3.17",
+    "pillow>=12.1.1",
+    "tokenizers>=0.22.2",
+    "usearch>=2.23.0",
+    "yake>=0.7.3",
 ]
 
 [project.urls]
@@ -42,12 +42,23 @@ dev = [
     'pyperclip',
     "chonkie",
     'flashrank',
+    "claude-plugins",
+    "safepyrun",
 ]
 
 [tool.hatch.version]
 path = "litesearch/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-include = ["litesearch"]
+packages = ["litesearch"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/examples",
+    "/nbs",
+]
 
 [tool.nbdev]
+
+[tool.uv.sources]
+claude-plugins = { path = "../personal/claude-plugins" }

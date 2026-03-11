@@ -5,40 +5,46 @@ __all__ = ['py_dir_skip_re', 'py_file_skip_re', 'py_glob', 'skip_py_glob', 'pypa
            'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
-from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str
-from pymupdf import Document, Pixmap, csRGB, Page
+from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str, AttrDict
+from pdf_oxide import PdfDocument
 
 # %% ../nbs/02_data.ipynb #fc014ece1162af13
+__all__ = ['PdfDocument']
 @patch
-def get_texts(self: Document, st=0, end=-1, **kw):
-	return L(self[st:end]).map(lambda p: p.get_text(**kw))
+def pdf_texts(doc:PdfDocument, st=0, end=None) -> L:
+    'Extract plain text from each page.'
+    return L(range(st, ifnone(end, doc.page_count()))).map(doc.extract_text)
 
 @patch
-def get_links(self: Document, st=0, end=-1):
-	return L(self[st:end]).map(lambda p: p.get_links()).concat()
+def pdf_links(doc:PdfDocument, st=0, end=None) -> L:
+    'Extract hyperlinks from each page as a list of URI strings.'
+    pages = range(st, ifnone(end, doc.page_count()))
+    ann = L(pages).map(lambda i: doc.get_annotations(i))
+    return ann.concat().filter(lambda a: 'action_uri' in a).map(lambda a: a['action_uri'])
 
 @patch
-def ext_im(self: Document, it=None):
-    if not it: return None
-    assert isinstance(it, tuple) and len(it) > 2, 'Invalid image tuple'
-    xref, smask = it[0], it[1]
-    if smask > 0:
-        pix0 = Pixmap(self.extract_image(xref)['image'])
-        if pix0.alpha: pix0 = Pixmap(pix0, 0)  # remove alpha channel
-        mask = Pixmap(self.extract_image(smask)['image'])
-        try: pix = Pixmap(pix0, mask)
-        except: pix = Pixmap(self.extract_image(xref)['image'])
-        ext = 'pam' if pix0.n > 3 else 'png'
-        return dict(ext=ext, colorspace=pix.colorspace.n, image=pix.tobytes(ext))
-    if '/ColorSpace' in self.xref_object(xref, compressed=True):
-        pix = Pixmap(csRGB, Pixmap(self, xref))
-        return dict(ext='png', colorspace=3, image=pix.tobytes('png'))
-    return self.extract_image(xref)
+def pdf_images(doc:PdfDocument, st=0, end=None, output_dir=None) -> L:
+    'Extract images — returns metadata dicts, or saves to output_dir if provided.'
+    pages = range(st, ifnone(end, doc.page_count()))
+    if output_dir:
+        Path(output_dir).mkdir(exist_ok=True)
+        return L(pages).map(lambda i: doc.to_plain_text(i, include_images=True, image_output_dir=str(output_dir)))
+    return L(pages).map(lambda i: doc.extract_images(i)).concat()
 
 @patch
-def ext_imgs(self: Document, st=0, end=-1):
-	f = lambda p: [ext_im(self,it) for it in p.get_images(full=True)]
-	return L(self[st:end]).map(f).concat()
+def pdf_markdown(doc:PdfDocument, st=0, end=None) -> L:
+    'Convert pages to markdown with headings and tables detected.'
+    return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.to_markdown(i, detect_headings=True))
+
+@patch
+def pdf_tables(doc:PdfDocument, st=0, end=None) -> L:
+    'Extract structured tables (rows/cells/bbox) from each page.'
+    return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_tables(i)).concat()
+
+@patch
+def pdf_spans(doc:PdfDocument, st=0, end=None) -> L:
+    'Extract text spans with font metadata (size, weight, bbox) per page.'
+    return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_spans(i)).concat()
 
 # %% ../nbs/02_data.ipynb #2d62e37b470a1055
 def pyparse(p:Path=None,    # path to a python file
@@ -127,7 +133,7 @@ def pre(q:str,          # query to be passed for fts search
         ):
     '''Preprocess the query for fts search.'''
     q = clean(q)
-    if not q.strip(): return ''
+    if not q.strip(): return None
     if extract_kw: q = kw(q)
     if wc: q = add_wc(q)
     if wide: q = mk_wider(q)

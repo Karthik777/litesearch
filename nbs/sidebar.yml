@@ -1,8 +1,0 @@
-website:
-  sidebar:
-    contents:
-      - index.ipynb
-      - 00_postfix.ipynb
-      - 01_core.ipynb
-      - 02_data.ipynb
-      - 03_utils.ipynb
