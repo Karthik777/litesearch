@@ -15,6 +15,7 @@ classifiers = ["Natural Language :: English", "Intended Audience :: Developers",
 dependencies = [
     "fastlite>=0.2.4",
     "model2vec[distill]>=0.7.0",
+    "notebook>=7.5.4",
     "onnxruntime>=1.24.3",
     "pdf-oxide>=0.3.17",
     "pillow>=12.1.1",

@@ -2025,6 +2025,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastlite" },
     { name = "model2vec", extra = ["distill"] },
+    { name = "notebook" },
     { name = "onnxruntime" },
     { name = "pdf-oxide" },
     { name = "pillow" },
@@ -2053,6 +2054,7 @@ dev = [
 requires-dist = [
     { name = "fastlite", specifier = ">=0.2.4" },
     { name = "model2vec", extras = ["distill"], specifier = ">=0.7.0" },
+    { name = "notebook", specifier = ">=7.5.4" },
     { name = "onnxruntime", specifier = ">=1.24.3" },
     { name = "pdf-oxide", specifier = ">=0.3.17" },
     { name = "pillow", specifier = ">=12.1.1" },
