@@ -10,11 +10,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [{name = "71293", email = "karthik.rajgopal@hotmail.com"}]
-keywords = ['nbdev', 'jupyter', 'notebook', 'python', 'fts+vectors', 'semantic search', 'vector search', 'text search', 'document search']
+keywords = ['nbdev', 'fts+vectors', 'semantic search', 'vector search', 'text search', 'document search']
 classifiers = ["Natural Language :: English", "Intended Audience :: Developers", "Development Status :: 3 - Alpha", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only"]
 dependencies = [
     "fastlite>=0.2.4",
-    "model2vec[distill]>=0.7.0",
+    "model2vec>=0.7.0",
     "notebook>=7.5.4",
     "onnxruntime>=1.24.3",
     "pdf-oxide>=0.3.17",
@@ -43,8 +43,7 @@ dev = [
     'pyperclip',
     "chonkie",
     'flashrank',
-    "claude-plugins",
-    "safepyrun",
+    "model2vec[distill]>=0.7.0",
 ]
 
 [tool.hatch.version]
@@ -54,9 +53,10 @@ path = "litesearch/__init__.py"
 packages = ["litesearch"]
 
 [tool.hatch.build.targets.sdist]
-exclude = [
-    "/examples",
-    "/nbs",
+include = [
+    "/litesearch",
+    "/README.md",
+    "/pyproject.toml",
 ]
 
 [tool.nbdev]
