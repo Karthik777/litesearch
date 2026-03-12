@@ -1,4 +1,9 @@
 # Release notes <!-- do not remove -->
+
+## 0.0.14
+added image and multimodal encoders
+
+
 ## 0.0.13
 integrated with the wonderful pdf-oxide library
 
