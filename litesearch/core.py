@@ -111,8 +111,7 @@ def search(self: Database,  # database connection
     'Search the litesearch store with fts and vector search combined.'
     if not q.strip(): return None
     tbl = self.t[table_name]
-    if not columns: columns = ['content', 'metadata', 'embedding']
-    cols = list(columns)
+    cols = list(columns or [])
     if rrf and id_key not in cols: cols = [id_key] + cols
     fts_q = self.quote_fts(q) if quote else q
     sql = tbl.search_sql(order_by='rank', columns=cols, limit=limit, where=where, include_rank=True)

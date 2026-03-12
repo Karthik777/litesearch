@@ -14,7 +14,7 @@ reranking — no server, no new infra, no heavy dependencies.
 |----|----|
 | `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database) · `get_store()` · `db.search()` · [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge) · `vec_search()` |
 | `litesearch.data` | PDF extraction · Python code chunking · FTS query preprocessing |
-| `litesearch.utils` | ONNX text encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)) · [`images_to_pdf`](https://Karthik777.github.io/litesearch/utils.html#images_to_pdf) · `images_to_markdown` |
+| `litesearch.utils` | ONNX text encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)) · [`images_to_pdf`](https://Karthik777.github.io/litesearch/data.html#images_to_pdf) · `images_to_markdown` |
 
 ## Install
 
@@ -24,6 +24,8 @@ reranking — no server, no new infra, no heavy dependencies.
 !uv add litesearch
 ```
 
+    error: Requirement name `litesearch` matches project name `litesearch`, but self-dependencies are not permitted without the `--dev` or `--optional` flags. If your project name (`litesearch`) is shadowing that of a third-party dependency, consider renaming the project.
+
 ## Quick Start
 
 Search your documents in eight lines of code:
@@ -32,7 +34,9 @@ Search your documents in eight lines of code:
 from litesearch import *
 from model2vec import StaticModel
 import numpy as np
+```
 
+``` python
 enc   = StaticModel.from_pretrained("minishlab/potion-retrieval-32M")  # fast static embeddings
 db    = database()          # SQLite + usearch SIMD extensions loaded
 store = db.get_store()      # table with FTS5 index + embedding column
@@ -41,11 +45,27 @@ texts = ["attention is all you need",
          "transformers replaced recurrent networks",
          "gradient descent minimises the loss"]
 embs  = enc.encode(texts)   # float32, shape (3, 512)
-store.insert_all([dict(content=t, embedding=e.tobytes()) for t, e in zip(texts, embs)])
+store.insert_all([dict(content=t, embedding=e.ravel().tobytes()) for t, e in zip(texts, embs)])
 
 q = "self-attention mechanism"
-db.search(q, enc.encode([q])[0].tobytes(), columns=['id','content'], dtype=np.float32)
+db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, quote=True)
 ```
+
+    [{'rowid': 1,
+      'id': 1,
+      'content': 'attention is all you need',
+      '_dist': 0.7910182476043701,
+      '_rrf_score': 0.016666666666666666},
+     {'rowid': 3,
+      'id': 3,
+      'content': 'gradient descent minimises the loss',
+      '_dist': 0.9670860767364502,
+      '_rrf_score': 0.01639344262295082},
+     {'rowid': 2,
+      'id': 2,
+      'content': 'transformers replaced recurrent networks',
+      '_dist': 1.0227680206298828,
+      '_rrf_score': 0.016129032258064516}]
 
 ``` python
 [{'rowid': 1, 'id': 1, 'content': 'attention is all you need',
@@ -129,9 +149,9 @@ same content is a no-op:
 ``` python
 code_store = db.get_store(name='code', hash=True)
 code_store.insert_all([
-    dict(content='hello world',  embedding=np.ones( (100,), dtype=np.float16).tobytes()),
-    dict(content='hi there',     embedding=np.full( (100,), 0.5, dtype=np.float16).tobytes()),
-    dict(content='goodbye now',  embedding=np.zeros((100,), dtype=np.float16).tobytes()),
+    dict(content='hello world', embedding=np.ones( (100,), dtype=np.float16).tobytes()),
+    dict(content='hi there', embedding=np.full( (100,), 0.5, dtype=np.float16).tobytes()),
+    dict(content='goodbye now', embedding=np.zeros((100,), dtype=np.float16).tobytes()),
 ], upsert=True, hash_id='id')
 code_store(select='id,content')
 ```
@@ -167,10 +187,36 @@ st2.insert_all([dict(content=p, embedding=v.tobytes()) for p, v in zip(phrases, 
     <Table store (content, embedding, metadata, uploaded_at, id)>
 
 ``` python
-q2    = "attention"
+q2 = "attention"
 q_vec = np.random.default_rng(42).random(64, dtype=np.float32).tobytes()
 db2.search(q2, q_vec, columns=['id','content'], dtype=np.float32)
 ```
+
+    [{'rowid': 1,
+      'id': 1,
+      'content': 'attention mechanisms in neural networks',
+      'rank': -1.116174474454989,
+      '_rrf_score': 0.032539682539682535},
+     {'rowid': 3,
+      'id': 3,
+      'content': 'stochastic gradient descent and learning rate schedules',
+      '_dist': 0.20330411195755005,
+      '_rrf_score': 0.016666666666666666},
+     {'rowid': 2,
+      'id': 2,
+      'content': 'transformer architecture for sequence modelling',
+      '_dist': 0.23124444484710693,
+      '_rrf_score': 0.01639344262295082},
+     {'rowid': 5,
+      'id': 5,
+      'content': 'dropout regularisation reduces overfitting',
+      '_dist': 0.23238885402679443,
+      '_rrf_score': 0.016129032258064516},
+     {'rowid': 4,
+      'id': 4,
+      'content': 'positional encoding and token embeddings',
+      '_dist': 0.32342469692230225,
+      '_rrf_score': 0.015625}]
 
 Pass `rrf=False` to see the raw FTS and vector legs separately — handy
 for debugging relevance:
@@ -178,6 +224,25 @@ for debugging relevance:
 ``` python
 db2.search(q2, q_vec, columns=['id','content'], dtype=np.float32, rrf=False)
 ```
+
+    {'fts': [{'id': 1,
+       'content': 'attention mechanisms in neural networks',
+       'rank': -1.116174474454989}],
+     'vec': [{'id': 3,
+       'content': 'stochastic gradient descent and learning rate schedules',
+       '_dist': 0.20330411195755005},
+      {'id': 2,
+       'content': 'transformer architecture for sequence modelling',
+       '_dist': 0.23124444484710693},
+      {'id': 5,
+       'content': 'dropout regularisation reduces overfitting',
+       '_dist': 0.23238885402679443},
+      {'id': 1,
+       'content': 'attention mechanisms in neural networks',
+       '_dist': 0.24136507511138916},
+      {'id': 4,
+       'content': 'positional encoding and token embeddings',
+       '_dist': 0.32342469692230225}]}
 
 > **Tip — dtype matters.** Always pass the same `dtype` used when
 > encoding. `model2vec` and most ONNX models return `float32`; pass
@@ -205,8 +270,8 @@ print('keywords extracted: `%s`'          % pre(q, wc=False, wide=False))
 print('q with wild card: `%s`'            % pre(q, extract_kw=False, wide=False, wc=True))
 ```
 
-    preprocessed q with defaults: `query* OR sample*`
-    keywords extracted: `query sample`
+    preprocessed q with defaults: `sample* OR query*`
+    keywords extracted: `sample query`
     q with wild card: `This* is* a* sample* query*`
 
 | Function      | What it does                                    |
@@ -242,6 +307,10 @@ print(f'{doc.page_count()} pages, {len(doc.pdf_links())} links')
 doc.pdf_texts(0, 1)[0][:300]
 ```
 
+    15 pages, 18 links
+
+    'Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or\nscholarly works.\n\n\nAttention Is All You Need\n\n\n∗\n∗\n∗\n∗\nAshish Vaswani Noam Shazeer Niki Parmar Jakob Uszkoreit\nGoogle Brain Google Brain Google'
+
     15 pages, 44 links
 
 ``` python
@@ -253,6 +322,19 @@ doc.pdf_texts(0, 1)[0][:300]
 md = doc.pdf_markdown()
 print(f'Page 1 (markdown):\n{md[0][:400]}')
 ```
+
+    Page 1 (markdown):
+    # arXiv:1706.03762v7  [cs.CL]  2 Aug 2023
+
+    Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.
+
+    ## Attention Is
+
+    ## All
+
+    ## You Need
+
+    ∗∗**Ashish Vaswani****Noam Shazeer****Niki Parmar** Google BrainGoogle BrainGoogle Research [avaswani@google.com](mailto:avaswani@google.com)[no
 
     Page 1 (markdown):
     # arXiv:1706.03762v7  [cs.CL]  2 Aug 2023
@@ -281,10 +363,7 @@ class SomeClass:
 pyparse(code=txt)
 ```
 
-    [{'content': 'a=1',
-      'metadata': {'path': None, 'uploaded_at': None, 'name': None, 'type': 'Assign', 'lineno': 3, 'end_lineno': 3}},
-     {'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a',
-      'metadata': {'path': None, 'uploaded_at': None, 'name': 'SomeClass', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]
+    [{'content': 'a=1', 'metadata': {'path': None, 'uploaded_at': None, 'name': None, 'type': 'Assign', 'lineno': 3, 'end_lineno': 3}}, {'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': None, 'uploaded_at': None, 'name': 'SomeClass', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]
 
 [`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks)
 indexes an **entire installed package** in one call — great for building
@@ -297,6 +376,18 @@ chunks = pkg2chunks('fastlite')
 print(f'{len(chunks)} chunks from fastlite')
 chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
 ```
+
+    51 chunks from fastlite
+
+    {'content': 'def t(self:Database): return _TablesGetter(self)',
+     'metadata': {'path': '/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py',
+      'uploaded_at': 1771806134.9519145,
+      'name': 't',
+      'type': 'FunctionDef',
+      'lineno': 44,
+      'end_lineno': 44,
+      'package': 'fastlite',
+      'version': '0.2.4'}}
 
     47 chunks from fastlite
 
@@ -313,62 +404,169 @@ chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
 ### [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) — ONNX Text Encoder
 
 [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
-wraps any ONNX model from HuggingFace Hub with a HF tokenizer. It
-supports document and query prompt templates, automatic CUDA/CPU
-provider selection, and multi-threaded inference. Two pre-configured
-model dicts ship with litesearch:
+wraps any ONNX model from HuggingFace Hub. It handles tokenisation,
+batching, optional parallel thread-pool execution, and runtime int8
+quantization — all without PyTorch or Transformers.
 
-| Config | Model | Embedding dim | Notes |
+| Config | Model | Dim | Notes |
 |----|----|----|----|
 | `embedding_gemma` (default) | `onnx-community/embeddinggemma-300m-ONNX` | 768 | Strong retrieval, ~300M params |
-| `modernbert` | `nomic-ai/modernbert-embed-base` | 768 | Modern BERT-style |
+| `modernbert` | `nomic-ai/modernbert-embed-base` | 768 | BERT-style, fast |
+| `nomic_text_v15` | `nomic-ai/nomic-embed-text-v1.5` | 768 | Shares embedding space with `nomic_vision_v15` |
 
-Pass `dtype=np.float16` (default) to halve memory; use `np.float32` for
-full precision.
+`encode_document` and `encode_query` apply the model’s prompt templates
+automatically.
 
 ``` python
-from litesearch.utils import FastEncode, modernbert
+from litesearch.utils import FastEncode, nomic_text_v15
 
-# Downloads model on first run, cached thereafter
-enc = FastEncode()   # embedding_gemma by default
+texts = [
+    'Attention is all you need',
+    'The transformer architecture uses self-attention',
+    'BERT pretrains on masked language modeling',
+    'GPT uses autoregressive generation',
+]
 
-doc_embs = enc.encode_document(['Attention is all you need', 'Another document'])
+# Default model — downloads once, cached
+enc      = FastEncode()
+doc_embs = enc.encode_document(texts)
 q_emb    = enc.encode_query(['what paper introduced transformers?'])
-print('doc shape:', doc_embs.shape, 'dtype:', doc_embs.dtype)
-print('q   shape:', q_emb.shape)
+print('doc shape:', doc_embs.shape, 'dtype:', doc_embs.dtype)  # (4, 768) float16
 
-# Switch to ModernBERT
-modern = FastEncode(modernbert)
-modern.encode_query(['search query here'])
+# Batching + parallel thread-pool
+enc_fast = FastEncode(batch_size=2, parallel=2)
+embs     = enc_fast.encode_document(texts)
+
+# Runtime int8 quantization — creates model_int8.onnx on first run, reused after
+enc_q = FastEncode(quantize='int8')
+embs  = enc_q.encode_document(texts)
 ```
+
+    doc shape: (4, 768) dtype: float16
+    Encoding setup errored out with exception: No module named 'onnx'
+    ONNX session not initialized. Fix error during initialisation
 
     doc shape: (2, 768) dtype: float16
-    q   shape: (1, 768)
+
+### [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) — ONNX Image Encoder
+
+[`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage)
+encodes images with CLIP-style ONNX vision models. No Transformers
+dependency — preprocessing (resize → normalise → CHW) is done with PIL +
+NumPy using config stored in the model dict.
+
+| Config | Model | Dim | Notes |
+|----|----|----|----|
+| `nomic_vision_v15` (default) | `nomic-ai/nomic-embed-vision-v1.5` | 768 | Same space as `nomic_text_v15` |
+| `clip_vit_b32` | `Qdrant/clip-ViT-B-32-vision` | 512 | Classic CLIP |
+
+Accepts PIL Images, file paths, or raw bytes — any mix.
+
+### [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal) — Cross-Modal Image + Text Search
+
+[`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal)
+wraps a model repo that ships both text and vision ONNX encoders in a
+single shared embedding space — a text query can retrieve images
+directly. Below: index *Attention Is All You Need* (text chunks +
+figures) then search for `'attention mechanism diagram'`.
+
+**Unified model** — `siglip2_so400m` (~800 MB, one download):
 
 ``` python
-array([[-0.0503, -0.04352, -0.0171, ..., -0.04977, 0.01598, -0.0706]],
-      shape=(1, 768), dtype=float16)
-```
-
-### Image Tools
-
-[`images_to_pdf`](https://Karthik777.github.io/litesearch/utils.html#images_to_pdf)
-wraps a list of images (PIL, bytes, or file paths) into a conformant
-multi-page PDF — useful for creating synthetic scanned documents for OCR
-testing. `images_to_markdown` embeds them as base64 data URIs for LLM
-input or notebook display.
-
-``` python
-from litesearch.utils import images_to_pdf
+import json, base64, io
+from litesearch.utils import FastEncodeMultimodal, siglip2_so400m, encode_pdf_texts, encode_pdf_images
+from litesearch.data import PdfDocument, pre
 from PIL import Image
+from IPython.display import display
 
-# Any mix of PIL Images, raw bytes, or file paths works
-imgs = [Image.new('RGB', (200, 100), color=(73, 109, 137)),
-        Image.new('RGB', (200, 100), color=(255, 200, 50))]
+enc = FastEncodeMultimodal(siglip2_so400m)   # single unified model, ~800 MB, cached on first run
+doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
+db  = database()
+ts, ims = db.get_store('texts'), db.get_store('images')
 
-pdf_bytes = images_to_pdf(imgs)                 # returns bytes
-images_to_pdf(imgs, output='out.pdf')           # or write to disk
+for pg, ci, chunk, emb in encode_pdf_texts(doc, enc.text):
+    ts.insert(dict(content=chunk, embedding=emb.tobytes(), metadata=json.dumps({'page': pg})))
+for pg, img_bytes, emb in encode_pdf_images(doc, enc.vision):
+    ims.insert(dict(content=f'page_{pg}', embedding=emb.tobytes(),
+                    metadata=json.dumps({'page': pg, 'data': base64.b64encode(img_bytes).decode()})))
+
+q = 'attention mechanism diagram'
+q_emb = enc.text.encode([q])[0].tobytes()
+txt_r = ts.db.search(pre(q), q_emb, table_name='texts', columns=['content']) or []
+img_r = ims.vec_search(q_emb)
+for r in rrf_merge(txt_r, img_r)[:6]:
+    print(f"rrf={r['_rrf_score']:.4f}  {r['content'][:70]}")
+    meta = json.loads(r.get('metadata', '{}'))
+    if 'data' in meta:
+        display(Image.open(io.BytesIO(base64.b64decode(meta['data']))).resize((200, 150)))
 ```
+
+    rrf=0.0167  While for small values ofdthe two mechanisms perform similarly, additi
+    rrf=0.0167  page_3
+
+<img src="index_files/figure-commonmark/cell-18-output-2.png"
+width="200" height="150" />
+
+    rrf=0.0164  Figure 4: Two attention heads, also in layer 5 of 6, apparently involv
+    rrf=0.0164  page_2
+
+<img src="index_files/figure-commonmark/cell-18-output-4.png"
+width="200" height="150" />
+
+    rrf=0.0161  Self-attention, sometimes called intra-attention is an attention mecha
+    rrf=0.0161  page_3
+
+<img src="index_files/figure-commonmark/cell-18-output-6.png"
+width="200" height="150" />
+
+**Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same
+768-dim space; use
+[`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
+and
+[`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage)
+separately:
+
+``` python
+from litesearch.utils import FastEncode, FastEncodeImage, nomic_text_v15, nomic_vision_v15
+
+enc_text = FastEncode(nomic_text_v15)
+enc_img  = FastEncodeImage(nomic_vision_v15)
+db2  = database()
+ts2, ims2 = db2.get_store('texts'), db2.get_store('images')
+
+for pg, ci, chunk, emb in encode_pdf_texts(doc, enc_text):
+    ts2.insert(dict(content=chunk, embedding=emb.tobytes(), metadata=json.dumps({'page': pg})))
+for pg, img_bytes, emb in encode_pdf_images(doc, enc_img):
+    ims2.insert(dict(content=f'page_{pg}', embedding=emb.tobytes(),
+                     metadata=json.dumps({'page': pg, 'data': base64.b64encode(img_bytes).decode()})))
+
+q_emb2 = enc_text.encode([q])[0].tobytes()
+txt_r2 = ts2.db.search(pre(q), q_emb2, table_name='texts', columns=['content']) or []
+img_r2 = ims2.vec_search(q_emb2)
+for r in rrf_merge(txt_r2, img_r2)[:6]:
+    print(f"rrf={r['_rrf_score']:.4f}  {r['content'][:70]}")
+    meta = json.loads(r.get('metadata', '{}'))
+    if 'data' in meta:
+        display(Image.open(io.BytesIO(base64.b64decode(meta['data']))).resize((200, 150)))
+```
+
+    rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
+    rrf=0.0167  page_3
+
+<img src="index_files/figure-commonmark/cell-19-output-2.png"
+width="200" height="150" />
+
+    rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
+    rrf=0.0164  page_2
+
+<img src="index_files/figure-commonmark/cell-19-output-4.png"
+width="200" height="150" />
+
+    rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
+    rrf=0.0161  page_3
+
+<img src="index_files/figure-commonmark/cell-19-output-6.png"
+width="200" height="150" />
 
 ## Ideas for More Delight (Planned)
 

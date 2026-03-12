@@ -1,4 +1,8 @@
 # Release notes <!-- do not remove -->
+## 0.0.13
+integrated with the wonderful pdf-oxide library
+
+
 
 ## 0.0.12
 use uv for package management
