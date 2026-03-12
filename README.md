@@ -24,8 +24,6 @@ reranking — no server, no new infra, no heavy dependencies.
 !uv add litesearch
 ```
 
-    error: Requirement name `litesearch` matches project name `litesearch`, but self-dependencies are not permitted without the `--dev` or `--optional` flags. If your project name (`litesearch`) is shadowing that of a third-party dependency, consider renaming the project.
-
 ## Quick Start
 
 Search your documents in eight lines of code:
@@ -262,8 +260,6 @@ FTS5 is powerful, but raw natural-language queries often miss results.
 to FTS:
 
 ``` python
-from litesearch.data import clean, add_wc, mk_wider, kw, pre
-
 q = 'This is a sample query'
 print('preprocessed q with defaults: `%s`' % pre(q))
 print('keywords extracted: `%s`'          % pre(q, wc=False, wide=False))
@@ -298,8 +294,6 @@ indices and return a fastcore `L` list:
 | `doc.pdf_images(st, end, output_dir)` | image metadata, or save to disk |
 
 ``` python
-from litesearch.data import PdfDocument
-
 doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
 print(f'{doc.page_count()} pages, {len(doc.pdf_links())} links')
 
@@ -351,8 +345,6 @@ classes, assignments) with source location metadata — ready to insert
 into a store:
 
 ``` python
-from litesearch.data import pyparse
-
 txt = """
 from fastcore.all import *
 a=1
@@ -370,8 +362,6 @@ indexes an **entire installed package** in one call — great for building
 a semantic code-search store over your dependencies:
 
 ``` python
-from litesearch.data import pkg2chunks
-
 chunks = pkg2chunks('fastlite')
 print(f'{len(chunks)} chunks from fastlite')
 chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
@@ -418,8 +408,6 @@ quantization — all without PyTorch or Transformers.
 automatically.
 
 ``` python
-from litesearch.utils import FastEncode, nomic_text_v15
-
 texts = [
     'Attention is all you need',
     'The transformer architecture uses self-attention',
@@ -474,11 +462,11 @@ figures) then search for `'attention mechanism diagram'`.
 
 ``` python
 import json, base64, io
-from litesearch.utils import FastEncodeMultimodal, siglip2_so400m, encode_pdf_texts, encode_pdf_images
-from litesearch.data import PdfDocument, pre
 from PIL import Image
 from IPython.display import display
+```
 
+``` python
 enc = FastEncodeMultimodal(siglip2_so400m)   # single unified model, ~800 MB, cached on first run
 doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
 db  = database()
@@ -527,8 +515,6 @@ and
 separately:
 
 ``` python
-from litesearch.utils import FastEncode, FastEncodeImage, nomic_text_v15, nomic_vision_v15
-
 enc_text = FastEncode(nomic_text_v15)
 enc_img  = FastEncodeImage(nomic_vision_v15)
 db2  = database()
@@ -553,20 +539,35 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-<img src="index_files/figure-commonmark/cell-19-output-2.png"
+<img src="index_files/figure-commonmark/cell-20-output-2.png"
 width="200" height="150" />
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-<img src="index_files/figure-commonmark/cell-19-output-4.png"
+<img src="index_files/figure-commonmark/cell-20-output-4.png"
 width="200" height="150" />
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-<img src="index_files/figure-commonmark/cell-19-output-6.png"
+<img src="index_files/figure-commonmark/cell-20-output-6.png"
 width="200" height="150" />
+
+    rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
+    rrf=0.0167  page_3
+
+![](index_files/figure-commonmark/cell-20-output-8.png)
+
+    rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
+    rrf=0.0164  page_2
+
+![](index_files/figure-commonmark/cell-20-output-10.png)
+
+    rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
+    rrf=0.0161  page_3
+
+![](index_files/figure-commonmark/cell-20-output-12.png)
 
 ## Ideas for More Delight (Planned)
 
