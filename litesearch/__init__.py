@@ -4,4 +4,5 @@ usearch_fix()
 from .core import *
 from .data import *
 from .utils import *
+from .rag import *
 from pdf_oxide import *

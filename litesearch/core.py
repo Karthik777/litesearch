@@ -35,6 +35,12 @@ def get_store(self:Database,    # database connection
     else: cols.update(dict(id=int, not_null=['content']))
     _content = self.t[name].create(**cols,if_not_exists=True, **kw)
     if not _content.detect_fts(): _content.enable_fts(['content','metadata'], create_triggers=True, tokenize='porter', replace=True)
+    # Additive schema migration — safe to call on existing DBs (adds cols if absent)
+    _existing = {c.name for c in _content.columns}
+    for _col, _typ, _def in [('parent_id','INTEGER','NULL'), ('chunk_type','TEXT',"'text'"), ('hierarchy_level','INTEGER','0')]:
+        if _col not in _existing:
+            try: self.execute(f'ALTER TABLE [{name}] ADD COLUMN [{_col}] {_typ} DEFAULT {_def}')
+            except: pass
     return _content
 
 # %% ../nbs/01_core.ipynb #c1c04ba9
@@ -121,3 +127,33 @@ def search(self: Database,  # database connection
                          offset=None if rrf else offset)
     if rrf: return rrf_merge(fts, vec, k=rrf_k, limit=limit, id_key=id_key)
     return dict(fts=fts, vec=vec)
+
+# %% ../nbs/01_core.ipynb #qf1jky9mbm
+@patch
+def ingest_chunks(self:Table,   # store table (from db.get_store())
+                  chunks:list,  # output of hierarchical_chunks() or hierarchical_pdf_texts()
+                  encoder=None, # callable(list[str]) → list[np.ndarray]; embeds content if provided
+):
+    """Insert hierarchical chunks, resolving _local_id → actual SQLite row ID for parent_id.
+    hierarchy_level 0 = flat (backward compat), 1 = parent, 2 = child.
+    encoder is called with a list of content strings; each result is stored as embedding bytes."""
+    parents  = [c for c in chunks if c.get('hierarchy_level') == 1]
+    children = [c for c in chunks if c.get('hierarchy_level') == 2]
+    flat     = [c for c in chunks if c.get('hierarchy_level', 0) == 0]
+    def _embed(rows):
+        if not (encoder and rows): return
+        embs = encoder([r['content'] for r in rows])
+        for r, e in zip(rows, embs): r['embedding'] = e.tobytes() if hasattr(e,'tobytes') else bytes(e)
+    def _clean(c): return {k:v for k,v in c.items() if not k.startswith('_')}
+    if flat:
+        _embed(flat); self.insert_all([_clean(c) for c in flat]); return
+    _embed(parents)
+    local_to_rowid = {}
+    for c in parents:
+        local_id = c.pop('_local_id', None)
+        row = self.insert(_clean(c))   # returns inserted row dict with 'id' key
+        if local_id is not None: local_to_rowid[local_id] = row['id']
+    _embed(children)
+    for c in children:
+        c['parent_id'] = local_to_rowid.get(c.get('parent_id'))
+        self.insert(_clean(c))

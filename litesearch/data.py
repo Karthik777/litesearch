@@ -2,11 +2,14 @@
 
 # %% auto #0
 __all__ = ['py_dir_skip_re', 'py_file_skip_re', 'py_glob', 'skip_py_glob', 'chunk_markdown', 'pyparse', 'pkg2files', 'pkg2chunks',
-           'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf']
+           'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf',
+           'hierarchical_chunks', 'hierarchical_pdf_texts', 'pdf_images_with_captions']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str, AttrDict
 from pdf_oxide import PdfDocument
+from typing import Optional
+import json, re as _re
 import struct as _struct
 
 # %% ../nbs/02_data.ipynb #fc014ece1162af13
@@ -208,3 +211,95 @@ def images_to_pdf(imgs,       # list of PIL Images, bytes, or file paths
             + f'trailer\n<</Size {len(o)+1} /Root 1 0 R>>\nstartxref\n{xp}\n%%EOF\n'.encode())
     if output: open(output, 'wb').write(out)
     return out
+
+# %% ../nbs/02_data.ipynb #wjjtfy8vjri
+def hierarchical_chunks(text: str,
+                        parent_size: int = 512,  # parent chunk size in tokens
+                        child_size: int = 128,   # child chunk size in tokens
+) -> list:
+    """Split text into parent/child chunk dicts ready for store.ingest_chunks().
+    Returns a flat list: parents first (hierarchy_level=1) then their children (hierarchy_level=2).
+    parent_id in child records is the _local_id of the parent — resolved to actual row IDs by ingest_chunks()."""
+    from chonkie import RecursiveChunker
+    parents = RecursiveChunker(chunk_size=parent_size)(text)
+    result = []
+    for p_idx, parent in enumerate(parents):
+        result.append(dict(content=parent.text, parent_id=None, chunk_type='text',
+                           hierarchy_level=1, _local_id=p_idx))
+        for child in RecursiveChunker(chunk_size=child_size)(parent.text):
+            result.append(dict(content=child.text, parent_id=p_idx,
+                               chunk_type='text', hierarchy_level=2, _local_id=None))
+    return result
+
+# %% ../nbs/02_data.ipynb #tvhj5q4c1im
+def hierarchical_pdf_texts(pdf_path: str,
+                           use_parent_child: bool = True,  # use parent/child hierarchy
+                           parent_size: int = 512,          # parent chunk size in tokens
+                           child_size: int = 128,           # child chunk size in tokens
+) -> list:
+    """Parse PDF via pdf_oxide and chunk with optional hierarchy.
+    If use_parent_child=True, each page's markdown is split into parent/child chunks.
+    If False, returns flat chunks (hierarchy_level=0) for backward compat.
+    Returns records ready for store.ingest_chunks()."""
+    doc = PdfDocument(pdf_path)
+    pages_md = doc.pdf_markdown()
+    result = []
+    for pg_idx, md in enumerate(pages_md):
+        base_meta = json.dumps(dict(source=pdf_path, page=pg_idx))
+        if use_parent_child:
+            chunks = hierarchical_chunks(md, parent_size, child_size)
+            for c in chunks: c.setdefault('metadata', base_meta)
+            result.extend(chunks)
+        else:
+            for text in chunk_markdown(md):
+                result.append(dict(content=text, metadata=base_meta,
+                                   chunk_type='text', hierarchy_level=0))
+    return result
+
+# %% ../nbs/02_data.ipynb #qra1bd85sm
+# Matches "Figure 3:", "Fig. 2.", "Table 1:" followed by up to 300 chars of caption text
+_CAP_RE = _re.compile(r'((?:Figure|Fig\.?|Table)\s+\d+\s*[.:][^\n]{0,300})', _re.IGNORECASE)
+
+def pdf_images_with_captions(pdf_path: str,
+                             vlm_model: Optional[str] = None, # e.g. 'ollama/llama3.2-vision'; None = skip VLM
+) -> list:
+    """Extract PDF images as chunk records (chunk_type='image').
+
+    Primary caption source: regex over `to_markdown()` output (already contains "Figure N: ..." text).
+    Fallback: vlm_model generates captions for images with no text caption (scanned PDFs).
+    Image bytes are base64-encoded and stored in the metadata field.
+    Returns list of dicts with keys: content (caption), metadata (JSON), chunk_type, hierarchy_level."""
+    import tempfile, os, base64
+    doc = PdfDocument(pdf_path)
+    result = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for pg in range(doc.page_count()):
+            before = set(os.listdir(tmp))
+            # to_markdown returns page text AND saves images to tmp
+            page_md = doc.to_markdown(pg, include_images=True, embed_images=False, image_output_dir=tmp)
+            new_files = sorted(f for f in set(os.listdir(tmp)) - before
+                               if f.lower().endswith(('.png', '.jpg', '.jpeg')))
+            if not new_files: continue
+            captions = _CAP_RE.findall(page_md or '')
+            for img_idx, fname in enumerate(new_files):
+                img_path = os.path.join(tmp, fname)
+                img_bytes = open(img_path, 'rb').read()
+                if img_idx < len(captions):
+                    caption = captions[img_idx].strip()
+                elif vlm_model:
+                    try:
+                        from lisette import Chat
+                        b64 = base64.b64encode(img_bytes).decode()
+                        mime = 'image/png' if fname.endswith('.png') else 'image/jpeg'
+                        _chat = Chat(vlm_model, 'Describe this image concisely for search indexing.')
+                        resp = _chat([{'type':'image_url','image_url':{'url':f'data:{mime};base64,{b64}'}}])
+                        caption = resp.choices[0].message.content
+                    except Exception as e:
+                        caption = f'[Image from page {pg}]'
+                else:
+                    caption = f'[Image from page {pg}]'
+                meta = json.dumps(dict(source=pdf_path, page=pg,
+                                       img_bytes=base64.b64encode(img_bytes).decode()))
+                result.append(dict(content=caption, metadata=meta,
+                                   chunk_type='image', hierarchy_level=0))
+    return result

@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'FastEncode', 'download_model', 'FastEncodeImage',
-           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images', 'FastRerank']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone
@@ -282,3 +282,33 @@ def encode_pdf_images(doc,             # PdfDocument
 		embs = enc.embed([p for _,p in items])
 		return L((pg, open(path,'rb').read(), emb) for (pg,path),emb in zip(items,embs))
 
+
+# %% ../nbs/03_utils.ipynb #klfshz4rpi
+class FastRerank:
+	"""Thin wrapper around FlashRank cross-encoder reranker.
+	Mirrors FastEncode API style. Requires: pip install flashrank"""
+
+	def __init__(self,
+				 model: str = 'ms-marco-MiniLM-L-12-v2', # FlashRank model name
+				 max_length: int = 160):                  # child chunk size + query length
+		"""Available models (all CPU-only ONNX, no Torch):
+		- ms-marco-TinyBERT-L-2-v2  : ~4 MB, fastest, good for dev
+		- ms-marco-MiniLM-L-12-v2   : ~34 MB, best quality/speed tradeoff (default)
+		- ms-marco-MultiBERT-L-12   : multilingual
+
+		max_length tip: set to child_chunk_size + max_query_tokens.
+		For 128-token children + ~16-token queries, 160 is correct and faster than 512."""
+		try:
+			from flashrank import Ranker, RerankRequest
+		except ImportError:
+			raise ImportError('pip install flashrank')
+		self._ranker = Ranker(model_name=model, max_length=max_length)
+		self._RerankRequest = RerankRequest
+
+	def rerank(self, query: str, docs: list, top_n: int = 3) -> list:
+		"""Rerank docs by cross-encoder relevance score. docs must have a 'content' key.
+		Returns top_n docs sorted by score descending."""
+		passages = [{'id': i, 'text': d['content'], **d} for i, d in enumerate(docs)]
+		req = self._RerankRequest(query=query, passages=passages)
+		results = self._ranker.rerank(req)
+		return [docs[r['id']] for r in results[:top_n]]
