@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.15
+added codesigs support
+
+
+
 ## 0.0.14
 added image and multimodal encoders
 
