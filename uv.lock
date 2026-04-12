@@ -1929,6 +1929,7 @@ name = "litesearch"
 version = "0.0.15"
 source = { editable = "." }
 dependencies = [
+    { name = "chonkie" },
     { name = "codesigs" },
     { name = "fastlite" },
     { name = "model2vec" },
@@ -1958,6 +1959,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "chonkie", specifier = ">=1.6.0" },
     { name = "codesigs", specifier = ">=0.0.2" },
     { name = "fastlite", specifier = ">=0.2.4" },
     { name = "model2vec", specifier = ">=0.7.0" },
