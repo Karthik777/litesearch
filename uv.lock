@@ -1959,7 +1959,7 @@ wheels = [
 
 [[package]]
 name = "litesearch"
-version = "0.0.16"
+version = "0.0.18"
 source = { editable = "." }
 dependencies = [
     { name = "chonkie" },
