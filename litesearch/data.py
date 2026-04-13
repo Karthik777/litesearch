@@ -82,8 +82,8 @@ from fastcore.nbio import read_nb
 py_dir_skip_re=r'(^tests?$|^__pycache__$|^\.eggs$|^\.mypy_cache$|^\.tox$|^examples?$|^docs?$|^build$|^dist$|^\.git$|^\.ipynb_checkpoints$)'
 py_file_skip_re=r'(^__init__\.py$|^setup\.py$|^conftest\.py$|^test_.*\.py$|^tests?\.py$|^.*_test\.py$)'
 py_glob, skip_py_glob = '*.py', '_*'
-code_types = 'py,js,ts,jsx,tsx,java,go,cs,ruby,php,swift,kt,kts,rs,scala,lua,ipynb'
-file_types = code_types + ',md,txt,pdf'
+code_types = 'py,js,ts,jsx,tsx,java,go,cs,ruby,php,swift,kt,kts,rs,scala,lua'
+file_types = code_types + ',md,txt,pdf,ipynb'
 def repo_root() -> Path:
 	'Find the root of the current git repository, or None if not in a repo.'
 	return first((Path.cwd(), *Path.cwd().parents), lambda p: (p/'.git').exists())
