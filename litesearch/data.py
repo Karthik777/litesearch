@@ -181,8 +181,8 @@ def pkg2chunks(pkg:str,             # package name
                **kw                 # additional args to pass to pkg2files
 )->L:
     'Return code chunks from a package with extra metadata.'
-    upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=version(pkg)))
-    return parallel(file_parse, pkg2files(pkg,**kw), imports=imports).filter(true).concat().map(lambda d: upd_v(d) or d)
+    upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=version(pkg))) or d
+    return parallel(file_parse, pkg2files(pkg,**kw), threadpool=True, imports=imports).filter(true).concat().map(upd_v)
 
 @delegates(dir2files)
 def dir2chunks(dir:str,             # directory path
