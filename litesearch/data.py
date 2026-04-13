@@ -2,9 +2,9 @@
 
 # %% auto #0
 __all__ = ['py_dir_skip_re', 'py_file_skip_re', 'py_glob', 'skip_py_glob', 'code_types', 'file_types', 'chunk_markdown',
-           'chunker', 'repo_root', 'spec', 'pyparse', 'non_py_sigs', 'file_parse', 'pkg2files', 'dir2files',
-           'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png',
-           'png_det', 'images_to_pdf']
+           'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs', 'chunk_texts', 'file_parse', 'pkg2files',
+           'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre',
+           'img2png', 'png_det', 'images_to_pdf']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str, first
@@ -50,15 +50,11 @@ def pdf_spans(doc:PdfDocument, st=0, end=None) -> L:
 
 # %% ../nbs/02_data.ipynb #chunk_markdown_cell
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
-                   fast: bool=False # fast chunker from Chonkie; less accurate but much faster than RecursiveChunker
-                   ) -> L:
+) -> L:
 	'Split markdown into paragraph chunks on blank lines; drop short fragments.'
-	ch = chunker(fast)
-	return L(ch(text)).map(lambda c: c.text)
-
-def chunker(fast=False):
-	from chonkie import RecursiveChunker as rs, FastChunker as fc
-	return fc(delimiters='\n\n') if fast else rs()
+	from chonkie import RecursiveChunker
+	r=RecursiveChunker.from_recipe('markdown')
+	return L(r(text)).map(lambda c: c.text)
 
 @patch
 @delegates(chunk_markdown)
@@ -79,13 +75,14 @@ from importlib.machinery import ModuleSpec
 import ast, re
 from ast import get_source_segment as gs
 from codesigs import file_sigs
-from fastcore.all import true
+from fastcore.basics import true
+from fastcore.nbio import read_nb
 
 # %% ../nbs/02_data.ipynb #2d62e37b470a1055
 py_dir_skip_re=r'(^tests?$|^__pycache__$|^\.eggs$|^\.mypy_cache$|^\.tox$|^examples?$|^docs?$|^build$|^dist$|^\.git$|^\.ipynb_checkpoints$)'
 py_file_skip_re=r'(^__init__\.py$|^setup\.py$|^conftest\.py$|^test_.*\.py$|^tests?\.py$|^.*_test\.py$)'
 py_glob, skip_py_glob = '*.py', '_*'
-code_types = 'py,js,ts,jsx,tsx,java,go,cs,ruby,php,swift,kt,kts,rs,scala,lua'
+code_types = 'py,js,ts,jsx,tsx,java,go,cs,ruby,php,swift,kt,kts,rs,scala,lua,ipynb'
 file_types = code_types + ',md,txt,pdf'
 def repo_root() -> Path:
 	'Find the root of the current git repository, or None if not in a repo.'
@@ -117,9 +114,21 @@ def pyparse(p:Path=None,    # path to a python file
     def is_allowed(n): return is_p_mod(n) and (is_mod(n) or is_assign(n) or (imports and isinstance(n, ast.ImportFrom)))
     return L(ast.walk(tree)).filter(is_allowed).map(n2c)
 
+def ipynb_parse(p):
+	'Parse ipynb files'
+	def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
+	fn = lambda c: dict(content=c['source'], metadata = meta_() | dict(type=c['cell_type']))
+	return L(read_nb(p).cells).map(fn)
+
 def non_py_sigs(p):
+	'Signatures for paths that are not python code files using codesigs'
 	def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
 	return L(file_sigs(p)).map(lambda o: dict(content=o, metadata=meta_()))
+
+def chunk_texts(text:str):
+	'Chunk texts using Fast Chunker'
+	from chonkie import FastChunker
+	return L(FastChunker(delimiters='\n\n')(text)).map(lambda c: c.text)
 
 @delegates(pyparse)
 def file_parse(p:Path=None,  # path to a code file
@@ -127,10 +136,13 @@ def file_parse(p:Path=None,  # path to a code file
                ) -> L:
     'Parse a code file or code string and return code chunks with metadata.'
     if p.suffix == '.py': return pyparse(p, **kwargs)
+    if p.suffix == '.ipynb': return ipynb_parse(p)
     if p.suffix in code_types.split(','): return non_py_sigs(p)
     def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
     if p.suffix == '.pdf': return PdfDocument(p).pdf_chunks().map(lambda c: dict(content=c[2], metadata=meta_()))
-    if p.suffix in ['.md', '.txt']: return L(chunker()(p.read_text(encoding='utf-8'))).map(lambda c: dict(content=c.text, metadata=meta_()))
+    fn = lambda c: dict(content=c,metadata=meta_())
+    if p.suffix  == '.md': return chunk_markdown(p.read_text(encoding='utf-8')).map(fn)
+    if p.suffix == '.txt': return chunk_texts(p.read_text(encoding='utf-8')).map(fn)
     return L()
 
 # %% ../nbs/02_data.ipynb #76e3e47dd73aec50
@@ -170,17 +182,18 @@ def pkg2chunks(pkg:str,             # package name
 )->L:
     'Return code chunks from a package with extra metadata.'
     upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=version(pkg)))
-    return parallel(file_parse, pkg2files(pkg,**kw), imports=imports).concat().map(lambda d: upd_v(d) or d)
+    return parallel(file_parse, pkg2files(pkg,**kw), imports=imports).filter(true).concat().map(lambda d: upd_v(d) or d)
 
+@delegates(dir2files)
 def dir2chunks(dir:str,             # directory path
                imports:bool=False,  # include import statements as code chunks
                assigns:bool=False,  # include top-level assignments as code chunks
-               **kw                 # additional args to pass to dir2files
+               **kwargs             # additional args to pass to dir2files
 )->L:
     'Return code chunks from a directory with extra metadata.'
     upd_v = lambda d: d['metadata'].update(dict(dir=dir)) or d
-    pyparse_kw = dict(imports=imports, assigns=assigns)
-    return parallel(file_parse, dir2files(dir, **kw), **pyparse_kw).concat().map(upd_v)
+    pykw = dict(imports=imports, assigns=assigns)
+    return parallel(file_parse, dir2files(dir, **kwargs), threadpool=True, **pykw).concat().filter(true).map(upd_v)
 
 # %% ../nbs/02_data.ipynb #7652cb1d1f39fadc
 def installed_packages(nms:list=None,    # list of package names
