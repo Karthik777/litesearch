@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.18
+ipynb moved to filetypes
+
+
+
 ## 0.0.17
 ipynb + chunking
 
