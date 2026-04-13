@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.17
+ipynb + chunking
+
+
+
 ## 0.0.16
 file parsing and chunking with chonkie
 
