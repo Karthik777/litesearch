@@ -56,20 +56,21 @@ def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
 	ch = chunker(fast)
 	return L(ch(text)).map(lambda c: c.text)
 
-def chunker(fast):
+def chunker(fast=False):
 	from chonkie import RecursiveChunker as rs, FastChunker as fc
 	return fc(delimiters='\n\n') if fast else rs()
 
 @patch
+@delegates(chunk_markdown)
 def pdf_chunks(self:PdfDocument, # PDF document
                st=0,             # start page
                end=None,         # end page (exclusive)
-               min_len:int=40    # minimum chunk length
+               **kwargs
                ) -> L:
 	'Markdown-chunked text from each page; yields (page, chunk_idx, text) tuples.'
 	return L((pg, ci, chunk)
 	         for pg, md in enumerate(self.pdf_markdown(st, end))
-	         for ci, chunk in enumerate(chunk_markdown(md, min_len)))
+	         for ci, chunk in enumerate(chunk_markdown(md, **kwargs)))
 
 # %% ../nbs/02_data.ipynb #171a3906ce544f95
 from importlib.util import find_spec as fs
@@ -78,6 +79,7 @@ from importlib.machinery import ModuleSpec
 import ast, re
 from ast import get_source_segment as gs
 from codesigs import file_sigs
+from fastcore.all import true
 
 # %% ../nbs/02_data.ipynb #2d62e37b470a1055
 py_dir_skip_re=r'(^tests?$|^__pycache__$|^\.eggs$|^\.mypy_cache$|^\.tox$|^examples?$|^docs?$|^build$|^dist$|^\.git$|^\.ipynb_checkpoints$)'
@@ -128,7 +130,7 @@ def file_parse(p:Path=None,  # path to a code file
     if p.suffix in code_types.split(','): return non_py_sigs(p)
     def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
     if p.suffix == '.pdf': return PdfDocument(p).pdf_chunks().map(lambda c: dict(content=c[2], metadata=meta_()))
-    if p.suffix in ['.md', '.txt']: return L(chunker(p.read_text(encoding='utf-8'))).map(lambda c: dict(content=c.text, metadata=meta_()))
+    if p.suffix in ['.md', '.txt']: return L(chunker()(p.read_text(encoding='utf-8'))).map(lambda c: dict(content=c.text, metadata=meta_()))
     return L()
 
 # %% ../nbs/02_data.ipynb #76e3e47dd73aec50
@@ -176,9 +178,9 @@ def dir2chunks(dir:str,             # directory path
                **kw                 # additional args to pass to dir2files
 )->L:
     'Return code chunks from a directory with extra metadata.'
-    upd_v = lambda d: d['metadata'].update(dict(dir=dir))
+    upd_v = lambda d: d['metadata'].update(dict(dir=dir)) or d
     pyparse_kw = dict(imports=imports, assigns=assigns)
-    return parallel(file_parse, dir2files(dir, **kw), **pyparse_kw).concat().map(lambda d: upd_v(d) or d)
+    return parallel(file_parse, dir2files(dir, **kw), **pyparse_kw).concat().map(upd_v)
 
 # %% ../nbs/02_data.ipynb #7652cb1d1f39fadc
 def installed_packages(nms:list=None,    # list of package names
