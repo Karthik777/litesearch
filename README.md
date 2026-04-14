@@ -13,8 +13,8 @@ reranking — no server, no new infra, no heavy dependencies.
 | Module | What you get |
 |----|----|
 | `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database) · `get_store()` · `db.search()` · [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge) · `vec_search()` |
-| `litesearch.data` | PDF extraction · Python code chunking · FTS query preprocessing |
-| `litesearch.utils` | ONNX text encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)) · [`images_to_pdf`](https://Karthik777.github.io/litesearch/data.html#images_to_pdf) · `images_to_markdown` |
+| `litesearch.data` | PDF extraction & chunking (`pdf_chunks`) · multi-format file parsing ([`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)) · code indexing ([`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) · [`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)) · [`images_to_pdf`](https://Karthik777.github.io/litesearch/data.html#images_to_pdf) · FTS query preprocessing |
+| `litesearch.utils` | ONNX encoders: [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) (text) · [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) (vision) · [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal) (joint text+image) |
 
 ## Install
 
@@ -48,6 +48,9 @@ store.insert_all([dict(content=t, embedding=e.ravel().tobytes()) for t, e in zip
 q = "self-attention mechanism"
 db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, quote=True)
 ```
+
+    /Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+      from .autonotebook import tqdm as notebook_tqdm
 
     [{'rowid': 1,
       'id': 1,
@@ -87,9 +90,6 @@ with usearch’s SIMD distance functions. Pass a file path for
 persistence; omit it for an in-memory store.
 
 ``` python
-from litesearch import *
-import numpy as np
-
 db = database()   # ':memory:' by default; use database('my.db') for persistence
 db.q('select sqlite_version() as sqlite_version')
 ```
@@ -292,6 +292,11 @@ indices and return a fastcore `L` list:
 | `doc.pdf_tables(st, end)` | structured rows / cells / bbox dicts |
 | `doc.pdf_spans(st, end)` | text spans with font size, weight, bbox |
 | `doc.pdf_images(st, end, output_dir)` | image metadata, or save to disk |
+| `doc.pdf_chunks(st, end)` | `(page, chunk_idx, text)` triples, markdown-chunked via chonkie |
+
+`images_to_pdf(imgs, output)` goes the other direction — wraps a list of
+images (PIL Images, bytes, or paths) into a conformant multi-page
+image-only PDF with no external dependencies.
 
 ``` python
 doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
@@ -337,7 +342,22 @@ print(f'Page 1 (markdown):\n{md[0][:400]}')
     to reproduce the tables and figures in this paper solely for use in
     journalistic or scholarly works...
 
-### Code Ingestion
+`doc.pdf_chunks()` wraps `pdf_markdown()` + chonkie’s `RecursiveChunker`
+into `(page, chunk_idx, text)` triples — the direct input for
+[`encode_pdf_texts`](https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts):
+
+``` python
+doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
+chunks = doc.pdf_chunks()
+print(f'{len(chunks)} chunks from {doc.page_count()} pages')
+# 31 chunks from 15 pages
+
+# (page, chunk_idx, text) triples — direct input for encode_pdf_texts
+pg, ci, text = chunks[0]
+print(f'page {pg}, chunk {ci}: {text[:80]}...')
+```
+
+### Code & File Ingestion
 
 [`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse)
 splits a Python file or string into top-level code chunks (functions,
@@ -387,6 +407,37 @@ chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
               'name': 't', 'type': 'FunctionDef',
               'lineno': 44, 'end_lineno': 44,
               'package': 'fastlite', 'version': '0.2.4'}}
+```
+
+[`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)
+is the single entry point for any file type — Python, Jupyter notebooks,
+PDF, Markdown, plain text, and compiled-language source files (JS/TS,
+Go, Java, Rust…). All return the same `{content, metadata}` dicts:
+
+``` python
+# Python → AST-parsed functions and classes
+file_parse(Path('litesearch/core.py'))[:2]
+
+# Jupyter notebook → one dict per cell
+file_parse(Path('nbs/01_core.ipynb'))[:2]
+
+# PDF → markdown-chunked text (via pdf_chunks)
+file_parse(Path('pdfs/attention_is_all_you_need.pdf'))[:2]
+```
+
+[`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)
+indexes every file in a directory tree — analogous to
+[`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks)
+but for arbitrary directories rather than installed packages:
+
+``` python
+# Index all Python source files in a directory
+chunks = dir2chunks('litesearch', types='py')
+print(f'{len(chunks)} chunks from litesearch/')
+
+# Mix formats: notebooks, markdown, PDFs
+chunks = dir2chunks('nbs', types='ipynb,md,pdf')
+print(f'{len(chunks)} chunks from nbs/')
 ```
 
 ## `litesearch.utils`
@@ -489,24 +540,6 @@ for r in rrf_merge(txt_r, img_r)[:6]:
         display(Image.open(io.BytesIO(base64.b64decode(meta['data']))).resize((200, 150)))
 ```
 
-    rrf=0.0167  While for small values ofdthe two mechanisms perform similarly, additi
-    rrf=0.0167  page_3
-
-<img src="index_files/figure-commonmark/cell-18-output-2.png"
-width="200" height="150" />
-
-    rrf=0.0164  Figure 4: Two attention heads, also in layer 5 of 6, apparently involv
-    rrf=0.0164  page_2
-
-<img src="index_files/figure-commonmark/cell-18-output-4.png"
-width="200" height="150" />
-
-    rrf=0.0161  Self-attention, sometimes called intra-attention is an attention mecha
-    rrf=0.0161  page_3
-
-<img src="index_files/figure-commonmark/cell-18-output-6.png"
-width="200" height="150" />
-
 **Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same
 768-dim space; use
 [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)
@@ -539,35 +572,35 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-<img src="index_files/figure-commonmark/cell-20-output-2.png"
+<img src="index_files/figure-commonmark/cell-23-output-2.png"
 width="200" height="150" />
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-<img src="index_files/figure-commonmark/cell-20-output-4.png"
+<img src="index_files/figure-commonmark/cell-23-output-4.png"
 width="200" height="150" />
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-<img src="index_files/figure-commonmark/cell-20-output-6.png"
+<img src="index_files/figure-commonmark/cell-23-output-6.png"
 width="200" height="150" />
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-20-output-8.png)
+![](index_files/figure-commonmark/cell-23-output-8.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-20-output-10.png)
+![](index_files/figure-commonmark/cell-23-output-10.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-20-output-12.png)
+![](index_files/figure-commonmark/cell-23-output-12.png)
 
 ## Ideas for More Delight (Planned)
 
