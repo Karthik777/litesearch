@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.19
+regex fix and index rewrite
+
+
+
 ## 0.0.17
 ipynb + chunking
 
