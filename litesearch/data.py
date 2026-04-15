@@ -104,7 +104,7 @@ def pyparse(p:Path=None,    # path to a python file
     except UnicodeDecodeError: return L()
     tree=ast.parse(code)
     [setattr(c,'parent',n) for n in ast.walk(tree) for c in ast.iter_child_nodes(n)]
-    def meta(xtra=None): return dict(path=p,uploaded_at=Path(p).stat().st_mtime if p else None,**ifnone(xtra, {}))
+    def meta(xtra=None): return dict(path=str(p),uploaded_at=Path(p).stat().st_mtime if p else None,**ifnone(xtra, {}))
     def n2c(n):
 	    return dict(content=gs(code, n).strip(), metadata=meta(dict(name=getattr(n,'name',None),lang='.py',
             type=type2str(n.__class__), lineno=getattr(n,'lineno',None), end_lineno=getattr(n,'end_lineno',None))))
@@ -116,13 +116,13 @@ def pyparse(p:Path=None,    # path to a python file
 
 def ipynb_parse(p):
 	'Parse ipynb files'
-	def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
+	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
 	fn = lambda c: dict(content=c['source'], metadata = meta_() | dict(type=c['cell_type']))
 	return L(read_nb(p).cells).map(fn)
 
 def non_py_sigs(p):
 	'Signatures for paths that are not python code files using codesigs'
-	def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
+	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
 	return L(file_sigs(p)).map(lambda o: dict(content=o, metadata=meta_()))
 
 def chunk_texts(text:str):
