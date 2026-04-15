@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.20
+path stored as str
+
+
+
 ## 0.0.19
 regex fix and index rewrite
 
