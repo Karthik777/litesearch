@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.21
+
+types removed, added exts
+
+
 ## 0.0.20
 path stored as str
 
