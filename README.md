@@ -572,20 +572,17 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-<img src="index_files/figure-commonmark/cell-23-output-2.png"
-width="200" height="150" />
+![](index_files/figure-commonmark/cell-23-output-2.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-<img src="index_files/figure-commonmark/cell-23-output-4.png"
-width="200" height="150" />
+![](index_files/figure-commonmark/cell-23-output-4.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-<img src="index_files/figure-commonmark/cell-23-output-6.png"
-width="200" height="150" />
+![](index_files/figure-commonmark/cell-23-output-6.png)
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
