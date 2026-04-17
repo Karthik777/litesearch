@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.37">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, auto-reranked.">
+
+<title>litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-7f8f88aac4f3542376d5c11b86a4c14d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-de52dc3353fe04aa4d07820b7139bd46.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="litesearch">
+<meta property="og:description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, auto-reranked.">
+<meta property="og:image" content="https://Karthik777.github.io/litesearch/index_files/figure-html/cell-23-output-2.png">
+<meta property="og:site_name" content="litesearch">
+<meta property="og:image:height" content="150">
+<meta property="og:image:width" content="200">
+<meta name="twitter:title" content="litesearch">
+<meta name="twitter:description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, auto-reranked.">
+<meta name="twitter:image" content="https://Karthik777.github.io/litesearch/index_files/figure-html/cell-23-output-2.png">
+<meta name="twitter:image-height" content="150">
+<meta name="twitter:image-width" content="200">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">litesearch</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#install" id="toc-install" class="nav-link active" data-scroll-target="#install">Install</a></li>
+  <li><a href="#quick-start" id="toc-quick-start" class="nav-link" data-scroll-target="#quick-start">Quick Start</a></li>
+  <li><a href="#core-api" id="toc-core-api" class="nav-link" data-scroll-target="#core-api">Core API</a>
+  <ul class="collapse">
+  <li><a href="#database-sqlite-simd" id="toc-database-sqlite-simd" class="nav-link" data-scroll-target="#database-sqlite-simd"><code>database()</code> — SQLite + SIMD</a></li>
+  <li><a href="#get_store-fts5-embedding-table" id="toc-get_store-fts5-embedding-table" class="nav-link" data-scroll-target="#get_store-fts5-embedding-table"><code>get_store()</code> — FTS5 + Embedding Table</a></li>
+  <li><a href="#db.search-hybrid-fts-vector-with-rrf" id="toc-db.search-hybrid-fts-vector-with-rrf" class="nav-link" data-scroll-target="#db.search-hybrid-fts-vector-with-rrf"><code>db.search()</code> — Hybrid FTS + Vector with RRF</a></li>
+  </ul></li>
+  <li><a href="#litesearch.data" id="toc-litesearch.data" class="nav-link" data-scroll-target="#litesearch.data"><code>litesearch.data</code></a>
+  <ul class="collapse">
+  <li><a href="#query-preprocessing" id="toc-query-preprocessing" class="nav-link" data-scroll-target="#query-preprocessing">Query Preprocessing</a></li>
+  <li><a href="#pdf-extraction" id="toc-pdf-extraction" class="nav-link" data-scroll-target="#pdf-extraction">PDF Extraction</a></li>
+  <li><a href="#code-file-ingestion" id="toc-code-file-ingestion" class="nav-link" data-scroll-target="#code-file-ingestion">Code &amp; File Ingestion</a></li>
+  </ul></li>
+  <li><a href="#litesearch.utils" id="toc-litesearch.utils" class="nav-link" data-scroll-target="#litesearch.utils"><code>litesearch.utils</code></a>
+  <ul class="collapse">
+  <li><a href="#fastencode-onnx-text-encoder" id="toc-fastencode-onnx-text-encoder" class="nav-link" data-scroll-target="#fastencode-onnx-text-encoder"><code>FastEncode</code> — ONNX Text Encoder</a></li>
+  <li><a href="#fastencodeimage-onnx-image-encoder" id="toc-fastencodeimage-onnx-image-encoder" class="nav-link" data-scroll-target="#fastencodeimage-onnx-image-encoder"><code>FastEncodeImage</code> — ONNX Image Encoder</a></li>
+  <li><a href="#fastencodemultimodal-cross-modal-image-text-search" id="toc-fastencodemultimodal-cross-modal-image-text-search" class="nav-link" data-scroll-target="#fastencodemultimodal-cross-modal-image-text-search"><code>FastEncodeMultimodal</code> — Cross-Modal Image + Text Search</a></li>
+  </ul></li>
+  <li><a href="#ideas-for-more-delight-planned" id="toc-ideas-for-more-delight-planned" class="nav-link" data-scroll-target="#ideas-for-more-delight-planned">Ideas for More Delight (Planned)</a></li>
+  <li><a href="#next-steps" id="toc-next-steps" class="nav-link" data-scroll-target="#next-steps">Next Steps</a></li>
+  <li><a href="#acknowledgements" id="toc-acknowledgements" class="nav-link" data-scroll-target="#acknowledgements">Acknowledgements</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="index.html.md"><i class="bi bi-file-code"></i>CommonMark</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">litesearch</h1>
+</div>
+
+<div>
+  <div class="description">
+    Fast hybrid search — SQLite FTS5 + SIMD vector search, auto-reranked.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<blockquote class="blockquote">
+<p><strong>NB</strong> Reading this on GitHub? The formatted <a href="https://Karthik777.github.io/litesearch/">documentation</a> is nicer.</p>
+</blockquote>
+<p><code>litesearch</code> puts <strong>full-text search + SIMD vector search</strong> in a single SQLite database with automatic <strong>Reciprocal Rank Fusion (RRF)</strong> reranking — no server, no new infra, no heavy dependencies.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Module</th>
+<th>What you get</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>litesearch</code> (core)</td>
+<td><a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> · <code>get_store()</code> · <code>db.search()</code> · <a href="https://Karthik777.github.io/litesearch/core.html#rrf_merge"><code>rrf_merge()</code></a> · <code>vec_search()</code></td>
+</tr>
+<tr class="even">
+<td><code>litesearch.data</code></td>
+<td>PDF extraction &amp; chunking (<code>pdf_chunks</code>) · multi-format file parsing (<a href="https://Karthik777.github.io/litesearch/data.html#file_parse"><code>file_parse</code></a>) · code indexing (<a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a> · <a href="https://Karthik777.github.io/litesearch/data.html#dir2chunks"><code>dir2chunks</code></a>) · <a href="https://Karthik777.github.io/litesearch/data.html#images_to_pdf"><code>images_to_pdf</code></a> · FTS query preprocessing</td>
+</tr>
+<tr class="odd">
+<td><code>litesearch.utils</code></td>
+<td>ONNX encoders: <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> (text) · <a href="https://Karthik777.github.io/litesearch/utils.html#fastencodeimage"><code>FastEncodeImage</code></a> (vision) · <a href="https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal"><code>FastEncodeMultimodal</code></a> (joint text+image)</td>
+</tr>
+</tbody>
+</table>
+<section id="install" class="level2">
+<h2 class="anchored" data-anchor-id="install">Install</h2>
+<div id="install" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># usearch SQLite extensions are configured automatically on first import</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># (macOS needs one extra step — see litesearch.postfix)</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>uv add litesearch</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="quick-start" class="level2">
+<h2 class="anchored" data-anchor-id="quick-start">Quick Start</h2>
+<p>Search your documents in eight lines of code:</p>
+<div id="530b95a3e62ee0d8" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litesearch <span class="im">import</span> <span class="op">*</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> model2vec <span class="im">import</span> StaticModel</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="quickstart-imports" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>enc   <span class="op">=</span> StaticModel.from_pretrained(<span class="st">"minishlab/potion-retrieval-32M"</span>)  <span class="co"># fast static embeddings</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>db    <span class="op">=</span> database()          <span class="co"># SQLite + usearch SIMD extensions loaded</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>store <span class="op">=</span> db.get_store()      <span class="co"># table with FTS5 index + embedding column</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>texts <span class="op">=</span> [<span class="st">"attention is all you need"</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>         <span class="st">"transformers replaced recurrent networks"</span>,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>         <span class="st">"gradient descent minimises the loss"</span>]</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>embs  <span class="op">=</span> enc.encode(texts)   <span class="co"># float32, shape (3, 512)</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>store.insert_all([<span class="bu">dict</span>(content<span class="op">=</span>t, embedding<span class="op">=</span>e.ravel().tobytes()) <span class="cf">for</span> t, e <span class="kw">in</span> <span class="bu">zip</span>(texts, embs)])</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> <span class="st">"self-attention mechanism"</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>db.search(q, enc.encode([q]).ravel().tobytes(), columns<span class="op">=</span>[<span class="st">'id'</span>,<span class="st">'content'</span>], dtype<span class="op">=</span>np.float32, quote<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'rowid': 1,
+  'id': 1,
+  'content': 'attention is all you need',
+  '_dist': 0.7910182476043701,
+  '_rrf_score': 0.016666666666666666},
+ {'rowid': 3,
+  'id': 3,
+  'content': 'gradient descent minimises the loss',
+  '_dist': 0.9670860767364502,
+  '_rrf_score': 0.01639344262295082},
+ {'rowid': 2,
+  'id': 2,
+  'content': 'transformers replaced recurrent networks',
+  '_dist': 1.0227680206298828,
+  '_rrf_score': 0.016129032258064516}]</code></pre>
+</div>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>[{<span class="st">'rowid'</span>: <span class="dv">1</span>, <span class="st">'id'</span>: <span class="dv">1</span>, <span class="st">'content'</span>: <span class="st">'attention is all you need'</span>,</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">'_dist'</span>: <span class="fl">0.134</span>, <span class="st">'_rrf_score'</span>: <span class="fl">0.0328</span>},</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a> {<span class="st">'rowid'</span>: <span class="dv">2</span>, <span class="st">'id'</span>: <span class="dv">2</span>, <span class="st">'content'</span>: <span class="st">'transformers replaced recurrent networks'</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">'_dist'</span>: <span class="fl">0.264</span>, <span class="st">'_rrf_score'</span>: <span class="fl">0.0161</span>},</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a> {<span class="st">'rowid'</span>: <span class="dv">3</span>, <span class="st">'id'</span>: <span class="dv">3</span>, <span class="st">'content'</span>: <span class="st">'gradient descent minimises the loss'</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">'_dist'</span>: <span class="fl">0.482</span>, <span class="st">'_rrf_score'</span>: <span class="fl">0.0161</span>}]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<blockquote class="blockquote">
+<p><code>_rrf_score</code> is the fused rank score (higher = better). <code>_dist</code> is the cosine distance from the vector search leg.</p>
+</blockquote>
+</section>
+<section id="core-api" class="level2">
+<h2 class="anchored" data-anchor-id="core-api">Core API</h2>
+<section id="database-sqlite-simd" class="level3">
+<h3 class="anchored" data-anchor-id="database-sqlite-simd"><a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> — SQLite + SIMD</h3>
+<p><a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> returns a <a href="https://fastlite.answer.ai/">fastlite</a> <code>Database</code> patched with usearch’s SIMD distance functions. Pass a file path for persistence; omit it for an in-memory store.</p>
+<div id="database-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>db <span class="op">=</span> database()   <span class="co"># ':memory:' by default; use database('my.db') for persistence</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>db.q(<span class="st">'select sqlite_version() as sqlite_version'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'sqlite_version': '3.52.0'}]</code></pre>
+</div>
+</div>
+<p>The usearch extension adds SIMD-accelerated distance functions directly into SQL. Four metrics are available: <code>cosine</code>, <code>sqeuclidean</code>, <code>inner</code>, and <code>divergence</code>. All variants support <code>f32</code>, <code>f16</code>, <code>f64</code>, and <code>i8</code> suffixes.</p>
+<div id="distance-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>vecs <span class="op">=</span> <span class="bu">dict</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    v1<span class="op">=</span>np.ones((<span class="dv">100</span>,),  dtype<span class="op">=</span>np.float32).tobytes(),   <span class="co"># ones</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    v2<span class="op">=</span>np.zeros((<span class="dv">100</span>,), dtype<span class="op">=</span>np.float32).tobytes(),   <span class="co"># zeros</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    v3<span class="op">=</span>np.full((<span class="dv">100</span>,), <span class="fl">0.25</span>, dtype<span class="op">=</span>np.float32).tobytes()  <span class="co"># 0.25s (same direction as v1)</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> dist_q(metric):</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> db.q(<span class="ss">f'''</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="ss">        select</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="ss">            distance_</span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_f32(:v1,:v2) as </span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_v1_v2,</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="ss">            distance_</span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_f32(:v1,:v3) as </span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_v1_v3,</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="ss">            distance_</span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_f32(:v2,:v3) as </span><span class="sc">{</span>metric<span class="sc">}</span><span class="ss">_v2_v3</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="ss">    '''</span>, vecs)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> fn <span class="kw">in</span> [<span class="st">'sqeuclidean'</span>, <span class="st">'divergence'</span>, <span class="st">'inner'</span>, <span class="st">'cosine'</span>]: <span class="bu">print</span>(dist_q(fn))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[{'sqeuclidean_v1_v2': 100.0, 'sqeuclidean_v1_v3': 56.25, 'sqeuclidean_v2_v3': 6.25}]
+[{'divergence_v1_v2': 34.657352447509766, 'divergence_v1_v3': 12.046551704406738, 'divergence_v2_v3': 8.66433334350586}]
+[{'inner_v1_v2': 1.0, 'inner_v1_v3': -24.0, 'inner_v2_v3': 1.0}]
+[{'cosine_v1_v2': 1.0, 'cosine_v1_v3': 0.0, 'cosine_v2_v3': 1.0}]</code></pre>
+</div>
+</div>
+<blockquote class="blockquote">
+<p>Cosine distance between v1 (ones) and v3 (0.25s) is <strong>0.0</strong> — they point in the same direction. Both <code>inner</code> and <code>divergence</code> are also available for different retrieval trade-offs.</p>
+</blockquote>
+</section>
+<section id="get_store-fts5-embedding-table" class="level3">
+<h3 class="anchored" data-anchor-id="get_store-fts5-embedding-table"><code>get_store()</code> — FTS5 + Embedding Table</h3>
+<p><code>db.get_store()</code> creates (or opens) a table with a <code>content</code> TEXT column, an <code>embedding</code> BLOB column, a JSON <code>metadata</code> column, and an FTS5 full-text index that stays in sync automatically via triggers.</p>
+<div id="store-schema" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>store <span class="op">=</span> db.get_store()   <span class="co"># idempotent — safe to call multiple times</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>store.schema</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>'CREATE TABLE [store] (\n   [content] TEXT NOT NULL,\n   [embedding] BLOB,\n   [metadata] TEXT,\n   [uploaded_at] FLOAT DEFAULT CURRENT_TIMESTAMP,\n   [id] INTEGER PRIMARY KEY\n)'</code></pre>
+</div>
+</div>
+<p>Pass <code>hash=True</code> to use a <strong>content-addressed id</strong> (SHA-1 of the content). Useful for code search and deduplication — re-inserting the same content is a no-op:</p>
+<div id="store-hash" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>code_store <span class="op">=</span> db.get_store(name<span class="op">=</span><span class="st">'code'</span>, <span class="bu">hash</span><span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>code_store.insert_all([</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">dict</span>(content<span class="op">=</span><span class="st">'hello world'</span>, embedding<span class="op">=</span>np.ones( (<span class="dv">100</span>,), dtype<span class="op">=</span>np.float16).tobytes()),</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">dict</span>(content<span class="op">=</span><span class="st">'hi there'</span>, embedding<span class="op">=</span>np.full( (<span class="dv">100</span>,), <span class="fl">0.5</span>, dtype<span class="op">=</span>np.float16).tobytes()),</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">dict</span>(content<span class="op">=</span><span class="st">'goodbye now'</span>, embedding<span class="op">=</span>np.zeros((<span class="dv">100</span>,), dtype<span class="op">=</span>np.float16).tobytes()),</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>], upsert<span class="op">=</span><span class="va">True</span>, hash_id<span class="op">=</span><span class="st">'id'</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>code_store(select<span class="op">=</span><span class="st">'id,content'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'id': '250ce2bffa97ab21fa9ab2922d19993454a0cf28', 'content': 'hello world'},
+ {'id': 'c89f43361891bfab9290bcebf182fa5978f89700', 'content': 'hi there'},
+ {'id': '882293d5e5c3d3e04e8e0c4f7c01efba904d0932', 'content': 'goodbye now'}]</code></pre>
+</div>
+</div>
+</section>
+<section id="db.search-hybrid-fts-vector-with-rrf" class="level3">
+<h3 class="anchored" data-anchor-id="db.search-hybrid-fts-vector-with-rrf"><code>db.search()</code> — Hybrid FTS + Vector with RRF</h3>
+<p><code>db.search()</code> runs <strong>both</strong> an FTS5 keyword query and a vector similarity search, then merges the ranked lists with Reciprocal Rank Fusion. Documents that appear in <em>both</em> lists get a score boost — the best of both worlds.</p>
+<div id="search-insert" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Re-create a clean store for the search demo</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>db2  <span class="op">=</span> database()</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>st2  <span class="op">=</span> db2.get_store()</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>phrases <span class="op">=</span> [</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"attention mechanisms in neural networks"</span>,</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">"transformer architecture for sequence modelling"</span>,</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">"stochastic gradient descent and learning rate schedules"</span>,</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">"positional encoding and token embeddings"</span>,</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">"dropout regularisation reduces overfitting"</span>,</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="co"># use float32 vectors (matching dtype= below)</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>vecs2 <span class="op">=</span> [np.random.default_rng(i).random(<span class="dv">64</span>, dtype<span class="op">=</span>np.float32) <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(phrases))]</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>st2.insert_all([<span class="bu">dict</span>(content<span class="op">=</span>p, embedding<span class="op">=</span>v.tobytes()) <span class="cf">for</span> p, v <span class="kw">in</span> <span class="bu">zip</span>(phrases, vecs2)])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>&lt;Table store (content, embedding, metadata, uploaded_at, id)&gt;</code></pre>
+</div>
+</div>
+<div id="search-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>q2 <span class="op">=</span> <span class="st">"attention"</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>q_vec <span class="op">=</span> np.random.default_rng(<span class="dv">42</span>).random(<span class="dv">64</span>, dtype<span class="op">=</span>np.float32).tobytes()</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>db2.search(q2, q_vec, columns<span class="op">=</span>[<span class="st">'id'</span>,<span class="st">'content'</span>], dtype<span class="op">=</span>np.float32)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'rowid': 1,
+  'id': 1,
+  'content': 'attention mechanisms in neural networks',
+  'rank': -1.116174474454989,
+  '_rrf_score': 0.032539682539682535},
+ {'rowid': 3,
+  'id': 3,
+  'content': 'stochastic gradient descent and learning rate schedules',
+  '_dist': 0.20330411195755005,
+  '_rrf_score': 0.016666666666666666},
+ {'rowid': 2,
+  'id': 2,
+  'content': 'transformer architecture for sequence modelling',
+  '_dist': 0.23124444484710693,
+  '_rrf_score': 0.01639344262295082},
+ {'rowid': 5,
+  'id': 5,
+  'content': 'dropout regularisation reduces overfitting',
+  '_dist': 0.23238885402679443,
+  '_rrf_score': 0.016129032258064516},
+ {'rowid': 4,
+  'id': 4,
+  'content': 'positional encoding and token embeddings',
+  '_dist': 0.32342469692230225,
+  '_rrf_score': 0.015625}]</code></pre>
+</div>
+</div>
+<p>Pass <code>rrf=False</code> to see the raw FTS and vector legs separately — handy for debugging relevance:</p>
+<div id="rrf-false" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>db2.search(q2, q_vec, columns<span class="op">=</span>[<span class="st">'id'</span>,<span class="st">'content'</span>], dtype<span class="op">=</span>np.float32, rrf<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{'fts': [{'id': 1,
+   'content': 'attention mechanisms in neural networks',
+   'rank': -1.116174474454989}],
+ 'vec': [{'id': 3,
+   'content': 'stochastic gradient descent and learning rate schedules',
+   '_dist': 0.20330411195755005},
+  {'id': 2,
+   'content': 'transformer architecture for sequence modelling',
+   '_dist': 0.23124444484710693},
+  {'id': 5,
+   'content': 'dropout regularisation reduces overfitting',
+   '_dist': 0.23238885402679443},
+  {'id': 1,
+   'content': 'attention mechanisms in neural networks',
+   '_dist': 0.24136507511138916},
+  {'id': 4,
+   'content': 'positional encoding and token embeddings',
+   '_dist': 0.32342469692230225}]}</code></pre>
+</div>
+</div>
+<blockquote class="blockquote">
+<p><strong>Tip — dtype matters.</strong> Always pass the same <code>dtype</code> used when encoding. <code>model2vec</code> and most ONNX models return <code>float32</code>; pass <code>dtype=np.float32</code>. The default is <code>float16</code> (matches <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>).</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>Tip — custom schemas.</strong> <code>get_store()</code> is a convenience. For custom schemas, call <code>db.t['my_table'].vec_search(emb, ...)</code> and <code>rrf_merge(fts_results, vec_results)</code> directly.</p>
+</blockquote>
+</section>
+</section>
+<section id="litesearch.data" class="level2">
+<h2 class="anchored" data-anchor-id="litesearch.data"><code>litesearch.data</code></h2>
+<section id="query-preprocessing" class="level3">
+<h3 class="anchored" data-anchor-id="query-preprocessing">Query Preprocessing</h3>
+<p>FTS5 is powerful, but raw natural-language queries often miss results. <code>litesearch.data</code> ships helpers to transform queries before sending them to FTS:</p>
+<div id="query-prep-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> <span class="st">'This is a sample query'</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'preprocessed q with defaults: `</span><span class="sc">%s</span><span class="st">`'</span> <span class="op">%</span> pre(q))</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'keywords extracted: `</span><span class="sc">%s</span><span class="st">`'</span>          <span class="op">%</span> pre(q, wc<span class="op">=</span><span class="va">False</span>, wide<span class="op">=</span><span class="va">False</span>))</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'q with wild card: `</span><span class="sc">%s</span><span class="st">`'</span>            <span class="op">%</span> pre(q, extract_kw<span class="op">=</span><span class="va">False</span>, wide<span class="op">=</span><span class="va">False</span>, wc<span class="op">=</span><span class="va">True</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>preprocessed q with defaults: `sample* OR query*`
+keywords extracted: `sample query`
+q with wild card: `This* is* a* sample* query*`</code></pre>
+</div>
+</div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Function</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>clean(q)</code></td>
+<td>strips <code>*</code> and returns <code>None</code> for empty queries</td>
+</tr>
+<tr class="even">
+<td><code>add_wc(q)</code></td>
+<td>appends <code>*</code> to each word for prefix matching</td>
+</tr>
+<tr class="odd">
+<td><code>mk_wider(q)</code></td>
+<td>joins words with <code>OR</code> for broader matching</td>
+</tr>
+<tr class="even">
+<td><code>kw(q)</code></td>
+<td>extracts keywords via YAKE (removes stop-words)</td>
+</tr>
+<tr class="odd">
+<td><code>pre(q)</code></td>
+<td>applies all of the above in one call</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="pdf-extraction" class="level3">
+<h3 class="anchored" data-anchor-id="pdf-extraction">PDF Extraction</h3>
+<p><code>litesearch.data</code> patches <code>pdf_oxide.PdfDocument</code> with bulk page-extraction methods. All methods take optional <code>st</code> / <code>end</code> page indices and return a fastcore <code>L</code> list:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>doc.pdf_texts(st, end)</code></td>
+<td>plain text per page</td>
+</tr>
+<tr class="even">
+<td><code>doc.pdf_markdown(st, end)</code></td>
+<td>markdown with headings + tables detected</td>
+</tr>
+<tr class="odd">
+<td><code>doc.pdf_links(st, end)</code></td>
+<td>URI strings extracted from annotations</td>
+</tr>
+<tr class="even">
+<td><code>doc.pdf_tables(st, end)</code></td>
+<td>structured rows / cells / bbox dicts</td>
+</tr>
+<tr class="odd">
+<td><code>doc.pdf_spans(st, end)</code></td>
+<td>text spans with font size, weight, bbox</td>
+</tr>
+<tr class="even">
+<td><code>doc.pdf_images(st, end, output_dir)</code></td>
+<td>image metadata, or save to disk</td>
+</tr>
+<tr class="odd">
+<td><code>doc.pdf_chunks(st, end)</code></td>
+<td><code>(page, chunk_idx, text)</code> triples, markdown-chunked via chonkie</td>
+</tr>
+</tbody>
+</table>
+<p><code>images_to_pdf(imgs, output)</code> goes the other direction — wraps a list of images (PIL Images, bytes, or paths) into a conformant multi-page image-only PDF with no external dependencies.</p>
+<div id="pdf-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>doc <span class="op">=</span> PdfDocument(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span>doc<span class="sc">.</span>page_count()<span class="sc">}</span><span class="ss"> pages, </span><span class="sc">{</span><span class="bu">len</span>(doc.pdf_links())<span class="sc">}</span><span class="ss"> links'</span>)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="co"># plain text of page 1</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>doc.pdf_texts(<span class="dv">0</span>, <span class="dv">1</span>)[<span class="dv">0</span>][:<span class="dv">300</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>15 pages, 18 links</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>'Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or\nscholarly works.\n\n\nAttention Is All You Need\n\n\n∗\n∗\n∗\n∗\nAshish Vaswani Noam Shazeer Niki Parmar Jakob Uszkoreit\nGoogle Brain Google Brain Google'</code></pre>
+</div>
+</div>
+<pre><code>15 pages, 44 links</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co">'Abstract</span><span class="ch">\n</span><span class="co">The dominant sequence transduction models are based on complex recurrent...'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="pdf-markdown-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="co"># markdown export — headings and tables are detected automatically</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>md <span class="op">=</span> doc.pdf_markdown()</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Page 1 (markdown):</span><span class="ch">\n</span><span class="sc">{</span>md[<span class="dv">0</span>][:<span class="dv">400</span>]<span class="sc">}</span><span class="ss">'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Page 1 (markdown):
+# arXiv:1706.03762v7  [cs.CL]  2 Aug 2023
+
+Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.
+
+## Attention Is
+
+## All
+
+## You Need
+
+∗∗**Ashish Vaswani****Noam Shazeer****Niki Parmar** Google BrainGoogle BrainGoogle Research [avaswani@google.com](mailto:avaswani@google.com)[no</code></pre>
+</div>
+</div>
+<pre><code>Page 1 (markdown):
+# arXiv:1706.03762v7  [cs.CL]  2 Aug 2023
+
+Provided proper attribution is provided, Google hereby grants permission
+to reproduce the tables and figures in this paper solely for use in
+journalistic or scholarly works...</code></pre>
+<p><code>doc.pdf_chunks()</code> wraps <code>pdf_markdown()</code> + chonkie’s <code>RecursiveChunker</code> into <code>(page, chunk_idx, text)</code> triples — the direct input for <a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts"><code>encode_pdf_texts</code></a>:</p>
+<div id="b4df3eb2" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>doc <span class="op">=</span> PdfDocument(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>)</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>chunks <span class="op">=</span> doc.pdf_chunks()</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span><span class="bu">len</span>(chunks)<span class="sc">}</span><span class="ss"> chunks from </span><span class="sc">{</span>doc<span class="sc">.</span>page_count()<span class="sc">}</span><span class="ss"> pages'</span>)</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 31 chunks from 15 pages</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="co"># (page, chunk_idx, text) triples — direct input for encode_pdf_texts</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>pg, ci, text <span class="op">=</span> chunks[<span class="dv">0</span>]</span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'page </span><span class="sc">{</span>pg<span class="sc">}</span><span class="ss">, chunk </span><span class="sc">{</span>ci<span class="sc">}</span><span class="ss">: </span><span class="sc">{</span>text[:<span class="dv">80</span>]<span class="sc">}</span><span class="ss">...'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="code-file-ingestion" class="level3">
+<h3 class="anchored" data-anchor-id="code-file-ingestion">Code &amp; File Ingestion</h3>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a> splits a Python file or string into top-level code chunks (functions, classes, assignments) with source location metadata — ready to insert into a store:</p>
+<div id="pyparse-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>txt <span class="op">=</span> <span class="st">"""</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="st">from fastcore.all import *</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a><span class="st">a=1</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="st">class SomeClass:</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="st">    def __init__(self,x): store_attr()</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="st">    def method(self): return self.x + a</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>pyparse(code<span class="op">=</span>txt)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'content': 'a=1', 'metadata': {'path': None, 'uploaded_at': None, 'name': None, 'type': 'Assign', 'lineno': 3, 'end_lineno': 3}}, {'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': None, 'uploaded_at': None, 'name': 'SomeClass', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]</code></pre>
+</div>
+</div>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a> indexes an <strong>entire installed package</strong> in one call — great for building a semantic code-search store over your dependencies:</p>
+<div id="pkg2chunks-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>chunks <span class="op">=</span> pkg2chunks(<span class="st">'fastlite'</span>)</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span><span class="bu">len</span>(chunks)<span class="sc">}</span><span class="ss"> chunks from fastlite'</span>)</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>chunks.<span class="bu">filter</span>(<span class="kw">lambda</span> d: d[<span class="st">'metadata'</span>][<span class="st">'type'</span>] <span class="op">==</span> <span class="st">'FunctionDef'</span>)[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>51 chunks from fastlite</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>{'content': 'def t(self:Database): return _TablesGetter(self)',
+ 'metadata': {'path': '/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py',
+  'uploaded_at': 1771806134.9519145,
+  'name': 't',
+  'type': 'FunctionDef',
+  'lineno': 44,
+  'end_lineno': 44,
+  'package': 'fastlite',
+  'version': '0.2.4'}}</code></pre>
+</div>
+</div>
+<pre><code>47 chunks from fastlite</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>{<span class="st">'content'</span>: <span class="st">'def t(self:Database): return _TablesGetter(self)'</span>,</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a> <span class="st">'metadata'</span>: {<span class="st">'path'</span>: <span class="st">'.../fastlite/core.py'</span>,</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>              <span class="st">'name'</span>: <span class="st">'t'</span>, <span class="st">'type'</span>: <span class="st">'FunctionDef'</span>,</span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>              <span class="st">'lineno'</span>: <span class="dv">44</span>, <span class="st">'end_lineno'</span>: <span class="dv">44</span>,</span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>              <span class="st">'package'</span>: <span class="st">'fastlite'</span>, <span class="st">'version'</span>: <span class="st">'0.2.4'</span>}}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#file_parse"><code>file_parse</code></a> is the single entry point for any file type — Python, Jupyter notebooks, PDF, Markdown, plain text, and compiled-language source files (JS/TS, Go, Java, Rust…). All return the same <code>{content, metadata}</code> dicts:</p>
+<div id="df53a8c9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Python → AST-parsed functions and classes</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>file_parse(Path(<span class="st">'litesearch/core.py'</span>))[:<span class="dv">2</span>]</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Jupyter notebook → one dict per cell</span></span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>file_parse(Path(<span class="st">'nbs/01_core.ipynb'</span>))[:<span class="dv">2</span>]</span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a><span class="co"># PDF → markdown-chunked text (via pdf_chunks)</span></span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>file_parse(Path(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>))[:<span class="dv">2</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#dir2chunks"><code>dir2chunks</code></a> indexes every file in a directory tree — analogous to <a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a> but for arbitrary directories rather than installed packages:</p>
+<div id="85e867fc" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Index all Python source files in a directory</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>chunks <span class="op">=</span> dir2chunks(<span class="st">'litesearch'</span>, types<span class="op">=</span><span class="st">'py'</span>)</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span><span class="bu">len</span>(chunks)<span class="sc">}</span><span class="ss"> chunks from litesearch/'</span>)</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Mix formats: notebooks, markdown, PDFs</span></span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a>chunks <span class="op">=</span> dir2chunks(<span class="st">'nbs'</span>, types<span class="op">=</span><span class="st">'ipynb,md,pdf'</span>)</span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span><span class="bu">len</span>(chunks)<span class="sc">}</span><span class="ss"> chunks from nbs/'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="litesearch.utils" class="level2">
+<h2 class="anchored" data-anchor-id="litesearch.utils"><code>litesearch.utils</code></h2>
+<section id="fastencode-onnx-text-encoder" class="level3">
+<h3 class="anchored" data-anchor-id="fastencode-onnx-text-encoder"><a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> — ONNX Text Encoder</h3>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> wraps any ONNX model from HuggingFace Hub. It handles tokenisation, batching, optional parallel thread-pool execution, and runtime int8 quantization — all without PyTorch or Transformers.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Config</th>
+<th>Model</th>
+<th>Dim</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>embedding_gemma</code> (default)</td>
+<td><code>onnx-community/embeddinggemma-300m-ONNX</code></td>
+<td>768</td>
+<td>Strong retrieval, ~300M params</td>
+</tr>
+<tr class="even">
+<td><code>modernbert</code></td>
+<td><code>nomic-ai/modernbert-embed-base</code></td>
+<td>768</td>
+<td>BERT-style, fast</td>
+</tr>
+<tr class="odd">
+<td><code>nomic_text_v15</code></td>
+<td><code>nomic-ai/nomic-embed-text-v1.5</code></td>
+<td>768</td>
+<td>Shares embedding space with <code>nomic_vision_v15</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>encode_document</code> and <code>encode_query</code> apply the model’s prompt templates automatically.</p>
+<div id="fastencode-demo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>texts <span class="op">=</span> [</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">'Attention is all you need'</span>,</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">'The transformer architecture uses self-attention'</span>,</span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">'BERT pretrains on masked language modeling'</span>,</span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">'GPT uses autoregressive generation'</span>,</span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Default model — downloads once, cached</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a>enc      <span class="op">=</span> FastEncode()</span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a>doc_embs <span class="op">=</span> enc.encode_document(texts)</span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a>q_emb    <span class="op">=</span> enc.encode_query([<span class="st">'what paper introduced transformers?'</span>])</span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'doc shape:'</span>, doc_embs.shape, <span class="st">'dtype:'</span>, doc_embs.dtype)  <span class="co"># (4, 768) float16</span></span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Batching + parallel thread-pool</span></span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a>enc_fast <span class="op">=</span> FastEncode(batch_size<span class="op">=</span><span class="dv">2</span>, parallel<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>embs     <span class="op">=</span> enc_fast.encode_document(texts)</span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Runtime int8 quantization — creates model_int8.onnx on first run, reused after</span></span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a>enc_q <span class="op">=</span> FastEncode(quantize<span class="op">=</span><span class="st">'int8'</span>)</span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a>embs  <span class="op">=</span> enc_q.encode_document(texts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>doc shape: (4, 768) dtype: float16
+Encoding setup errored out with exception: No module named 'onnx'
+ONNX session not initialized. Fix error during initialisation</code></pre>
+</div>
+</div>
+<pre><code>doc shape: (2, 768) dtype: float16</code></pre>
+</section>
+<section id="fastencodeimage-onnx-image-encoder" class="level3">
+<h3 class="anchored" data-anchor-id="fastencodeimage-onnx-image-encoder"><a href="https://Karthik777.github.io/litesearch/utils.html#fastencodeimage"><code>FastEncodeImage</code></a> — ONNX Image Encoder</h3>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#fastencodeimage"><code>FastEncodeImage</code></a> encodes images with CLIP-style ONNX vision models. No Transformers dependency — preprocessing (resize → normalise → CHW) is done with PIL + NumPy using config stored in the model dict.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Config</th>
+<th>Model</th>
+<th>Dim</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>nomic_vision_v15</code> (default)</td>
+<td><code>nomic-ai/nomic-embed-vision-v1.5</code></td>
+<td>768</td>
+<td>Same space as <code>nomic_text_v15</code></td>
+</tr>
+<tr class="even">
+<td><code>clip_vit_b32</code></td>
+<td><code>Qdrant/clip-ViT-B-32-vision</code></td>
+<td>512</td>
+<td>Classic CLIP</td>
+</tr>
+</tbody>
+</table>
+<p>Accepts PIL Images, file paths, or raw bytes — any mix.</p>
+</section>
+<section id="fastencodemultimodal-cross-modal-image-text-search" class="level3">
+<h3 class="anchored" data-anchor-id="fastencodemultimodal-cross-modal-image-text-search"><a href="https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal"><code>FastEncodeMultimodal</code></a> — Cross-Modal Image + Text Search</h3>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal"><code>FastEncodeMultimodal</code></a> wraps a model repo that ships both text and vision ONNX encoders in a single shared embedding space — a text query can retrieve images directly. Below: index <em>Attention Is All You Need</em> (text chunks + figures) then search for <code>'attention mechanism diagram'</code>.</p>
+<p><strong>Unified model</strong> — <code>siglip2_so400m</code> (~800 MB, one download):</p>
+<div id="fd98ec060ab23052" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json, base64, io</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> IPython.display <span class="im">import</span> display</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="multimodal-siglip2" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>enc <span class="op">=</span> FastEncodeMultimodal(siglip2_so400m)   <span class="co"># single unified model, ~800 MB, cached on first run</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>doc <span class="op">=</span> PdfDocument(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>)</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>db  <span class="op">=</span> database()</span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>ts, ims <span class="op">=</span> db.get_store(<span class="st">'texts'</span>), db.get_store(<span class="st">'images'</span>)</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> pg, ci, chunk, emb <span class="kw">in</span> encode_pdf_texts(doc, enc.text):</span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>    ts.insert(<span class="bu">dict</span>(content<span class="op">=</span>chunk, embedding<span class="op">=</span>emb.tobytes(), metadata<span class="op">=</span>json.dumps({<span class="st">'page'</span>: pg})))</span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> pg, img_bytes, emb <span class="kw">in</span> encode_pdf_images(doc, enc.vision):</span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>    ims.insert(<span class="bu">dict</span>(content<span class="op">=</span><span class="ss">f'page_</span><span class="sc">{</span>pg<span class="sc">}</span><span class="ss">'</span>, embedding<span class="op">=</span>emb.tobytes(),</span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>                    metadata<span class="op">=</span>json.dumps({<span class="st">'page'</span>: pg, <span class="st">'data'</span>: base64.b64encode(img_bytes).decode()})))</span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> <span class="st">'attention mechanism diagram'</span></span>
+<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>q_emb <span class="op">=</span> enc.text.encode([q])[<span class="dv">0</span>].tobytes()</span>
+<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a>txt_r <span class="op">=</span> ts.db.search(pre(q), q_emb, table_name<span class="op">=</span><span class="st">'texts'</span>, columns<span class="op">=</span>[<span class="st">'content'</span>]) <span class="kw">or</span> []</span>
+<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a>img_r <span class="op">=</span> ims.vec_search(q_emb)</span>
+<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> r <span class="kw">in</span> rrf_merge(txt_r, img_r)[:<span class="dv">6</span>]:</span>
+<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"rrf=</span><span class="sc">{</span>r[<span class="st">'_rrf_score'</span>]<span class="sc">:.4f}</span><span class="ss">  </span><span class="sc">{</span>r[<span class="st">'content'</span>][:<span class="dv">70</span>]<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb45-18"><a href="#cb45-18" aria-hidden="true" tabindex="-1"></a>    meta <span class="op">=</span> json.loads(r.get(<span class="st">'metadata'</span>, <span class="st">'</span><span class="sc">{}</span><span class="st">'</span>))</span>
+<span id="cb45-19"><a href="#cb45-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="st">'data'</span> <span class="kw">in</span> meta:</span>
+<span id="cb45-20"><a href="#cb45-20" aria-hidden="true" tabindex="-1"></a>        display(Image.<span class="bu">open</span>(io.BytesIO(base64.b64decode(meta[<span class="st">'data'</span>]))).resize((<span class="dv">200</span>, <span class="dv">150</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><strong>Paired models</strong> — <code>nomic_text_v15</code> + <code>nomic_vision_v15</code> share the same 768-dim space; use <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> and <a href="https://Karthik777.github.io/litesearch/utils.html#fastencodeimage"><code>FastEncodeImage</code></a> separately:</p>
+<div id="multimodal-nomic" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>enc_text <span class="op">=</span> FastEncode(nomic_text_v15)</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>enc_img  <span class="op">=</span> FastEncodeImage(nomic_vision_v15)</span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>db2  <span class="op">=</span> database()</span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>ts2, ims2 <span class="op">=</span> db2.get_store(<span class="st">'texts'</span>), db2.get_store(<span class="st">'images'</span>)</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> pg, ci, chunk, emb <span class="kw">in</span> encode_pdf_texts(doc, enc_text):</span>
+<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a>    ts2.insert(<span class="bu">dict</span>(content<span class="op">=</span>chunk, embedding<span class="op">=</span>emb.tobytes(), metadata<span class="op">=</span>json.dumps({<span class="st">'page'</span>: pg})))</span>
+<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> pg, img_bytes, emb <span class="kw">in</span> encode_pdf_images(doc, enc_img):</span>
+<span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>    ims2.insert(<span class="bu">dict</span>(content<span class="op">=</span><span class="ss">f'page_</span><span class="sc">{</span>pg<span class="sc">}</span><span class="ss">'</span>, embedding<span class="op">=</span>emb.tobytes(),</span>
+<span id="cb46-10"><a href="#cb46-10" aria-hidden="true" tabindex="-1"></a>                     metadata<span class="op">=</span>json.dumps({<span class="st">'page'</span>: pg, <span class="st">'data'</span>: base64.b64encode(img_bytes).decode()})))</span>
+<span id="cb46-11"><a href="#cb46-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-12"><a href="#cb46-12" aria-hidden="true" tabindex="-1"></a>q_emb2 <span class="op">=</span> enc_text.encode([q])[<span class="dv">0</span>].tobytes()</span>
+<span id="cb46-13"><a href="#cb46-13" aria-hidden="true" tabindex="-1"></a>txt_r2 <span class="op">=</span> ts2.db.search(pre(q), q_emb2, table_name<span class="op">=</span><span class="st">'texts'</span>, columns<span class="op">=</span>[<span class="st">'content'</span>]) <span class="kw">or</span> []</span>
+<span id="cb46-14"><a href="#cb46-14" aria-hidden="true" tabindex="-1"></a>img_r2 <span class="op">=</span> ims2.vec_search(q_emb2)</span>
+<span id="cb46-15"><a href="#cb46-15" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> r <span class="kw">in</span> rrf_merge(txt_r2, img_r2)[:<span class="dv">6</span>]:</span>
+<span id="cb46-16"><a href="#cb46-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"rrf=</span><span class="sc">{</span>r[<span class="st">'_rrf_score'</span>]<span class="sc">:.4f}</span><span class="ss">  </span><span class="sc">{</span>r[<span class="st">'content'</span>][:<span class="dv">70</span>]<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb46-17"><a href="#cb46-17" aria-hidden="true" tabindex="-1"></a>    meta <span class="op">=</span> json.loads(r.get(<span class="st">'metadata'</span>, <span class="st">'</span><span class="sc">{}</span><span class="st">'</span>))</span>
+<span id="cb46-18"><a href="#cb46-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="st">'data'</span> <span class="kw">in</span> meta:</span>
+<span id="cb46-19"><a href="#cb46-19" aria-hidden="true" tabindex="-1"></a>        display(Image.<span class="bu">open</span>(io.BytesIO(base64.b64decode(meta[<span class="st">'data'</span>]))).resize((<span class="dv">200</span>, <span class="dv">150</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
+rrf=0.0167  page_3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-2.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
+rrf=0.0164  page_2</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-4.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
+rrf=0.0161  page_3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-6.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
+rrf=0.0167  page_3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-8.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
+rrf=0.0164  page_2</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-10.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
+rrf=0.0161  page_3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-23-output-12.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="ideas-for-more-delight-planned" class="level2">
+<h2 class="anchored" data-anchor-id="ideas-for-more-delight-planned">Ideas for More Delight (Planned)</h2>
+<p>Things that would make litesearch even smoother to use:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Idea</th>
+<th>Why it helps</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong><code>Retriever</code> class</strong> — bundles encoder + db into <code>r.search(q)</code></td>
+<td>removes the manual encode → bytes → search boilerplate</td>
+</tr>
+<tr class="even">
+<td><strong><code>ingest(texts, encoder, store)</code> helper</strong></td>
+<td>one-liner for embed-and-insert loops</td>
+</tr>
+<tr class="odd">
+<td><strong>Auto dtype detection</strong></td>
+<td><code>search()</code> could infer dtype from stored embedding size, removing the <code>dtype=np.float32</code> footgun</td>
+</tr>
+<tr class="even">
+<td><strong><code>from_pdf(path, encoder)</code> / <code>from_dir(dir, encoder)</code></strong></td>
+<td>index a PDF or folder in one call</td>
+</tr>
+<tr class="odd">
+<td><strong>Rich / tabulate display for results</strong></td>
+<td>pretty-print search results in notebooks</td>
+</tr>
+<tr class="even">
+<td><strong>Metadata filter sugar</strong> — <code>filters={'source': 'doc.pdf'}</code></td>
+<td>cleaner than writing raw SQL <code>where</code> strings</td>
+</tr>
+<tr class="odd">
+<td><strong>CLI</strong> — <code>litesearch index &lt;dir&gt;</code> / <code>litesearch search &lt;q&gt;</code></td>
+<td>quick ad-hoc search without writing Python</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="next-steps" class="level2">
+<h2 class="anchored" data-anchor-id="next-steps">Next Steps</h2>
+<ul>
+<li><strong><a href="examples/01_simple_rag.ipynb">examples/01_simple_rag.ipynb</a></strong> — ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank</li>
+<li><strong><a href="examples/02_tool_use.ipynb">examples/02_tool_use.ipynb</a></strong> — wire litesearch into an LLM tool-use loop</li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/core.html">core docs</a></strong> — full API reference for <a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database</code></a>, <code>get_store</code>, <code>search</code>, <a href="https://Karthik777.github.io/litesearch/core.html#rrf_merge"><code>rrf_merge</code></a>, <code>vec_search</code></li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/data.html">data docs</a></strong> — PDF methods, <a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a>, <a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a>, query preprocessing</li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/utils.html">utils docs</a></strong> — <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>, <a href="https://Karthik777.github.io/litesearch/utils.html#download_model"><code>download_model</code></a>, image tools</li>
+</ul>
+</section>
+<section id="acknowledgements" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgements">Acknowledgements</h2>
+<p>A big thank you to <a href="https://github.com/yfedoseev"><span class="citation" data-cites="yfedoseev">@yfedoseev</span></a> for <a href="https://github.com/yfedoseev/pdf-oxide">pdf-oxide</a>, which powers the PDF extraction functionality in <code>litesearch.data</code>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
