@@ -212,7 +212,8 @@ def installed_packages(nms:list=None,    # list of package names
 def clean(q:str  # query to be passed for fts search
           ):
     '''Clean the query by removing * and returning None for empty queries.'''
-    return q.replace('*', '') if q.strip() else None
+    import re
+    return re.sub(r'[*,"\(\)\^]|-(?=\S)', ' ', q).strip() or None if q.strip() else None
 
 def add_wc(q:str  # query to be passed for fts search
            ):
