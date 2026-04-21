@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.23
+spec fix
+
+
+
 ## 0.0.22
 fix: fts query clean fix to remove fts5 specific kw from q
 
