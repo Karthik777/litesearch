@@ -90,7 +90,13 @@ def repo_root() -> Path:
 
 def spec(pkg:str) -> ModuleSpec | None:
 	'Return the importlib ModuleSpec for a package, or None if not found.'
-	try: return fs(pkg) or fs(pkg.replace('-', '_')) or fs(dist(pkg).read_text('top_level.txt').splitlines()[0])
+	try:
+		if s := fs(pkg) or fs(pkg.replace('-', '_')): return s
+		if not (d:= dist(pkg)): return None
+		if tl:=d.read_text('top_level.txt'): return s if (s:=fs(tl.splitlines()[0])) else None
+		chk = lambda f: len(f.parts) >= 2 and f.name=='__init__.py' and not f.parts[0].endswith('.dist-info')
+		if p:= L(d.files).filter(chk).map(lambda f: f.parts[0]): return fs(first(p))
+		return None
 	except ModuleNotFoundError: return None
 
 def pyparse(p:Path=None,    # path to a python file
