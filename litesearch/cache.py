@@ -4,7 +4,7 @@
 __all__ = ['Cache', 'SemanticCache', 'FanoutCache']
 
 # %% ../nbs/04_cache.ipynb #6d92eeb150e34490
-import time, pickle, json, base64, threading, functools, math, random
+import time, pickle, threading, functools, math, random
 import numpy as np
 from pathlib import Path
 from fastcore.all import store_attr, AttrDict, L, ifnone
@@ -206,55 +206,65 @@ class SemanticCache:
     'Semantic key-value cache: paraphrase-tolerant lookups via FTS5 + vector RRF.'
     def __init__(self,
                  directory='~/.litesearch/semantic_cache',  # path for the SQLite DB (or :memory:)
-                 encoder=None,    # FastEncode | model2vec StaticModel | any .encode()/.embed() | None → lazy model2vec
-                 model=None,      # model ID string (used only when encoder=None)
+                 emb_doc=None,    # callable (text) -> ndarray, encodes stored keys
+                 emb_query=None,  # callable (text) -> ndarray, encodes lookup queries (defaults to emb_doc)
+                 model=None,      # model ID string (used only when emb_doc=None)
                  ttl=None,        # default TTL in seconds
                  threshold=0.022, # min RRF score to accept a hit (0.030=exact, 0.022=para, 0.016=broad)
                  table='semantic_cache',
                  size_limit=2**30,
     ):
         store_attr()
-        self._enc = None
+        self._mdl = None
         db_path = str(Path(directory).expanduser()) if directory != ':memory:' else ':memory:'
         self.db = database(db_path)
-        self.store = self.db.get_store(name=table)
+        self.store = self.db.get_store(name=table, raw=bytes, expire=float, tag=str)
         self.db.execute(f'CREATE INDEX IF NOT EXISTS _idx_{table}_ts ON "{table}"(uploaded_at)')
 
-    @property
-    def enc(self):
-        if self._enc: return self._enc
-        if self.encoder: self._enc = self.encoder; return self._enc
-        from model2vec import StaticModel
-        self._enc = StaticModel.from_pretrained(ifnone(self.model, _DEFAULT_MODEL))
-        return self._enc
+    def _lazy_model(self):
+        if not self._mdl:
+            from model2vec import StaticModel
+            self._mdl = StaticModel.from_pretrained(ifnone(self.model, _DEFAULT_MODEL))
+        return self._mdl
 
-    def _emb(self, key) -> bytes:
-        enc = self.enc
-        if   hasattr(enc, 'encode_query'): arr = enc.encode_query([key])[0]
-        elif hasattr(enc, 'encode'):       arr = enc.encode([key])[0]
-        elif hasattr(enc, 'embed'):        arr = enc.embed([key])[0]
-        else: raise TypeError(f'{type(enc)} must have .encode() or .embed()')
-        return np.asarray(arr).astype(np.float16).tobytes()
+    def _emb_doc(self, text) -> bytes:
+        'Embed text for storage using emb_doc (or lazy model2vec fallback).'
+        enc = self.emb_doc
+        if enc:
+            arr = np.asarray(enc(text))
+            if arr.ndim > 1: arr = arr[0]
+        else:
+            arr = self._lazy_model().embed([text])[0]
+        return arr.astype(np.float16).tobytes()
+
+    def _emb_query(self, text) -> bytes:
+        'Embed text for querying using emb_query (falls back to emb_doc, then lazy model2vec).'
+        enc = self.emb_query or self.emb_doc
+        if enc:
+            arr = np.asarray(enc(text))
+            if arr.ndim > 1: arr = arr[0]
+        else:
+            arr = self._lazy_model().embed([text])[0]
+        return arr.astype(np.float16).tobytes()
 
     def set(self, key, value, expire=None, tag=None):
         'Store a value under key (embedded for semantic lookup).'
         now = time.time()
         exp = now + expire if expire else (now + self.ttl if self.ttl else None)
-        meta = {'_p': base64.b64encode(pickle.dumps(value)).decode(), 'expire': exp, 'tag': tag}
-        self.store.insert({'content': str(key), 'embedding': self._emb(key),
-                           'metadata': json.dumps(meta), 'uploaded_at': now})
+        self.store.insert({'content': str(key), 'embedding': self._emb_doc(key),
+                           'raw': pickle.dumps(value), 'expire': exp, 'tag': tag,
+                           'uploaded_at': now})
 
     def get(self, key, default=None, threshold=None):
         'Semantic lookup; returns default if no hit above threshold.'
-        results = self.db.search(q=str(key), emb=self._emb(key), table_name=self.table,
-                                 columns=['metadata', 'uploaded_at'], limit=5)
+        results = self.db.search(q=str(key), emb=self._emb_query(key), table_name=self.table,
+                                 columns=['raw', 'expire', 'uploaded_at'], limit=5)
         if not results: return default
         top = results[0]
         if top['_rrf_score'] < ifnone(threshold, self.threshold): return default
         if self.ttl and time.time() - top['uploaded_at'] > self.ttl: return default
-        meta = json.loads(top['metadata'])
-        if meta.get('expire') and time.time() > meta['expire']: return default
-        return pickle.loads(base64.b64decode(meta['_p']))
+        if top.get('expire') and time.time() > top['expire']: return default
+        return pickle.loads(top['raw'])
 
     def purge(self):
         'Delete all entries; returns count.'
@@ -275,8 +285,8 @@ class SemanticCache:
     def purge_semantic(self, q, threshold=None, limit=20, dry_run=False):
         'Delete entries semantically similar to q; returns L of victim rows.'
         thr = ifnone(threshold, self.threshold)
-        results = self.db.search(q=q, emb=self._emb(q), table_name=self.table,
-                                 columns=['metadata', 'uploaded_at'], limit=limit)
+        results = self.db.search(q=q, emb=self._emb_query(q), table_name=self.table,
+                                 columns=['raw', 'expire', 'tag'], limit=limit)
         victims = L(r for r in results if r['_rrf_score'] >= thr)
         if not dry_run:
             for v in victims: self.store.delete_where('rowid=?', [v['rowid']])
@@ -290,21 +300,17 @@ class SemanticCache:
 
     def expire(self):
         'Delete entries whose per-record expire timestamp has passed; returns count.'
-        tbl = self.table
-        rows = self.db.execute(
-            f'SELECT rowid FROM "{tbl}" WHERE json_extract(metadata,\'$.expire\') IS NOT NULL'
-            f' AND json_extract(metadata,\'$.expire\') < {time.time()}').fetchall()
-        for (rowid,) in rows: self.store.delete_where('rowid=?', [rowid])
-        return len(rows)
+        before = self.db.execute(f'SELECT COUNT(*) FROM "{self.table}"').fetchone()[0]
+        self.store.delete_where('expire IS NOT NULL AND expire<?', [time.time()])
+        after = self.db.execute(f'SELECT COUNT(*) FROM "{self.table}"').fetchone()[0]
+        return before - after
 
     def evict(self, tag):
         'Delete all entries with the given tag; returns count.'
-        tbl = self.table
-        rows = self.db.execute(
-            f'SELECT rowid FROM "{tbl}" WHERE json_extract(metadata,\'$.tag\')=?',
-            [tag]).fetchall()
-        for (rowid,) in rows: self.store.delete_where('rowid=?', [rowid])
-        return len(rows)
+        before = self.db.execute(f'SELECT COUNT(*) FROM "{self.table}"').fetchone()[0]
+        self.store.delete_where('tag=?', [tag])
+        after = self.db.execute(f'SELECT COUNT(*) FROM "{self.table}"').fetchone()[0]
+        return before - after
 
     def stats(self):
         n = self.db.execute(f'SELECT COUNT(*) FROM "{self.table}"').fetchone()[0]
