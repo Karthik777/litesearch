@@ -5,3 +5,4 @@ from .core import *
 from .data import *
 from .utils import *
 from pdf_oxide import *
+from .cache import *
