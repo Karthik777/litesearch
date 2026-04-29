@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.25
+pkg origin or sub module paths for pkg2files
+
+
+
 ## 0.0.24
 added progress bar to fastencode
 
