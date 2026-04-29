@@ -161,7 +161,10 @@ def pkg2files(pkg:str,								# package name
 )->L:
 	'Return list of python files in a package excluding tests and setup files.'
 	if not (nm := spec(pkg)): return L()
-	return globtastic(Path(nm.origin).parent, folder_re=nm.name, skip_folder_re=skip_folder_re,
+	if nm.origin: o = Path(nm.origin).parent
+	elif nm.submodule_search_locations: o= Path(nm.submodule_search_locations[0])
+	else: return L()
+	return globtastic(o, folder_re=nm.name, skip_folder_re=skip_folder_re,
 	                  skip_file_re=skip_file_re, func=func, **kwargs)
 
 # %% ../nbs/02_data.ipynb #71185cd58a7ad122
