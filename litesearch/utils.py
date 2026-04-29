@@ -129,7 +129,7 @@ class FastEncode:
 		batches = list(chunked(lns, bs))
 		if not batches: return np.zeros((0, self.sess.get_outputs()[0].shape[-1]), dtype=self.dtype)
 		fn = (lambda b: self._encode_batch(b, **kw)) if kw else self._encode_batch
-		if pw: results = fc_parallel(fn, batches, n_workers=pw or defaults.cpus, threadpool=True)
+		if pw: results = fc_parallel(fn, batches, n_workers=pw or defaults.cpus, threadpool=True, progress=True)
 		else:  results = L(batches).map(fn)
 		return results if stream else np.concatenate(list(results))
 	def encode_document(self, lns, prompt:str=None, **kw):
