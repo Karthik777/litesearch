@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.24
+added progress bar to fastencode
+
+
+
 ## 0.0.23
 spec fix
 
