@@ -31,6 +31,9 @@ dependencies = [
 Repository = "https://github.com/Karthik777/litesearch"
 Documentation = "https://Karthik777.github.io/litesearch"
 
+[project.scripts]
+litesearch = "litesearch.cli:main"
+
 [project.entry-points.nbdev]
 litesearch = "litesearch._modidx:d"
 
@@ -48,6 +51,7 @@ dev = [
     'flashrank',
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
+    "koshas>=0.0.10",
 ]
 
 [tool.hatch.version]

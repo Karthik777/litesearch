@@ -6,15 +6,16 @@
 > **NB** Reading this on GitHub? The formatted
 > [documentation](https://Karthik777.github.io/litesearch/) is nicer.
 
-`litesearch` puts **full-text search + SIMD vector search** in a single
-SQLite database with automatic **Reciprocal Rank Fusion (RRF)**
-reranking — no server, no new infra, no heavy dependencies.
+litesearch stores and searches documents in a single SQLite database. It
+combines FTS5 keyword search with SIMD vector similarity (via usearch),
+then merges the ranked lists using Reciprocal Rank Fusion. No server, no
+new infrastructure.
 
 | Module | What you get |
 |----|----|
-| `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database) · `get_store()` · `db.search()` · [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge) · `vec_search()` |
-| `litesearch.data` | PDF extraction & chunking (`pdf_chunks`) · multi-format file parsing ([`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)) · code indexing ([`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) · [`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)) · [`images_to_pdf`](https://Karthik777.github.io/litesearch/data.html#images_to_pdf) · FTS query preprocessing |
-| `litesearch.utils` | ONNX encoders: [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) (text) · [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) (vision) · [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal) (joint text+image) |
+| `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database), `get_store()`, `db.search()`, [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge), `vec_search()` |
+| `litesearch.data` | PDF extraction, file parsing ([`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)), code indexing ([`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks), [`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)), FTS query preprocessing |
+| `litesearch.utils` | ONNX text, image, and multimodal encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage), [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal)) |
 
 ## Install
 
@@ -27,12 +28,6 @@ reranking — no server, no new infra, no heavy dependencies.
 ## Quick Start
 
 Search your documents in eight lines of code:
-
-``` python
-from litesearch import *
-from model2vec import StaticModel
-import numpy as np
-```
 
 ``` python
 enc   = StaticModel.from_pretrained("minishlab/potion-retrieval-32M")  # fast static embeddings
@@ -67,18 +62,6 @@ db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=
       'content': 'transformers replaced recurrent networks',
       '_dist': 1.0227680206298828,
       '_rrf_score': 0.016129032258064516}]
-
-``` python
-[{'rowid': 1, 'id': 1, 'content': 'attention is all you need',
-  '_dist': 0.134, '_rrf_score': 0.0328},
- {'rowid': 2, 'id': 2, 'content': 'transformers replaced recurrent networks',
-  '_dist': 0.264, '_rrf_score': 0.0161},
- {'rowid': 3, 'id': 3, 'content': 'gradient descent minimises the loss',
-  '_dist': 0.482, '_rrf_score': 0.0161}]
-```
-
-> `_rrf_score` is the fused rank score (higher = better). `_dist` is the
-> cosine distance from the vector search leg.
 
 ## Core API
 
@@ -310,12 +293,6 @@ doc.pdf_texts(0, 1)[0][:300]
 
     'Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or\nscholarly works.\n\n\nAttention Is All You Need\n\n\n∗\n∗\n∗\n∗\nAshish Vaswani Noam Shazeer Niki Parmar Jakob Uszkoreit\nGoogle Brain Google Brain Google'
 
-    15 pages, 44 links
-
-``` python
-'Abstract\nThe dominant sequence transduction models are based on complex recurrent...'
-```
-
 ``` python
 # markdown export — headings and tables are detected automatically
 md = doc.pdf_markdown()
@@ -334,13 +311,6 @@ print(f'Page 1 (markdown):\n{md[0][:400]}')
     ## You Need
 
     ∗∗**Ashish Vaswani****Noam Shazeer****Niki Parmar** Google BrainGoogle BrainGoogle Research [avaswani@google.com](mailto:avaswani@google.com)[no
-
-    Page 1 (markdown):
-    # arXiv:1706.03762v7  [cs.CL]  2 Aug 2023
-
-    Provided proper attribution is provided, Google hereby grants permission
-    to reproduce the tables and figures in this paper solely for use in
-    journalistic or scholarly works...
 
 `doc.pdf_chunks()` wraps `pdf_markdown()` + chonkie’s `RecursiveChunker`
 into `(page, chunk_idx, text)` triples — the direct input for
@@ -398,16 +368,6 @@ chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
       'end_lineno': 44,
       'package': 'fastlite',
       'version': '0.2.4'}}
-
-    47 chunks from fastlite
-
-``` python
-{'content': 'def t(self:Database): return _TablesGetter(self)',
- 'metadata': {'path': '.../fastlite/core.py',
-              'name': 't', 'type': 'FunctionDef',
-              'lineno': 44, 'end_lineno': 44,
-              'package': 'fastlite', 'version': '0.2.4'}}
-```
 
 [`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)
 is the single entry point for any file type — Python, Jupyter notebooks,
@@ -484,8 +444,6 @@ embs  = enc_q.encode_document(texts)
     doc shape: (4, 768) dtype: float16
     Encoding setup errored out with exception: No module named 'onnx'
     ONNX session not initialized. Fix error during initialisation
-
-    doc shape: (2, 768) dtype: float16
 
 ### [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) — ONNX Image Encoder
 
@@ -572,46 +530,32 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-23-output-2.png)
+![](index_files/figure-commonmark/cell-22-output-2.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-23-output-4.png)
+![](index_files/figure-commonmark/cell-22-output-4.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-23-output-6.png)
+![](index_files/figure-commonmark/cell-22-output-6.png)
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-23-output-8.png)
+![](index_files/figure-commonmark/cell-22-output-8.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-23-output-10.png)
+![](index_files/figure-commonmark/cell-22-output-10.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-23-output-12.png)
-
-## Ideas for More Delight (Planned)
-
-Things that would make litesearch even smoother to use:
-
-| Idea | Why it helps |
-|----|----|
-| **`Retriever` class** — bundles encoder + db into `r.search(q)` | removes the manual encode → bytes → search boilerplate |
-| **`ingest(texts, encoder, store)` helper** | one-liner for embed-and-insert loops |
-| **Auto dtype detection** | `search()` could infer dtype from stored embedding size, removing the `dtype=np.float32` footgun |
-| **`from_pdf(path, encoder)` / `from_dir(dir, encoder)`** | index a PDF or folder in one call |
-| **Rich / tabulate display for results** | pretty-print search results in notebooks |
-| **Metadata filter sugar** — `filters={'source': 'doc.pdf'}` | cleaner than writing raw SQL `where` strings |
-| **CLI** — `litesearch index <dir>` / `litesearch search <q>` | quick ad-hoc search without writing Python |
+![](index_files/figure-commonmark/cell-22-output-12.png)
 
 ## Next Steps
 

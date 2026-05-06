@@ -1976,6 +1976,22 @@ wheels = [
 ]
 
 [[package]]
+name = "koshas"
+version = "0.0.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastprogress" },
+    { name = "litesearch" },
+    { name = "pyan3" },
+    { name = "pyskills" },
+    { name = "watchfiles" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/cf/b7dd85eb59df148cd80ed2145787fa6967eef4137857335922296089fd77/koshas-0.0.10.tar.gz", hash = "sha256:53376a802b468a785dda0524f643cb971bbf59ffb7deca7539c18c0d8947b249", size = 36485 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/21/3f/085f0a26bae7cfcb16356fcce787bc452bb665ea510f0fb6dbd7af38d511/koshas-0.0.10-py3-none-any.whl", hash = "sha256:cbaa9fd9f5d476030002b9e63b160943ee63fb362cef8c9bbf35e6e68c612e85", size = 39453 },
+]
+
+[[package]]
 name = "lark"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2025,7 +2041,7 @@ wheels = [
 
 [[package]]
 name = "litesearch"
-version = "0.0.23"
+version = "0.0.25"
 source = { editable = "." }
 dependencies = [
     { name = "chonkie" },
@@ -2052,6 +2068,7 @@ dev = [
     { name = "flashrank" },
     { name = "jupyterlab" },
     { name = "jupyterlab-quarto" },
+    { name = "koshas" },
     { name = "lisette" },
     { name = "model2vec", extra = ["distill"] },
     { name = "nbdev" },
@@ -2084,6 +2101,7 @@ dev = [
     { name = "flashrank" },
     { name = "jupyterlab" },
     { name = "jupyterlab-quarto" },
+    { name = "koshas", specifier = ">=0.0.10" },
     { name = "lisette" },
     { name = "model2vec", extras = ["distill"], specifier = ">=0.7.0" },
     { name = "nbdev" },
@@ -3744,6 +3762,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyan3"
+version = "2.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/1f/34a43ff843e6d1bb1269bff207f4c246973c8ce8b0ec36b0fc32c81f3340/pyan3-2.6.0.tar.gz", hash = "sha256:38e81881035a3c89cfc2e057af92911326d3765506dfde6388e72f52449ce80a", size = 101044 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/16/20dd0948dabc3c58a07c41d4c078a16faedf9999b95ce9f924ab630b2f50/pyan3-2.6.0-py3-none-any.whl", hash = "sha256:67ac7c3ef87e80570c0c6639fdfcec02c691cbf758d6ec61cf90c687d5cc3dd0", size = 98821 },
+]
+
+[[package]]
 name = "pycparser"
 version = "3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3908,6 +3938,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e7/82/28175b2414effca1cdac8dc99f76d660e7a4fb0ceefa4b4ab8f5f6742925/pyproject_hooks-1.2.0.tar.gz", hash = "sha256:1e859bd5c40fae9448642dd871adf459e5e2084186e8d2c2a79a824c970da1f8", size = 19228 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl", hash = "sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913", size = 10216 },
+]
+
+[[package]]
+name = "pyskills"
+version = "0.0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastcore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/49/165ce19bb4cf5ffb778f759174eada6c402ae672fa7e4389e7a761883d44/pyskills-0.0.7.tar.gz", hash = "sha256:50ea8ce660185857a283643044d67f63ae38b28830b7ce6f4252e1ea08cbd8ab", size = 22847 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/a9/2ba5c9ef83912102c3bf4acaae79add676b6a3912fd375fea5199c389811/pyskills-0.0.7-py3-none-any.whl", hash = "sha256:10b5a29c16dc6801a46155246a10ab705d595d11dde155990c1f153201844698", size = 21894 },
 ]
 
 [[package]]

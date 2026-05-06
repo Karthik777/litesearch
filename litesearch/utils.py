@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
-           'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'FastEncode', 'download_model', 'FastEncodeImage',
-           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'FastEncode', 'download_model',
+           'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone
@@ -22,6 +22,10 @@ modernbert_prompt = nomic_prompt  # alias — same prefix format
 embedding_gemma = AttrDict(model='onnx-community/embeddinggemma-300m-ONNX', onnx_path='onnx/model.onnx', prompt=embedding_gemma_prompt)
 modernbert = AttrDict(model='nomic-ai/modernbert-embed-base', onnx_path='onnx/model.onnx', prompt=nomic_prompt)
 nomic_text_v15 = AttrDict(model='nomic-ai/nomic-embed-text-v1.5', onnx_path='onnx/model.onnx', prompt=nomic_prompt, tti=True)
+
+# coderank int8 fast model
+cr_instr = AttrDict(query="Represent this query for searching relevant code: {text}", document="{text}")
+model = AttrDict(model='mrsladoje/CodeRankEmbed-onnx-int8', onnx_path='onnx/model.onnx', prompt=cr_instr)
 
 # Image models (for FastEncodeImage)
 clip_vit_b32 = AttrDict(model='Qdrant/clip-ViT-B-32-vision', onnx_path='model.onnx', img_size=224,

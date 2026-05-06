@@ -4,10 +4,10 @@
 __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'chunk_markdown', 'repo_root', 'spec', 'pyparse',
            'ipynb_parse', 'non_py_sigs', 'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks',
            'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det',
-           'images_to_pdf']
+           'images_to_pdf', 'mv_skill_md']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
-from fastcore.all import L, concat, patch, ifnone, Path, delegates, globtastic, parallel, type2str, first
+from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_
 from pdf_oxide import PdfDocument
 import struct as _struct
 
@@ -201,15 +201,21 @@ def dir2chunks(dir:str,             # directory path
 
 # %% ../nbs/02_data.ipynb #7652cb1d1f39fadc
 def installed_packages(nms:list=None,    # list of package names
-                       pyproject:bool=False  # restrict to pyproject.toml dependencies
-                       )->L:
+                       pyproject:bool=False,  # restrict to pyproject.toml dependencies
+                       xtras:str|None='dev'       # include extra groups as csv from pyproject.toml
+)->L:
     'Return list of installed packages. If nms is provided, return only those packages.'
     if pyproject:
         p = repo_root().joinpath('pyproject.toml')
         if not p.exists(): return L()
         from tomllib import load
-        tlp = L(load(p.open('rb')).get('project',{}).get('dependencies',[]))
-        tlp = tlp.map(lambda s: re.split(r'[>=<!;\[]', s)[0].strip())
+        from fastcore.basics import filter_keys, in_
+        toml_data = load(p.open('rb'))
+        fn = lambda s: re.split(r'[>=<!;\[]', s)[0].strip()
+        tlp = L(toml_data.get('project',{}).get('dependencies',[])).map(fn)
+        xtras = L.split(xtras or '', ',').filter(true)
+        dg = filter_keys(toml_data.get('dependency-groups', {}), in_(xtras))
+        if dg: tlp += L(dg.values()).concat().filter(lambda e: isinstance(e, str)).map(fn)
         nms = set(nms).union(tlp) if nms else tlp
     not_stdlib = lambda d: d.metadata.get('Author-email') not in ('Python', None)
     try:
@@ -304,3 +310,16 @@ def images_to_pdf(imgs,       # list of PIL Images, bytes, or file paths
             + f'trailer\n<</Size {len(o)+1} /Root 1 0 R>>\nstartxref\n{xp}\n%%EOF\n'.encode())
     if output: open(output, 'wb').write(out)
     return out
+
+# %% ../nbs/02_data.ipynb #6593c16e
+def mv_skill_md(dry_run:bool=True, dir=None) -> None:
+    'Copy bundled SKILL.md to skill directories (.agents/, .claude/, .Codex/).'
+    base = Path(__file__).parent if '__file__' in globals() else Path.cwd()
+    if not (src := base/'SKILL.md').exists(): return
+    root = Path(ifnone(dir, repo_root() or Path.cwd()))
+    ts = [root/'.agents/skills/litesearch/SKILL.md',
+          root/'.claude/skills/litesearch/SKILL.md',
+          root/'.Codex/skills/litesearch/SKILL.md']
+    if dry_run: print(f'Copying {src} to: {list(map(str,ts))}')
+    else: [p.mk_write(src.read_text(encoding='utf-8')) for p in ts]
+    print(f'Installed -> {list(map(str,ts))}')
