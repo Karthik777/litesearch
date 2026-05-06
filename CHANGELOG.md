@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.27
+fix automatic uv dev
+
+
+
 ## 0.0.26
 uv xtras + skill + cli
 

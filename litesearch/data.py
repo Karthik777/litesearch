@@ -202,7 +202,7 @@ def dir2chunks(dir:str,             # directory path
 # %% ../nbs/02_data.ipynb #7652cb1d1f39fadc
 def installed_packages(nms:list=None,    # list of package names
                        pyproject:bool=False,  # restrict to pyproject.toml dependencies
-                       xtras:str|None='dev'       # include extra groups as csv from pyproject.toml
+                       xtras:str|None=None       # include extra groups as csv from pyproject.toml
 )->L:
     'Return list of installed packages. If nms is provided, return only those packages.'
     if pyproject:
