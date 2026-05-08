@@ -4,7 +4,7 @@
 __all__ = ['rrf_merge', 'database']
 
 # %% ../nbs/01_core.ipynb #cda88b6a
-from fastcore.all import first, dict2obj, L, Path, Generator, patch, Optional, Union, Iterable, merge, delegates, ifnone
+from fastcore.all import Path, Generator, patch, Optional, Union, Iterable, merge, ifnone
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict
@@ -113,11 +113,11 @@ def search(self: Database,  # database connection
     tbl = self.t[table_name]
     cols = list(columns or [])
     if rrf and id_key not in cols: cols = [id_key] + cols
-    fts_q = self.quote_fts(q) if quote else q
-    sql = tbl.search_sql(order_by='rank', columns=cols, limit=limit, where=where, include_rank=True)
+    fts_q= self.quote_fts(q) if quote else q
+    lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
+    sql = tbl.search_sql(order_by='rank', columns=cols, limit=lim, where=where, include_rank=True, offset=off)
     fts = self.q(sql, merge(dict(query=fts_q), where_args or {}))
-    vec = tbl.vec_search(emb, columns=cols, where=where, where_args=where_args,
-                         emb_col=emb_col, emb_metric=emb_metric, dtype=dtype, limit=limit,
-                         offset=None if rrf else offset)
-    if rrf: return rrf_merge(fts, vec, k=rrf_k, limit=limit, id_key=id_key)
+    vec = tbl.vec_search(emb, columns=cols, where=where, where_args=where_args, emb_col=emb_col, emb_metric=emb_metric,
+                         dtype=dtype, limit=lim, offset=off)
+    if rrf: return rrf_merge(fts, vec, k=rrf_k, limit=lim, id_key=id_key)[ifnone(off, 0):]
     return dict(fts=fts, vec=vec)
