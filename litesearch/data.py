@@ -224,11 +224,12 @@ def installed_packages(nms:list=None,    # list of package names
     except Exception as e: print(f'Error checking installed packages: {e}')
 
 # %% ../nbs/02_data.ipynb #f887a2d1e48c7e1d
-def clean(q:str  # query to be passed for fts search
+def clean(q:str,  # query to be passed for fts search
+          pattern=r'[*,"\(\)\^_]|-(?=\S)' # regex pattern to use to replace with space
           ):
     '''Clean the query by removing * and returning None for empty queries.'''
     import re
-    return re.sub(r'[*,"\(\)\^]|-(?=\S)', ' ', q).strip() or None if q.strip() else None
+    return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
 def add_wc(q:str  # query to be passed for fts search
            ):
@@ -249,10 +250,11 @@ def kw(q:str  # query to be passed for fts search
 def pre(q:str,          # query to be passed for fts search
         wc=True,        # add wild card to each word
         wide=True,      # widen the query with OR operator
-        extract_kw=True # extract keywords from the query
+        extract_kw=True, # extract keywords from the query
+        pattern=r'[*,"\(\)\^_]|-(?=\S)' # regex pattern to use to replace with space
         ):
     '''Preprocess the query for fts search.'''
-    q = clean(q)
+    q = clean(q, pattern)
     if not q.strip(): return None
     if extract_kw: q = kw(q)
     if wc: q = add_wc(q)
