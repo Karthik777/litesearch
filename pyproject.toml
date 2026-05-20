@@ -16,6 +16,7 @@ dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
     "fastlite>=0.2.4",
+    "fastmcp>=3.3.1",
     "model2vec>=0.7.0",
     "notebook>=7.5.4",
     "onnxruntime>=1.24.3",
@@ -33,6 +34,7 @@ Documentation = "https://Karthik777.github.io/litesearch"
 
 [project.scripts]
 litesearch = "litesearch.cli:main"
+litesearch-mcp = "litesearch.mcp:run_mcp"
 
 [project.entry-points.nbdev]
 litesearch = "litesearch._modidx:d"
