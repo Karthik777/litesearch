@@ -27,6 +27,9 @@ dependencies = [
     "yake>=0.7.3",
 ]
 
+[project.optional-dependencies]
+docling = ["docling>=2.0"]
+
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"
 Documentation = "https://Karthik777.github.io/litesearch"
