@@ -89,6 +89,22 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     _db.conn.enableloadextension(False)
     return _db
 
+# %% ../nbs/01_core.ipynb #c1fed8ca
+@patch
+def get_image_store(self:Database,       # database connection
+                    name:str='image_store',  # table name
+                    **kw,                # additional args for fastlite create
+) -> 'Table':
+    """Image RAG store: url, tile_path, tile_index, embedding, page_text (for hybrid search).
+    FTS5 is enabled on url and page_text so text queries can fall through to keyword search."""
+    cols = dict(url=str, tile_path=str, tile_index=int, embedding=bytes, page_text=str,
+                uploaded_at=float, defaults=dict(uploaded_at='CURRENT_TIMESTAMP'),
+                pk='id', id=int, not_null=['url'])
+    tbl = self.t[name].create(**cols, if_not_exists=True, **kw)
+    if not tbl.detect_fts():
+        tbl.enable_fts(['url', 'page_text'], create_triggers=True, tokenize='porter', replace=True)
+    return tbl
+
 # %% ../nbs/01_core.ipynb #5b40d2cd
 @patch
 def search(self: Database,  # database connection

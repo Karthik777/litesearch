@@ -2,8 +2,9 @@
 
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
-           'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'FastEncode', 'download_model',
-           'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'siglip2_base', 'FastEncode',
+           'download_model', 'FastEncodeImage', 'FastEncodeMultimodal', 'tile_image', 'encode_pdf_texts',
+           'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone
@@ -36,6 +37,12 @@ nomic_vision_v15 = AttrDict(model='nomic-ai/nomic-embed-vision-v1.5', onnx_path=
 # Unified multimodal models (for FastEncodeMultimodal)
 siglip2_so400m  = AttrDict(model='onnx-community/siglip2-so400m-patch16-512-ONNX', vision_onnx='onnx/vision_model.onnx',
 			   text_onnx='onnx/text_model.onnx', img_size=512, mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5], max_seq_len=64)
+
+# Smaller/faster SigLIP2 variant for CPU-friendly deployments
+siglip2_base = AttrDict(model='onnx-community/siglip2-base-patch16-256-ONNX',
+                        vision_onnx='onnx/vision_model.onnx',
+                        text_onnx='onnx/text_model.onnx', img_size=256,
+                        mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5], max_seq_len=64)
 
 # %% ../nbs/03_utils.ipynb #fe4371ef8e2b9b52
 class FastEncode:
@@ -257,6 +264,22 @@ class FastEncodeMultimodal:
 	def encode_image(self, imgs, **kw):
 		'Encode images into the shared embedding space.'
 		return self.vision.embed(imgs, **kw)
+
+# %% ../nbs/03_utils.ipynb #daeae201
+def tile_image(img, tile_h:int=1024, overlap:int=128) -> list:
+    """Split a tall image into overlapping tiles. Returns list of PIL Images.
+    tile_h: target tile height in pixels. overlap: pixel overlap between adjacent tiles."""
+    from PIL import Image
+    if not isinstance(img, Image.Image): img = Image.open(img).convert('RGB')
+    w, h = img.size
+    if h <= tile_h: return [img]
+    tiles, step, y = [], tile_h - overlap, 0
+    while y < h:
+        y1 = min(y + tile_h, h)
+        tiles.append(img.crop((0, y, w, y1)))
+        if y1 == h: break
+        y += step
+    return tiles
 
 # %% ../nbs/03_utils.ipynb #pdf_rag_helpers
 def encode_pdf_texts(doc,              # PdfDocument
