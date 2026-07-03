@@ -78,8 +78,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
              **kw,                          # additional args to pass to apswutils database
              ) -> Database:
     'Set up a database connection and load usearch extensions.'
-
-    if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(exist_ok=True)
+    if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     _db = Database(pth_or_uri, **kw)
     if wal: _db.enable_wal()
     if not sem_search: return _db
