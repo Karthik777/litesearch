@@ -603,7 +603,26 @@ for r in rrf_merge(txt_r, img_r)[:6]:
 
     /Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
       from .autonotebook import tqdm as notebook_tqdm
-    Fetching 36 files:  14%|█▍        | 5/36 [04:04<34:59, 67.74s/it]
+    Fetching 36 files: 100%|██████████| 36/36 [06:48<00:00, 11.35s/it]
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+
+    rrf=0.0167  Table 1: Maximum path lengths, per-layer complexity and minimum number
+    rrf=0.0167  page_3
+
+![](index_files/figure-commonmark/cell-30-output-3.png)
+
+    rrf=0.0164  Table 4: The Transformer generalizes well to English constituency pars
+    rrf=0.0164  page_2
+
+![](index_files/figure-commonmark/cell-30-output-5.png)
+
+    rrf=0.0161  Table 3: Variations on the Transformer architecture. Unlisted values a
+    rrf=0.0161  page_3
+
+![](index_files/figure-commonmark/cell-30-output-7.png)
 
 **Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same 768-dim space; use [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) and [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) separately:
 
