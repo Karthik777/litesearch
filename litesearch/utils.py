@@ -3,9 +3,10 @@
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
-           'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
-           'download_model', 'FastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal',
-           'encode_pdf_texts', 'encode_pdf_images']
+           'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'paddle_det_v4',
+           'paddle_rec_v5_en', 'paddle_dict_en', 'paddle_ocr', 'static_embedder', 'download_model', 'FastEncode',
+           'download_ocr_models', 'get_ocr_engine', 'doc_encoder', 'query_encoder', 'FastEncodeImage',
+           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -181,6 +182,48 @@ class FastEncode:
 	def encode_query(self, lns, prompt:str=None, **kw):
 		if prompt is None: prompt = self.prompt.get('query', None)
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
+
+# %% ../nbs/03_utils.ipynb #ocr_models_cell
+# PaddleOCR ONNX combo for pdf_oxide's OCR engine: V4 detection + V5 english recognition
+# (recommended pairing per pdf_oxide's setup_ocr_models.sh)
+paddle_det_v4 = AttrDict(repo='deepghs/paddleocr', filename='det/ch_PP-OCRv4_det/model.onnx')
+paddle_rec_v5_en = AttrDict(repo='monkt/paddleocr-onnx', filename='languages/english/rec.onnx')
+paddle_dict_en = AttrDict(repo='monkt/paddleocr-onnx', filename='languages/english/dict.txt')
+paddle_ocr = AttrDict(det=paddle_det_v4, rec=paddle_rec_v5_en, dct=paddle_dict_en)
+
+def _fix_ocr_dict(p):
+	'Paddle rec models emit space as the last class; return a dict file whose last line is a space.'
+	p = Path(p)
+	lines = p.read_text(encoding='utf-8').splitlines()
+	if lines and lines[-1] == ' ': return str(p)
+	out = Path.home()/'.cache'/'litesearch'/f'{p.stem}_space{p.suffix}'   # HF cache blobs are shared; fix a copy
+	out.parent.mkdir(parents=True, exist_ok=True)
+	out.write_text('\n'.join(lines+[' '])+'\n', encoding='utf-8')
+	return str(out)
+
+def download_ocr_models(models:AttrDict=paddle_ocr,  # det/rec/dct specs with repo and filename
+                        token=None                   # HF token. you can also set HF_TOKEN env variable
+) -> AttrDict:
+	'Download the PaddleOCR det/rec/dict combo with `download_model`. Returns local paths; offline once cached.'
+	paths = AttrDict({k: download_model(repo_id=m.repo, filename=m.filename, token=token) for k,m in models.items()})
+	paths.dct = _fix_ocr_dict(paths.dct)
+	return paths
+
+_ocr_engine = None
+def get_ocr_engine(models:AttrDict=paddle_ocr,  # det/rec/dct specs with repo and filename
+                   config=None,                 # pdf_oxide OcrConfig; built from kw when None
+                   token=None,                  # HF token. you can also set HF_TOKEN env variable
+                   cache:bool=True,             # reuse a single engine per process
+                   **kw                         # OcrConfig args: det_threshold, rec_threshold, num_threads
+):
+	'Download the Paddle models (if needed) and set up a pdf_oxide `OcrEngine` for scanned-pdf extraction.'
+	global _ocr_engine
+	if cache and _ocr_engine is not None: return _ocr_engine
+	from pdf_oxide import OcrConfig, OcrEngine
+	p = download_ocr_models(models, token=token)
+	eng = OcrEngine(det_model_path=p.det, rec_model_path=p.rec, dict_path=p.dct, config=config or OcrConfig(**kw))
+	if cache: _ocr_engine = eng
+	return eng
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
 def doc_encoder(embedder:FastEncode|StaticModel):

@@ -275,6 +275,8 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     return _db
 
 # %% ../nbs/01_core.ipynb #dba1fc24cdf01f0b
+from fastcore.parallel import parallel as fc_parallel
+
 @patch
 def search(self: Database,  # database connection
            q:str,  # query string
@@ -293,6 +295,7 @@ def search(self: Database,  # database connection
            id_key:str='rowid',  # key to join RRF results on
            quote:bool=False,  # quote FTS query to disable special chars
            ann:bool=False,  # use the HNSW ANN index instead of brute-force vec scan (where/offset ignored for the vector leg)
+           parallel:bool=True,  # run the FTS and vector legs concurrently (fastcore threadpool)
            ):
     'Search the litesearch store with fts and vector search combined.'
     if not q.strip(): return None
@@ -300,7 +303,9 @@ def search(self: Database,  # database connection
     cols = list(columns or [])
     if rrf and id_key not in cols: cols = [id_key] + cols
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
-    fts = tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, True)
-    vec = tbl.ann_search(emb,cols,lim,dtype) if ann else tbl.vec_search(emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)
+    fts_fn = lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, True)
+    vec_fn = lambda: tbl.ann_search(emb,cols,lim,dtype) if ann else tbl.vec_search(emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)
+    if parallel: fts, vec = fc_parallel(lambda f: f(), [fts_fn, vec_fn], n_workers=2, threadpool=True, progress=False)
+    else: fts, vec = fts_fn(), vec_fn()
     if rrf: return rrf_merge(fts, vec, rrf_k, lim, id_key)[ifnone(off, 0):]
     return dict(fts=fts, vec=vec)
