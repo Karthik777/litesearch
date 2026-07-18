@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.32
+ann index clear
+
+
 ## 0.0.31
 hnsw ann with usearch
 

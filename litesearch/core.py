@@ -231,7 +231,11 @@ def rebuild_index(self:Table, dtype=None):
     dt = dtype or _np_dtype.get(m['dtype'], np.float16)
     rows = L(self(select='rowid, embedding')).filter(lambda r: r['embedding'])
     self.db.ann_indices.pop(self.name, None)
-    if not rows: return 0
+    if not rows:
+        if not m['ndim']: return 0                                   # never had vectors; nothing to clear
+        self.db.get_index(self.name, load=False).reset()  # empty index, ignore the stale sidecar
+        self.db._save_index(self.name)                               # overwrite sidecar to reflect empty table
+        return 0
     nd = len(np.frombuffer(rows[0]['embedding'], dtype=dt))
     if m['ndim'] != nd: self.db.t.usearch_indices.update(dict(name=self.name, ndim=nd))
     idx = self.db.get_index(self.name, load=False); idx.reset()
