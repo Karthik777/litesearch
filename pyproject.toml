@@ -18,6 +18,7 @@ dependencies = [
     "fastlite>=0.2.4",
     "model2vec>=0.7.0",
     "notebook>=7.5.4",
+    "onnx>=1.22.0",
     "onnxruntime>=1.24.3",
     "pandas>=2.3.3",
     "pdf-oxide>=0.3.17",
@@ -51,7 +52,7 @@ dev = [
     'flashrank',
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
-    "koshas>=0.0.10",
+    "koshas>=0.0.25",
 ]
 
 [tool.hatch.version]

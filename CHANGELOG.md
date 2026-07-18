@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.31
+hnsw ann with usearch
+
+
 ## 0.0.30
 database create parent dir
 

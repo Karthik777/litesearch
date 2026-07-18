@@ -2,16 +2,19 @@
 
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
-           'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'FastEncode', 'download_model',
-           'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
+           'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
+           'download_model', 'FastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal',
+           'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
-from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone
+from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
 from fastcore.parallel import parallel as fc_parallel
 import json, os
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer, AddedToken
+from model2vec import StaticModel
 
 # %% ../nbs/03_utils.ipynb #5b8ed63b321a17d2
 embedding_gemma_prompt = AttrDict(document='Instruct: document \n document: {text}', query='Instruct: query \n query: {text}')
@@ -37,7 +40,43 @@ nomic_vision_v15 = AttrDict(model='nomic-ai/nomic-embed-vision-v1.5', onnx_path=
 siglip2_so400m  = AttrDict(model='onnx-community/siglip2-so400m-patch16-512-ONNX', vision_onnx='onnx/vision_model.onnx',
 			   text_onnx='onnx/text_model.onnx', img_size=512, mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5], max_seq_len=64)
 
-# %% ../nbs/03_utils.ipynb #fe4371ef8e2b9b52
+bge_instr = AttrDict(document="{text}",query="{text}")
+bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quantized.onnx',prompt=bge_instr, tti=True)
+
+def static_embedder(model_nm='minishlab/potion-multilingual-128M'): return StaticModel.from_pretrained(model_nm, force_download=False)
+
+static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M-v2')
+static_retrieval_embedder = bind(static_embedder, model_nm='minishlab/potion-retrieval-32M')
+static_science_embedder = bind(static_embedder, model_nm='minishlab/potion-science-32M')
+
+# %% ../nbs/03_utils.ipynb #78f2a8ee5e0ec414
+def _cached_snapshot(repo_id):
+	'Local snapshot dir from the HF cache without hitting the network, else None.'
+	from huggingface_hub import scan_cache_dir
+	try: repo = first(scan_cache_dir().repos, lambda r: r.repo_id == repo_id)
+	except Exception: return None
+	if not repo: return None
+	rev = first(sorted(repo.revisions, key=lambda r: r.last_modified, reverse=True))
+	return str(rev.snapshot_path) if rev else None
+
+def download_model(repo_id=embedding_gemma.model,  # HF repo id
+                   md=None,                         # optional explicit local dir; else the HF cache is used
+                   filename=None,                   # file path within repo; if None, downloads full repo snapshot
+                   token=None                       # HF token. you can also set HF_TOKEN env variable
+):
+	'''Download model (or single file) from HF hub. Returns local path. Skips network if already cached.'''
+	import huggingface_hub as hf
+	token = token or os.getenv('HF_TOKEN')
+	if filename:
+		if md and (dest := Path(md) / filename).exists(): return str(dest)
+		snap = _cached_snapshot(repo_id)
+		if snap and (p := Path(snap) / filename).exists(): return str(p)
+		if filename not in hf.list_repo_files(repo_id, token=token): raise FileNotFoundError(f'{filename} not in {repo_id}')
+		return hf.hf_hub_download(repo_id, filename, token=token)
+	if md and Path(md).exists(): return md
+	return _cached_snapshot(repo_id) or hf.snapshot_download(repo_id=repo_id, token=token)
+
+# %% ../nbs/03_utils.ipynb #408830ea692c2eca
 class FastEncode:
 	def __init__(self,
 				 model_dict=embedding_gemma, # model dict with model repo, onnx path and prompt templates
@@ -143,20 +182,16 @@ class FastEncode:
 		if prompt is None: prompt = self.prompt.get('query', None)
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 
-def download_model(repo_id=embedding_gemma.model,  # HF repo id
-                   md=embedding_gemma.model,        # local cache dir
-                   filename=None,                   # file path within repo; if None, downloads full repo snapshot
-                   token=None                       # HF token. you can also set HF_TOKEN env variable
-):
-	'''Download model (or single file) from HF hub. Returns local path. Skips download if already cached.'''
-	import huggingface_hub as hf
-	token = token or os.getenv('HF_TOKEN')
-	if filename:
-		dest = Path(md) / filename
-		if dest.exists(): return str(dest)
-		return hf.hf_hub_download(repo_id, filename, local_dir=str(md), token=token)
-	if Path(md).exists(): return md
-	return hf.snapshot_download(repo_id=repo_id, local_dir=md, token=token)
+# %% ../nbs/03_utils.ipynb #be4247f2dac19633
+def doc_encoder(embedder:FastEncode|StaticModel):
+	is_fe= isinstance(embedder, FastEncode)
+	def _(txts, **kw): return embedder.encode_document(txts, **kw) if is_fe else embedder.encode(L(txts))
+	return _
+
+def query_encoder(embedder:FastEncode|StaticModel):
+	is_fe= isinstance(embedder, FastEncode)
+	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
+	return _
 
 # %% ../nbs/03_utils.ipynb #f690tylraad
 class FastEncodeImage:

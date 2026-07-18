@@ -48,12 +48,15 @@ def pdf_spans(doc:PdfDocument, st=0, end=None) -> L:
     'Extract text spans with font metadata (size, weight, bbox) per page.'
     return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_spans(i)).concat()
 
+# %% ../nbs/02_data.ipynb #4a33701ff7ff248b
+from chonkie import RecursiveChunker, FastChunker, BaseChunker
+
 # %% ../nbs/02_data.ipynb #chunk_markdown_cell
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
+                   chunker:BaseChunker=None
 ) -> L:
-	'Split markdown into paragraph chunks on blank lines; drop short fragments.'
-	from chonkie import RecursiveChunker
-	r=RecursiveChunker.from_recipe('markdown')
+	'Split markdown into paragraph chunks on blank lines'
+	r = chunker or FastChunker()
 	return L(r(text)).map(lambda c: c.text)
 
 @patch

@@ -7,3 +7,8 @@ website:
   description: "search through files with fts5, vectors and get reranked results. Fast"
   repo-branch: main
   repo-url: "https://github.com/Karthik777/litesearch"
+
+format-links:
+  - html
+  - format: commonmark
+    text: Markdown
