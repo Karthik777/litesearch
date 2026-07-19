@@ -9,7 +9,7 @@ litesearch stores and searches documents in a single SQLite database. It combine
 
 | Module | What you get |
 |----|----|
-| `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database), `get_store()`, `db.search()`, [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge), `vec_search()` |
+| `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database), `get_store()`, `db.search()`, [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge), `vec_search()` `ann_search()` |
 | `litesearch.data` | PDF extraction, file parsing ([`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)), code indexing ([`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks), [`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)), FTS query preprocessing |
 | `litesearch.utils` | ONNX text, image, and multimodal encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage), [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal)) |
 
@@ -31,34 +31,43 @@ Search your documents in eight lines of code:
 db    = database()          # SQLite + usearch SIMD extensions loaded
 store = db.get_store()      # table with FTS5 index + embedding column
 enc = static_retrieval_embedder()
-texts = ["attention is all you need",
-         "transformers replaced recurrent networks",
-         "gradient descent minimises the loss"]
+texts = ["attention mechanisms in neural networks",
+         "transformer architecture for sequence modelling",
+         "stochastic gradient descent and learning rate schedules",
+         "positional encoding and token embeddings",
+         "dropout regularisation reduces overfitting",]
 embs  = enc.encode(texts)   # float32, shape (3, 512)
 store.insert_all([dict(content=t, embedding=e.ravel().tobytes()) for t, e in zip(texts, embs)])
 
 q = "self-attention mechanism"
-db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, quote=True)
+db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32)
 ```
-
-    /Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-      from .autonotebook import tqdm as notebook_tqdm
 
     [{'rowid': 1,
       'id': 1,
-      'content': 'attention is all you need',
-      '_dist': 0.7910182476043701,
+      'content': 'attention mechanisms in neural networks',
+      '_dist': 0.5670621395111084,
       '_rrf_score': 0.016666666666666666},
      {'rowid': 3,
       'id': 3,
-      'content': 'gradient descent minimises the loss',
-      '_dist': 0.9670860767364502,
+      'content': 'stochastic gradient descent and learning rate schedules',
+      '_dist': 0.8964616060256958,
       '_rrf_score': 0.01639344262295082},
+     {'rowid': 4,
+      'id': 4,
+      'content': 'positional encoding and token embeddings',
+      '_dist': 0.9507941007614136,
+      '_rrf_score': 0.016129032258064516},
      {'rowid': 2,
       'id': 2,
-      'content': 'transformers replaced recurrent networks',
-      '_dist': 1.0227680206298828,
-      '_rrf_score': 0.016129032258064516}]
+      'content': 'transformer architecture for sequence modelling',
+      '_dist': 0.9885404109954834,
+      '_rrf_score': 0.015873015873015872},
+     {'rowid': 5,
+      'id': 5,
+      'content': 'dropout regularisation reduces overfitting',
+      '_dist': 1.0190094709396362,
+      '_rrf_score': 0.015625}]
 
 ## Core API
 
@@ -66,36 +75,26 @@ db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=
 
 [`database()`](https://Karthik777.github.io/litesearch/core.html#database) returns a [fastlite](https://fastlite.answer.ai/) `Database` patched with usearch’s SIMD distance functions. Pass a file path for persistence; omit it for an in-memory store.
 
-``` python
-db = database()   # ':memory:' by default; use database('my.db') for persistence
-db.q('select sqlite_version() as sqlite_version')
-```
-
-    [{'sqlite_version': '3.53.3'}]
-
 The usearch extension adds SIMD-accelerated distance functions directly into SQL. Four metrics are available: `cosine`, `sqeuclidean`, `inner`, and `divergence`. All variants support `f32`, `f16`, `f64`, and `i8` suffixes.
 
 ``` python
+db = database()
 vecs = dict(
     v1=np.ones((100,),  dtype=np.float32).tobytes(),   # ones
     v2=np.zeros((100,), dtype=np.float32).tobytes(),   # zeros
-    v3=np.full((100,), 0.25, dtype=np.float32).tobytes()  # 0.25s (same direction as v1)
 )
 def dist_q(metric):
-    return db.q(f'''
-        select
-            distance_{metric}_f32(:v1,:v2) as {metric}_v1_v2,
-            distance_{metric}_f32(:v1,:v3) as {metric}_v1_v3,
-            distance_{metric}_f32(:v2,:v3) as {metric}_v2_v3
-    ''', vecs)
-
+    return db.q(f'select distance_{metric}_f32(:v1,:v2) as {metric}', vecs)
+print('comparing 1s and 0s', '\n---------------------')
 for fn in ['sqeuclidean', 'divergence', 'inner', 'cosine']: print(dist_q(fn))
 ```
 
-    [{'sqeuclidean_v1_v2': 100.0, 'sqeuclidean_v1_v3': 56.25, 'sqeuclidean_v2_v3': 6.25}]
-    [{'divergence_v1_v2': 34.657352447509766, 'divergence_v1_v3': 12.046551704406738, 'divergence_v2_v3': 8.66433334350586}]
-    [{'inner_v1_v2': 1.0, 'inner_v1_v3': -24.0, 'inner_v2_v3': 1.0}]
-    [{'cosine_v1_v2': 1.0, 'cosine_v1_v3': 0.0, 'cosine_v2_v3': 1.0}]
+    comparing 1s and 0s 
+    ---------------------
+    [{'sqeuclidean': 100.0}]
+    [{'divergence': 34.657352447509766}]
+    [{'inner': 1.0}]
+    [{'cosine': 1.0}]
 
 > Cosine distance between v1 (ones) and v3 (0.25s) is **0.0** — they point in the same direction. Both `inner` and `divergence` are also available for different retrieval trade-offs.
 
@@ -114,97 +113,41 @@ Pass `hash=True` to use a **content-addressed id** (SHA-1 of the content). Usefu
 
 ``` python
 code_store = db.get_store(name='code', hash=True)
-code_store.insert_all([
-    dict(content='hello world', embedding=np.ones( (100,), dtype=np.float16).tobytes()),
-    dict(content='hi there', embedding=np.full( (100,), 0.5, dtype=np.float16).tobytes()),
-    dict(content='goodbye now', embedding=np.zeros((100,), dtype=np.float16).tobytes()),
-], upsert=True, hash_id='id')
+code_store.insert_all([{'content':v} for v in ('hello world', 'hi there', 'goodbye now')], upsert=True, hash_id='id')
 code_store(select='id,content')
 ```
 
-    [{'id': '250ce2bffa97ab21fa9ab2922d19993454a0cf28', 'content': 'hello world'},
-     {'id': 'c89f43361891bfab9290bcebf182fa5978f89700', 'content': 'hi there'},
-     {'id': '882293d5e5c3d3e04e8e0c4f7c01efba904d0932', 'content': 'goodbye now'}]
+    [{'id': '672a7555558b556be985cf2e48f650307a6f74d8', 'content': 'hello world'},
+     {'id': 'bb979740c5bc3904c4011ecaa5627c33080b119a', 'content': 'hi there'},
+     {'id': '2a432c1def89853eba5c30b06a5d5826f6af7ae1', 'content': 'goodbye now'}]
 
 ### `db.search()` — Hybrid FTS + Vector with RRF
 
-`db.search()` runs **both** an FTS5 keyword query and a vector similarity search, then merges the ranked lists with Reciprocal Rank Fusion. Documents that appear in *both* lists get a score boost — the best of both worlds.
+`db.search()` runs **both** an FTS5 keyword query and a vector similarity search, then merges the ranked lists with Reciprocal Rank Fusion. Documents that appear in *both* lists get a score boost — the best of both worlds. `rrf` is turned on by default; pass `rrf=False` to see the raw FTS and vector legs separately.
 
 ``` python
-# Re-create a clean store for the search demo
-db2  = database()
-st2  = db2.get_store()
-
-phrases = [
-    "attention mechanisms in neural networks",
-    "transformer architecture for sequence modelling",
-    "stochastic gradient descent and learning rate schedules",
-    "positional encoding and token embeddings",
-    "dropout regularisation reduces overfitting",
-]
-# use float32 vectors (matching dtype= below)
-vecs2 = [np.random.default_rng(i).random(64, dtype=np.float32) for i in range(len(phrases))]
-st2.insert_all([dict(content=p, embedding=v.tobytes()) for p, v in zip(phrases, vecs2)])
-```
-
-    <Table store (content, embedding, metadata, uploaded_at, id)>
-
-``` python
-q2 = "attention"
-q_vec = np.random.default_rng(42).random(64, dtype=np.float32).tobytes()
-db2.search(q2, q_vec, columns=['id','content'], dtype=np.float32)
-```
-
-    [{'rowid': 1,
-      'id': 1,
-      'content': 'attention mechanisms in neural networks',
-      'rank': -1.116174474454989,
-      '_rrf_score': 0.032539682539682535},
-     {'rowid': 3,
-      'id': 3,
-      'content': 'stochastic gradient descent and learning rate schedules',
-      '_dist': 0.20330411195755005,
-      '_rrf_score': 0.016666666666666666},
-     {'rowid': 2,
-      'id': 2,
-      'content': 'transformer architecture for sequence modelling',
-      '_dist': 0.23124444484710693,
-      '_rrf_score': 0.01639344262295082},
-     {'rowid': 5,
-      'id': 5,
-      'content': 'dropout regularisation reduces overfitting',
-      '_dist': 0.23238885402679443,
-      '_rrf_score': 0.016129032258064516},
-     {'rowid': 4,
-      'id': 4,
-      'content': 'positional encoding and token embeddings',
-      '_dist': 0.32342469692230225,
-      '_rrf_score': 0.015625}]
-
-Pass `rrf=False` to see the raw FTS and vector legs separately — handy for debugging relevance:
-
-``` python
-db2.search(q2, q_vec, columns=['id','content'], dtype=np.float32, rrf=False)
+q='attention mechanism'
+db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, rrf=False)
 ```
 
     {'fts': [{'id': 1,
        'content': 'attention mechanisms in neural networks',
-       'rank': -1.116174474454989}],
-     'vec': [{'id': 3,
-       'content': 'stochastic gradient descent and learning rate schedules',
-       '_dist': 0.20330411195755005},
-      {'id': 2,
-       'content': 'transformer architecture for sequence modelling',
-       '_dist': 0.23124444484710693},
-      {'id': 5,
-       'content': 'dropout regularisation reduces overfitting',
-       '_dist': 0.23238885402679443},
-      {'id': 1,
+       'rank': -2.232348948909978}],
+     'vec': [{'id': 1,
        'content': 'attention mechanisms in neural networks',
-       '_dist': 0.24136507511138916},
+       '_dist': 0.49074459075927734},
+      {'id': 3,
+       'content': 'stochastic gradient descent and learning rate schedules',
+       '_dist': 0.9048988223075867},
       {'id': 4,
        'content': 'positional encoding and token embeddings',
-       '_dist': 0.32342469692230225}]}
+       '_dist': 0.9850721955299377},
+      {'id': 5,
+       'content': 'dropout regularisation reduces overfitting',
+       '_dist': 1.0058910846710205},
+      {'id': 2,
+       'content': 'transformer architecture for sequence modelling',
+       '_dist': 1.010542631149292}]}
 
 > **Tip — dtype matters.** Always pass the same `dtype` used when encoding. `model2vec` and most ONNX models return `float32`; pass `dtype=np.float32`. The default is `float16` (matches [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)).
 
@@ -235,7 +178,7 @@ print(f'sync {stats} in {time.perf_counter()-t:.2f}s — index size {adb.get_ind
 # sync {'changed': 8000, 'same': 0, 'removed': 0} in 0.57s — index size 8000
 ```
 
-    sync {'changed': 8000, 'same': 0, 'removed': 0} in 0.63s — index size 8000
+    sync {'changed': 8000, 'same': 0, 'removed': 0} in 0.64s — index size 8000
 
 ``` python
 q  = 'function that multiplies its input by a constant and adds an offset'
@@ -258,7 +201,7 @@ print(f'recall@10: {len(exact & approx)}/10')
 # recall@10: 10/10
 ```
 
-    brute-force 1.889 ms   ann 0.105 ms   speedup 18.1x
+    brute-force 1.802 ms   ann 0.123 ms   speedup 14.6x
     recall@10: 9/10
 
 ``` python
@@ -279,46 +222,9 @@ adb.search(q, qv, columns=['content'], table_name='code', ann=True, limit=3)
       '_dist': 0.7960468530654907,
       '_rrf_score': 0.016129032258064516}]
 
-## `litesearch.data`
-
-### Query Preprocessing
-
-FTS5 is powerful, but raw natural-language queries often miss results. `litesearch.data` ships helpers to transform queries before sending them to FTS:
-
-``` python
-q = 'This is a sample query'
-print('preprocessed q with defaults: `%s`' % pre(q))
-print('keywords extracted: `%s`'          % pre(q, wc=False, wide=False))
-print('q with wild card: `%s`'            % pre(q, extract_kw=False, wide=False, wc=True))
-```
-
-    preprocessed q with defaults: `sample* OR query*`
-    keywords extracted: `sample query`
-    q with wild card: `This* is* a* sample* query*`
-
-| Function      | What it does                                    |
-|---------------|-------------------------------------------------|
-| `clean(q)`    | strips `*` and returns `None` for empty queries |
-| `add_wc(q)`   | appends `*` to each word for prefix matching    |
-| `mk_wider(q)` | joins words with `OR` for broader matching      |
-| `kw(q)`       | extracts keywords via YAKE (removes stop-words) |
-| `pre(q)`      | applies all of the above in one call            |
-
 ### PDF Extraction
 
 `litesearch.data` patches `pdf_oxide.PdfDocument` with bulk page-extraction methods. All methods take optional `st` / `end` page indices and return a fastcore `L` list:
-
-| Method | Returns |
-|----|----|
-| `doc.pdf_texts(st, end)` | plain text per page |
-| `doc.pdf_markdown(st, end)` | markdown with headings + tables detected |
-| `doc.pdf_links(st, end)` | URI strings extracted from annotations |
-| `doc.pdf_tables(st, end)` | structured rows / cells / bbox dicts |
-| `doc.pdf_spans(st, end)` | text spans with font size, weight, bbox |
-| `doc.pdf_images(st, end, output_dir)` | image metadata, or save to disk |
-| `doc.pdf_chunks(st, end)` | `(page, chunk_idx, text)` triples, markdown-chunked via chonkie |
-
-`images_to_pdf(imgs, output)` goes the other direction — wraps a list of images (PIL Images, bytes, or paths) into a conformant multi-page image-only PDF with no external dependencies.
 
 ``` python
 doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
@@ -326,22 +232,15 @@ doc = PdfDocument('pdfs/attention_is_all_you_need.pdf')
 
 ``` python
 print(f'{doc.page_count()} pages, {len(doc.pdf_links())} links')
-# plain text of page 1
-doc.pdf_texts(0, 1)[0][:300]
 ```
-
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
 
     15 pages, 18 links
 
-    'Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or scholarly works.\n\n\nAttention\n\n\nAshish Vaswani∗ Noam Shazeer\n\n\n Is \n\n\n∗\n\n\nAll You\n\n\nNiki \n\n\n \n\n\nParmar\n\n\nNeed\n\n\n∗ Jakob Uszkoreit∗\n\n\nIllia Polos'
+[`pdf_parse`](https://Karthik777.github.io/litesearch/data.html#pdf_parse) parses a given pdf path or PdfDocument or bytes into a list of text per page. it has a smart ocr check and uses liteparse in the background if it needs to.
 
 ``` python
 # markdown export — headings and tables are detected automatically
-md = doc.pdf_markdown()
+md = pdf_parse(doc)
 print(f'Page 1 (markdown):\n{md[0][:400]}')
 ```
 
@@ -362,7 +261,7 @@ print(f'Page 1 (markdown):\n{md[0][:400]}')
 
     Google Research Google Research [avaswani@google.com](mailto:avaswani@google
 
-`doc.pdf_chunks()` wraps `pdf_markdown()` + chonkie’s `RecursiveChunker` into `(page, chunk_idx, text)` triples — the direct input for [`encode_pdf_texts`](https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts):
+`doc.pdf_chunks()` wraps [`pdf_parse`](https://Karthik777.github.io/litesearch/data.html#pdf_parse) + chonkie’s `FastChunker`(or pass another chunker) into `(page, chunk_idx, text)` triples — the direct input for [`encode_pdf_texts`](https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts):
 
 ``` python
 chunks = doc.pdf_chunks()
@@ -426,7 +325,7 @@ nb=file_parse(repo_root()/'nbs/01_core.ipynb')[:2]
 
 # PDF → markdown-chunked text (via pdf_chunks)
 pdf=file_parse(Path('pdfs/attention_is_all_you_need.pdf'))[:2]
-print(py[0], '\n------------\n', nb[0], '\n---------------\n', pdf[0])
+print(py[0], '\n------------\n', nb[0], '\n---------------\n', pdf[0][:400])
 ```
 
     Dictionary used where Stream expected, treating as empty stream
@@ -612,17 +511,17 @@ for r in rrf_merge(txt_r, img_r)[:6]:
     rrf=0.0167  Table 1: Maximum path lengths, per-layer complexity and minimum number
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-30-output-3.png)
+![](index_files/figure-commonmark/cell-26-output-3.png)
 
     rrf=0.0164  Table 4: The Transformer generalizes well to English constituency pars
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-30-output-5.png)
+![](index_files/figure-commonmark/cell-26-output-5.png)
 
     rrf=0.0161  Table 3: Variations on the Transformer architecture. Unlisted values a
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-30-output-7.png)
+![](index_files/figure-commonmark/cell-26-output-7.png)
 
 **Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same 768-dim space; use [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) and [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) separately:
 
@@ -651,32 +550,32 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-31-output-2.png)
+![](index_files/figure-commonmark/cell-27-output-2.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-31-output-4.png)
+![](index_files/figure-commonmark/cell-27-output-4.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-31-output-6.png)
+![](index_files/figure-commonmark/cell-27-output-6.png)
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-31-output-8.png)
+![](index_files/figure-commonmark/cell-27-output-8.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-31-output-10.png)
+![](index_files/figure-commonmark/cell-27-output-10.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-31-output-12.png)
+![](index_files/figure-commonmark/cell-27-output-12.png)
 
 ## Next Steps
 
