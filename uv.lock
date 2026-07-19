@@ -2364,7 +2364,7 @@ wheels = [
 
 [[package]]
 name = "litesearch"
-version = "0.0.31"
+version = "0.0.32"
 source = { editable = "." }
 dependencies = [
     { name = "chonkie" },
@@ -2377,7 +2377,7 @@ dependencies = [
     { name = "onnxruntime", version = "1.27.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pdf-oxide" },
+    { name = "pdf-oxide", extra = ["ocr"] },
     { name = "pillow" },
     { name = "tokenizers" },
     { name = "usearch" },
@@ -2411,7 +2411,7 @@ requires-dist = [
     { name = "onnx", specifier = ">=1.22.0" },
     { name = "onnxruntime", specifier = ">=1.24.3" },
     { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pdf-oxide", specifier = ">=0.3.17" },
+    { name = "pdf-oxide", extras = ["ocr"], specifier = ">=0.3.17" },
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "tokenizers", specifier = ">=0.22.2" },
     { name = "usearch", specifier = ">=2.23.0" },
@@ -3952,6 +3952,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4a/f7/65f0098a6d41e28dcaaf35034fbfea7f2d82ee024947de904e1becc394e2/pdf_oxide-0.3.74-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e327f935c97827e424417cd4373aab7747afc960549a07809f305847ade7f144", size = 11244439 },
     { url = "https://files.pythonhosted.org/packages/6d/b1/7628aff63753e0c4fbb04df222a1ffab57349ee7283c3490171ea0e50f6c/pdf_oxide-0.3.74-cp38-abi3-win_amd64.whl", hash = "sha256:a6a1492116971b20b9607d8ed11606f455d0d94296b32efbcaf110b7905e9e40", size = 11120657 },
     { url = "https://files.pythonhosted.org/packages/54/f5/24424d3f7951cfeb690af7998d8ca753dcdfc69ed447952779f120196c42/pdf_oxide-0.3.74-cp38-abi3-win_arm64.whl", hash = "sha256:eafa8c4b0f8fc8c46e61dec4c869ab1743e244cf99b1708d429ac1df4019675c", size = 10360350 },
+]
+
+[package.optional-dependencies]
+ocr = [
+    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.27.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [[package]]

@@ -4,7 +4,7 @@
 __all__ = ['embed_chunk', 'process_content', 'rrf_merge', 'database']
 
 # %% ../nbs/01_core.ipynb #cda88b6a
-from fastcore.all import Path, Generator, patch, Optional, Union, Iterable, merge, ifnone, first, L, filter_keys, not_, in_
+from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, filter_keys, not_, in_, parallel as fcp
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict, hash_record
@@ -159,7 +159,8 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
                emb:bytes,           # query embedding
                columns:list=None,   # columns to return (rowid always included)
                limit:int=50,        # max results
-               dtype=np.float16):   # embedding dtype
+               dtype=np.float16
+               ):   # embedding dtype
     'HNSW ANN search via the store\'s usearch Index. Returns rows (+`_dist`) ordered by similarity.'
     m = self.db._ann_meta(self.name)
     if not (m and m['ndim']): return []
@@ -291,8 +292,9 @@ def search(self: Database,  # database connection
            rrf_k:int=60,  # RRF k parameter
            dtype=np.float16,  # embedding dtype
            id_key:str='rowid',  # key to join RRF results on
-           quote:bool=False,  # quote FTS query to disable special chars
+           quote:bool=True,  # quote FTS query to disable special chars
            ann:bool=False,  # use the HNSW ANN index instead of brute-force vec scan (where/offset ignored for the vector leg)
+           parallel=True
            ):
     'Search the litesearch store with fts and vector search combined.'
     if not q.strip(): return None
@@ -300,7 +302,10 @@ def search(self: Database,  # database connection
     cols = list(columns or [])
     if rrf and id_key not in cols: cols = [id_key] + cols
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
-    fts = tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, True)
-    vec = tbl.ann_search(emb,cols,lim,dtype) if ann else tbl.vec_search(emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)
+    exec_ls = [lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, quote),
+          lambda: tbl.ann_search(emb,cols,lim,dtype) if ann else tbl.vec_search(
+	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
+    fn = lambda f: f()
+    fts, vec = fcp(fn, exec_ls, threadpool=True) if parallel else L(exec_ls).map(fn)
     if rrf: return rrf_merge(fts, vec, rrf_k, lim, id_key)[ifnone(off, 0):]
     return dict(fts=fts, vec=vec)

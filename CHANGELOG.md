@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.33
+parallel search
+
+
 ## 0.0.32
 ann index clear
 
