@@ -186,7 +186,7 @@ class FastEncode:
 class LateChunkFastEncode(FastEncode):
 	'Embed the whole doc once; mean-pool per chunk span so each chunk vector keeps full-doc context.'
 	def _token_embeddings(self, text:str):
-		'Single forward pass; returns (token_embeddings, char offsets, attention mask).'
+		'Single forward pass; returns (token_embeddings, char offsets, attention mask with special tokens zeroed).'
 		enc = self.tok.encode(text, add_special_tokens=True)
 		ids = np.array([enc.ids], dtype=np.int64)
 		msk = np.array([enc.attention_mask], dtype=np.int64)
@@ -194,7 +194,8 @@ class LateChunkFastEncode(FastEncode):
 		if 'attention_mask' in self._input_names: inp['attention_mask'] = msk
 		if self.tti and 'token_type_ids' in self._input_names: inp['token_type_ids'] = np.zeros(ids.shape, dtype=np.int64)
 		token_embs = self.sess.run(None, inp)[0][0]
-		return token_embs, enc.offsets, msk[0]
+		pool_msk = msk[0] * (1 - np.array(enc.special_tokens_mask, dtype=np.int64))
+		return token_embs, enc.offsets, pool_msk
 
 	def encode_late_chunks(self, text:str, spans:list, prompt:str=None):
 		'Pool per (start,end) char span over full-doc token embeddings.'
