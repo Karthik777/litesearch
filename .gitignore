@@ -150,3 +150,13 @@ checklink/cookies.txt
 
 # Quarto
 .quarto
+
+# late-chunking eval artifacts
+eval.db*
+eval_*.db
+eval_*.db.*.usearch
+eval_*.json
+eval_queries.json
+nbs/longqa.db*
+longqa.db*
+.superpowers/
