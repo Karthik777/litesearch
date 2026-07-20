@@ -15,6 +15,7 @@ classifiers = ["Natural Language :: English", "Intended Audience :: Developers",
 dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
+    "datasets>=5.0.0",
     "fastlite>=0.2.4",
     "liteparse>=2.6.0",
     "model2vec>=0.7.0",
@@ -54,6 +55,7 @@ dev = [
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
     "koshas>=0.0.25",
+    "fossick>=0.0.10",
 ]
 
 [tool.hatch.version]
