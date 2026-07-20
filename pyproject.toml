@@ -55,7 +55,6 @@ dev = [
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
     "koshas>=0.0.25",
-    "fossick>=0.0.10",
 ]
 
 [tool.hatch.version]
