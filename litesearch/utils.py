@@ -4,8 +4,8 @@
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
            'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
-           'download_model', 'FastEncode', 'LateChunkFastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage',
-           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'download_model', 'FastEncode', 'LateChunkFastEncode', 'LongLateChunkFastEncode', 'doc_encoder',
+           'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -210,6 +210,49 @@ class LateChunkFastEncode(FastEncode):
 			if idx: out[i] = token_embs[idx].mean(axis=0)
 		if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
 		return out.astype(self.dtype)
+
+# %% ../nbs/03_utils.ipynb #cf76ec50
+class LongLateChunkFastEncode(LateChunkFastEncode):
+    'Late chunking for docs beyond the context window via overlapping windows and token-weighted averaging.'
+    def _make_windows(self, text, window_chars, overlap_chars):
+        'Stepped char windows covering the whole text including the tail.'
+        step = max(window_chars - overlap_chars, 1)
+        starts = list(range(0, max(len(text) - overlap_chars, 1), step))
+        windows = [(s, min(s + window_chars, len(text))) for s in starts]
+        if windows[-1][1] < len(text): windows.append((max(len(text) - window_chars, 0), len(text)))
+        return windows
+
+    def encode_long_document(self, text, spans, window_chars=None, overlap_chars=None, prompt=None):
+        'Pool each span within every overlapping window; combine by token-weighted average.'
+        max_tok = (self.max_seq_len or 512) - 8
+        window_chars = window_chars or int(max_tok * 3.5)
+        overlap_chars = overlap_chars if overlap_chars is not None else window_chars // 5
+        windows = self._make_windows(text, window_chars, overlap_chars)
+        tmpl = prompt if prompt is not None else (self.prompt.get('document', None) or '{text}')
+        chunk_sums, chunk_weights, dim = None, np.zeros(len(spans)), None
+        for ws,we in windows:
+            win_text = text[ws:we]
+            full = tmpl.format(text=win_text)
+            token_embs, offsets, msk = self._token_embeddings(full)
+            prefix_len = len(full) - len(win_text)
+            if dim is None:
+                dim = token_embs.shape[-1]
+                chunk_sums = np.zeros((len(spans), dim), dtype=np.float32)
+            for i,(cs,ce) in enumerate(spans):
+                local_cs, local_ce = cs-ws, ce-ws
+                if local_ce <= 0 or local_cs >= (we-ws): continue
+                local_cs = max(local_cs,0)+prefix_len
+                local_ce = min(local_ce,we-ws)+prefix_len
+                idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>local_cs and s<local_ce]
+                if not idx: continue
+                w = len(idx)
+                chunk_sums[i] += token_embs[idx].mean(axis=0) * w
+                chunk_weights[i] += w
+        out = np.zeros_like(chunk_sums)
+        ok = chunk_weights > 0
+        out[ok] = chunk_sums[ok] / chunk_weights[ok, None]
+        if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
+        return out.astype(self.dtype)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
 def doc_encoder(embedder:FastEncode|StaticModel):
