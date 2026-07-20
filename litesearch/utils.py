@@ -11,7 +11,7 @@ __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embed
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
 from fastcore.parallel import parallel as fc_parallel
-import json, os
+import json, os, warnings
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer, AddedToken
@@ -199,16 +199,19 @@ class LateChunkFastEncode(FastEncode):
 		return token_embs, enc.offsets, pool_msk
 
 	def encode_late_chunks(self, text:str, spans:list, prompt:str=None):
-		'Pool per (start,end) char span over full-doc token embeddings.'
+		'Pool per (start,end) char span over full-doc token embeddings. Truncates past max_seq_len; use encode_auto for long docs.'
 		prompt = prompt if prompt is not None else self.prompt.get('document', None)
 		full = prompt.format(text=text) if prompt else text
 		prefix_len = len(full) - len(text)
 		token_embs, offsets, msk = self._token_embeddings(full)
 		out = np.zeros((len(spans), token_embs.shape[-1]), dtype=np.float32)
+		empty = 0
 		for i,(cs,ce) in enumerate(spans):
 			cs, ce = cs+prefix_len, ce+prefix_len
 			idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>cs and s<ce]
 			if idx: out[i] = token_embs[idx].mean(axis=0)
+			else: empty += 1
+		if empty: warnings.warn(f'{empty}/{len(spans)} spans got no tokens (doc likely exceeds max_seq_len); use encode_auto/encode_long_document for long docs')
 		if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
 		return out.astype(self.dtype)
 

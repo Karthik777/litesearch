@@ -15,7 +15,6 @@ classifiers = ["Natural Language :: English", "Intended Audience :: Developers",
 dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
-    "datasets>=5.0.0",
     "fastlite>=0.2.4",
     "liteparse>=2.6.0",
     "model2vec>=0.7.0",
@@ -25,11 +24,13 @@ dependencies = [
     "pandas>=2.3.3",
     "pdf-oxide>=0.3.17",
     "pillow>=12.1.1",
-    "rishi>=0.0.2",
     "tokenizers>=0.22.2",
     "usearch>=2.23.0",
     "yake>=0.7.3",
 ]
+
+[project.optional-dependencies]
+eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"

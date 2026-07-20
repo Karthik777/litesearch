@@ -2873,7 +2873,6 @@ source = { editable = "." }
 dependencies = [
     { name = "chonkie" },
     { name = "codesigs" },
-    { name = "datasets" },
     { name = "fastlite" },
     { name = "liteparse" },
     { name = "model2vec" },
@@ -2885,10 +2884,15 @@ dependencies = [
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pdf-oxide" },
     { name = "pillow" },
-    { name = "rishi" },
     { name = "tokenizers" },
     { name = "usearch" },
     { name = "yake" },
+]
+
+[package.optional-dependencies]
+eval = [
+    { name = "datasets" },
+    { name = "rishi" },
 ]
 
 [package.dev-dependencies]
@@ -2912,7 +2916,7 @@ dev = [
 requires-dist = [
     { name = "chonkie", specifier = ">=1.6.0" },
     { name = "codesigs", specifier = ">=0.0.2" },
-    { name = "datasets", specifier = ">=5.0.0" },
+    { name = "datasets", marker = "extra == 'eval'", specifier = ">=5.0.0" },
     { name = "fastlite", specifier = ">=0.2.4" },
     { name = "liteparse", specifier = ">=2.6.0" },
     { name = "model2vec", specifier = ">=0.7.0" },
@@ -2922,7 +2926,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdf-oxide", specifier = ">=0.3.17" },
     { name = "pillow", specifier = ">=12.1.1" },
-    { name = "rishi", specifier = ">=0.0.2" },
+    { name = "rishi", marker = "extra == 'eval'", specifier = ">=0.0.2" },
     { name = "tokenizers", specifier = ">=0.22.2" },
     { name = "usearch", specifier = ">=2.23.0" },
     { name = "yake", specifier = ">=0.7.3" },
