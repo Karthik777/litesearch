@@ -262,9 +262,10 @@ class AutoLateChunkFastEncode(LongLateChunkFastEncode):
         'Token count with truncation disabled (tokenizer only, no ONNX run).'
         trunc = self.tok.truncation
         self.tok.no_truncation()
-        n = len(self.tok.encode(text, add_special_tokens=True).ids)
-        if trunc: self.tok.enable_truncation(**{k:trunc[k] for k in ('max_length','stride','strategy','direction') if k in trunc})
-        return n
+        try:
+            return len(self.tok.encode(text, add_special_tokens=True).ids)
+        finally:
+            if trunc: self.tok.enable_truncation(**{k:trunc[k] for k in ('max_length','stride','strategy','direction') if k in trunc})
 
     def encode_auto(self, text, spans, prompt=None, long_ratio=4.0, **kw):
         'Return (embeddings, tier); tier is normal / long / longer by token count vs context window.'
