@@ -2,9 +2,9 @@
 
 # %% auto #0
 __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'needs_ocr', 'clean_md', 'ocr_parse', 'oxide_parse',
-           'pdf_parse', 'chunk_markdown', 'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs', 'chunk_texts',
-           'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc',
-           'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md']
+           'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs',
+           'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages',
+           'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 import os,re
@@ -122,6 +122,14 @@ def pdf_chunks(self:PdfDocument, # PDF document
 	return L((pg+1, ci, chunk)
 	         for pg, md in enumerate(pdf_parse(self))
 	         for ci, chunk in enumerate(chunk_markdown(md, **kwargs)))
+
+# %% ../nbs/02_data.ipynb #0923fba8
+def chunk_spans(text:str,            # text to split
+                chunker:BaseChunker=None
+) -> L:
+    'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
+    r = chunker or FastChunker()
+    return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
 # %% ../nbs/02_data.ipynb #171a3906ce544f95
 from importlib.util import find_spec as fs
