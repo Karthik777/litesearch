@@ -4,8 +4,8 @@
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
            'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
-           'download_model', 'FastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal',
-           'encode_pdf_texts', 'encode_pdf_images']
+           'download_model', 'FastEncode', 'LateChunkFastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage',
+           'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -181,6 +181,34 @@ class FastEncode:
 	def encode_query(self, lns, prompt:str=None, **kw):
 		if prompt is None: prompt = self.prompt.get('query', None)
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
+
+# %% ../nbs/03_utils.ipynb #a06a18ad
+class LateChunkFastEncode(FastEncode):
+	'Embed the whole doc once; mean-pool per chunk span so each chunk vector keeps full-doc context.'
+	def _token_embeddings(self, text:str):
+		'Single forward pass; returns (token_embeddings, char offsets, attention mask).'
+		enc = self.tok.encode(text, add_special_tokens=True)
+		ids = np.array([enc.ids], dtype=np.int64)
+		msk = np.array([enc.attention_mask], dtype=np.int64)
+		inp = dict(input_ids=ids)
+		if 'attention_mask' in self._input_names: inp['attention_mask'] = msk
+		if self.tti and 'token_type_ids' in self._input_names: inp['token_type_ids'] = np.zeros(ids.shape, dtype=np.int64)
+		token_embs = self.sess.run(None, inp)[0][0]
+		return token_embs, enc.offsets, msk[0]
+
+	def encode_late_chunks(self, text:str, spans:list, prompt:str=None):
+		'Pool per (start,end) char span over full-doc token embeddings.'
+		prompt = prompt if prompt is not None else self.prompt.get('document', None)
+		full = prompt.format(text=text) if prompt else text
+		prefix_len = len(full) - len(text)
+		token_embs, offsets, msk = self._token_embeddings(full)
+		out = np.zeros((len(spans), token_embs.shape[-1]), dtype=np.float32)
+		for i,(cs,ce) in enumerate(spans):
+			cs, ce = cs+prefix_len, ce+prefix_len
+			idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>cs and s<ce]
+			if idx: out[i] = token_embs[idx].mean(axis=0)
+		if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
+		return out.astype(self.dtype)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
 def doc_encoder(embedder:FastEncode|StaticModel):
