@@ -172,7 +172,7 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     dist  = dict(zip(keys, np.atleast_1d(res.distances).tolist()))
     order = {k:i for i,k in enumerate(keys)}
     cols = [c for c in (columns or []) if c != 'rowid']
-    sel = ','.join(cols + ['rowid']) if cols else '*, rowid'
+    sel = ','.join(cols + ['rowid as rowid']) if cols else '*, rowid as rowid'
     rows = self.db.q(f'select {sel} from {self.name} where {_in("rowid", keys)}')
     for r in rows: r['_dist'] = dist.get(r['rowid'])
     return sorted(rows, key=lambda r: order[r['rowid']])
@@ -187,7 +187,7 @@ def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16):
     'Apply adds (by id) / removes (by rowid) to the ANN index from current blobs; infer+persist ndim; save.'
     m = self.db._ann_meta(self.name)
     if rm_rowids and m['ndim']: self._idx_remove(self.db.get_index(self.name), rm_rowids)
-    rows = L(self(select='rowid, embedding', where=_in('id', add_ids))).filter(lambda r: r['embedding']) if add_ids else L()
+    rows = L(self(select='rowid as rowid, embedding', where=_in('id', add_ids))).filter(lambda r: r['embedding']) if add_ids else L()
     if rows:
         if not m['ndim']:
             m['ndim'] = len(np.frombuffer(rows[0]['embedding'], dtype=dtype))
@@ -218,7 +218,7 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
     to_add = filter_keys(cont_hash, not_(in_(ex)))
     m  = self.db._ann_meta(self.name)
     dt = _np_dtype.get(m['dtype'], np.float16) if m else np.float16
-    rm_rowids = L(self(select='rowid', where=_in('id', stale))).itemgot('rowid') if (m and stale) else L()
+    rm_rowids = L(self(select='rowid as rowid', where=_in('id', stale))).itemgot('rowid') if (m and stale) else L()
     if stale: self.delete_where(where=_in('id', stale))
     if to_add: process_content(self, list(to_add.values()), embed=embed, emb_fn=emb_fn)
     if m: self._sync_index(list(to_add), list(rm_rowids), dt)
@@ -230,7 +230,7 @@ def rebuild_index(self:Table, dtype=None):
     m = self.db._ann_meta(self.name)
     assert m, f'{self.name!r} is not an ANN store'
     dt = dtype or _np_dtype.get(m['dtype'], np.float16)
-    rows = L(self(select='rowid, embedding')).filter(lambda r: r['embedding'])
+    rows = L(self(select='rowid as rowid, embedding')).filter(lambda r: r['embedding'])
     self.db.ann_indices.pop(self.name, None)
     if not rows:
         if not m['ndim']: return 0                                   # never had vectors; nothing to clear
