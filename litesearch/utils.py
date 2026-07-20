@@ -4,8 +4,9 @@
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
            'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
-           'download_model', 'FastEncode', 'LateChunkFastEncode', 'LongLateChunkFastEncode', 'doc_encoder',
-           'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images']
+           'download_model', 'FastEncode', 'LateChunkFastEncode', 'LongLateChunkFastEncode', 'AutoLateChunkFastEncode',
+           'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts',
+           'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -253,6 +254,30 @@ class LongLateChunkFastEncode(LateChunkFastEncode):
         out[ok] = chunk_sums[ok] / chunk_weights[ok, None]
         if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
         return out.astype(self.dtype)
+
+# %% ../nbs/03_utils.ipynb #acc9466f
+class AutoLateChunkFastEncode(LongLateChunkFastEncode):
+    'Route to single-pass / windowed / tight-windowed late chunking by document token count.'
+    def _count_tokens(self, text):
+        'Token count with truncation disabled (tokenizer only, no ONNX run).'
+        trunc = self.tok.truncation
+        self.tok.no_truncation()
+        n = len(self.tok.encode(text, add_special_tokens=True).ids)
+        if trunc: self.tok.enable_truncation(**{k:trunc[k] for k in ('max_length','stride','strategy','direction') if k in trunc})
+        return n
+
+    def encode_auto(self, text, spans, prompt=None, long_ratio=4.0, **kw):
+        'Return (embeddings, tier); tier is normal / long / longer by token count vs context window.'
+        max_tok = self.max_seq_len or 512
+        n_tok = self._count_tokens(text)
+        if n_tok <= max_tok - 8:
+            return self.encode_late_chunks(text, spans, prompt=prompt), 'normal'
+        if n_tok <= max_tok * long_ratio:
+            return self.encode_long_document(text, spans, prompt=prompt, **kw), 'long'
+        max_chars = int((max_tok - 8) * 3.5)
+        return self.encode_long_document(text, spans, prompt=prompt,
+            window_chars=kw.pop('window_chars', max_chars),
+            overlap_chars=kw.pop('overlap_chars', max_chars // 8), **kw), 'longer'
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
 def doc_encoder(embedder:FastEncode|StaticModel):
