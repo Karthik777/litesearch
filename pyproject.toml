@@ -27,11 +27,11 @@ dependencies = [
     "tokenizers>=0.22.2",
     "usearch>=2.23.0",
     "yake>=0.7.3",
+    "flashrank>=0.2.10"
 ]
 
 [project.optional-dependencies]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
-rerank = ["flashrank>=0.2.10"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"

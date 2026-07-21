@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.35
+reranking and late chunking
+
+
 ## 0.0.34
 ocr with liteparse
 
