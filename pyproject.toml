@@ -31,6 +31,7 @@ dependencies = [
 
 [project.optional-dependencies]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
+rerank = ["flashrank>=0.2.10"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"
@@ -53,7 +54,7 @@ dev = [
     'ddgs',
     'pyperclip',
     "chonkie",
-    'flashrank',
+    "flashrank",
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
     "koshas>=0.0.25",

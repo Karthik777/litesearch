@@ -2894,6 +2894,9 @@ eval = [
     { name = "datasets" },
     { name = "rishi" },
 ]
+rerank = [
+    { name = "flashrank" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2918,6 +2921,7 @@ requires-dist = [
     { name = "codesigs", specifier = ">=0.0.2" },
     { name = "datasets", marker = "extra == 'eval'", specifier = ">=5.0.0" },
     { name = "fastlite", specifier = ">=0.2.4" },
+    { name = "flashrank", marker = "extra == 'rerank'", specifier = ">=0.2.10" },
     { name = "liteparse", specifier = ">=2.6.0" },
     { name = "model2vec", specifier = ">=0.7.0" },
     { name = "notebook", specifier = ">=7.5.4" },
