@@ -159,4 +159,14 @@ eval_*.json
 eval_queries.json
 nbs/longqa.db*
 longqa.db*
+# benchmark cache (datasets, per-model DBs, results, leaderboard)
+bench/
+bench_*/
+nbs/bench/
+nbs/bench_*/
+potion/
+bge/
+bge_small/
+jina/
+nomic/
 .superpowers/
