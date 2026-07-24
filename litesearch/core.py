@@ -160,6 +160,8 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
                emb:bytes,           # query embedding
                columns:list=None,   # columns to return (rowid always included)
                limit:int=50,        # max results
+               where:str= None,        # additional where clause (ignored if no rows returned by ANN)
+               where_args: dict = None,  # args for where clause
                dtype=np.float16
                ):   # embedding dtype
     'HNSW ANN search via the store\'s usearch Index. Returns rows (+`_dist`) ordered by similarity.'
@@ -167,16 +169,16 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     if not (m and m['ndim']): return []
     idx = self.db.get_index(self.name)
     if not idx.size: return []
-    res = idx.search(np.frombuffer(emb, dtype=dtype), count=limit)
+    res = idx.search(np.frombuffer(emb, dtype=dtype), count=limit*2)
     keys = np.atleast_1d(res.keys).tolist()   # -> python ints (L() would wrap the whole ndarray)
     if not keys: return []
-    dist  = dict(zip(keys, np.atleast_1d(res.distances).tolist()))
-    order = {k:i for i,k in enumerate(keys)}
+    dist, ord = dict(zip(keys, res.distances)), dict(L(keys).renumerate())
     cols = [c for c in (columns or []) if c != 'rowid']
     sel = ','.join(cols + [_rid()]) if cols else '*, %s'%_rid()
-    rows = self.db.q(f'select {sel} from {self.name} where {_in("rowid", keys)}')
+    wh = f'where {_in("rowid", keys)}' + f' AND {where}' if where else ''
+    rows = self.db.q(f'select {sel} from {self.name} {wh}', **(where_args or {}))
     for r in rows: r['_dist'] = dist.get(r['rowid'])
-    return sorted(rows, key=lambda r: order[r['rowid']])
+    return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))
 
 @patch
 def _idx_remove(self:Table, idx, keys):
@@ -327,7 +329,7 @@ def search(self: Database,  # database connection
     if reranking and 'content' not in cols: cols = cols + ['content']  # need text for the cross-encoder
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
     exec_ls = [lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, quote),
-          lambda: tbl.ann_search(emb,cols,lim,dtype) if ann else tbl.vec_search(
+          lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if ann else tbl.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
     fn = lambda f: f()
     fts, vec = fcp(fn, exec_ls, threadpool=True) if parallel else L(exec_ls).map(fn)
