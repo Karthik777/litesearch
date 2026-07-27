@@ -175,8 +175,8 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     dist, ord = dict(zip(keys, res.distances)), dict(L(keys).renumerate())
     cols = [c for c in (columns or []) if c != 'rowid']
     sel = ','.join(cols + [_rid()]) if cols else '*, %s'%_rid()
-    wh = f'where {_in("rowid", keys)}' + f' AND {where}' if where else ''
-    rows = self.db.q(f'select {sel} from {self.name} {wh}', **(where_args or {}))
+    wh = f'where {_in("rowid", keys)}' + (f' AND {where}' if where else '')
+    rows = self.db.q(f'select {sel} from {self.name} {wh}', where_args or None)
     for r in rows: r['_dist'] = dist.get(r['rowid'])
     return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))
 
