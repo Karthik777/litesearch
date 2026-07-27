@@ -172,7 +172,7 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     res = idx.search(np.frombuffer(emb, dtype=dtype), count=limit*2)
     keys = np.atleast_1d(res.keys).tolist()   # -> python ints (L() would wrap the whole ndarray)
     if not keys: return []
-    dist, ord = dict(zip(keys, res.distances)), dict(L(keys).renumerate())
+    dist, ord = dict(zip(keys, np.atleast_1d(res.distances).tolist())), dict(L(keys).renumerate())
     cols = [c for c in (columns or []) if c != 'rowid']
     sel = ','.join(cols + [_rid()]) if cols else '*, %s'%_rid()
     wh = f'where {_in("rowid", keys)}' + (f' AND {where}' if where else '')
