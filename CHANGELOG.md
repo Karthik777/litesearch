@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.0.37
+ann latency bug fixbug fix
+
+
 ## 0.0.36
 ann where addition
 
