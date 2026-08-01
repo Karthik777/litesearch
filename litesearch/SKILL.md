@@ -130,6 +130,35 @@ for h in hits:
 
 Point multiple projects at the same db path to build a shared cross-repo index. Use `hash=True` so overlapping content is deduplicated automatically.
 
+## Knowledge graph (no LLM)
+
+`litesearch.graph` builds an entity graph next to the store and adds it as a third RRF leg.
+Code is parsed (AST gives exact `calls`/`imports` edges), prose is tagged (spaCy `noun_chunks`,
+yake fallback), and edges between prose entities come from normalized-PMI co-occurrence.
+
+```python
+from litesearch import database, build_graph, resolve_entities, topic_nodes, spacy_pipe
+from litesearch.data import dir2chunks
+from litesearch.utils import FastEncode, doc_encoder
+
+enc, db = FastEncode(), database('.claude/kg.db')
+store = db.get_store(hash=True, ann=True)   # index chunks first, as above
+chunks = dir2chunks('src', types='py')
+
+build_graph(db, chunks, prose=False, emb_fn=doc_encoder(enc))  # prose=True + nlp= for docs
+resolve_entities(db)     # merge surface variants (skips exact AST symbols)
+topic_nodes(db)          # cluster the HNSW index into labelled topic nodes
+
+hits = db.graph_search(q, enc.encode_query([q])[0].tobytes(), columns=['content'], limit=10)
+```
+
+Use `graph_search` when the answer is *related to* the query rather than worded like it — it
+reaches chunks connected only by a shared entity. Use plain `db.search` for direct lookup.
+
+For prose, pass `nlp=spacy_pipe(terms=code_symbols)` — the `EntityRuler` then links prose
+mentions of your functions to the code nodes. Needs `pip install litesearch[graph]` and
+`python -m spacy download en_core_web_sm`; without it, extraction falls back to yake.
+
 ## Invocation
 
 Use clikernel — state persists, no re-import cost. Start once with `! clikernel`, then:
@@ -158,6 +187,10 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 | `store.vec_search(emb, ...)` | Vector-only search |
 | `rrf_merge(fts, vec)` | Merge FTS and vector result lists manually |
 | `pre(q)` | Preprocess FTS query: keywords, wildcards, OR |
+| `build_graph(db, chunks, ...)` | Extract entities/mentions/edges into the graph tables |
+| `db.graph_search(q, emb, ...)` | Hybrid search + personalized-PageRank graph leg |
+| `resolve_entities(db)` | Merge duplicate entities (ANN + lexical guard) |
+| `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
 
 ## search() parameters
 

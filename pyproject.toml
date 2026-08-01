@@ -32,6 +32,10 @@ dependencies = [
 
 [project.optional-dependencies]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
+# graph entity extraction on prose. Without it litesearch.graph falls back to yake keyphrases,
+# which are weaker node identities: `pip install litesearch[graph]` then
+# `python -m spacy download en_core_web_sm`
+graph = ["spacy>=3.8.0"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"

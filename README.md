@@ -359,6 +359,65 @@ print(f'{len(chunks)} chunks from nbs/')
     63 chunks from litesearch/
     2910 chunks from nbs/
 
+## `litesearch.graph` — knowledge graph, no LLM
+
+Builds an entity graph beside the chunk store and fuses it into search as a third RRF leg.
+Nothing here calls a language model.
+
+The split that makes it work: **code is parsed, prose is tagged.** For Python the AST already
+knows every symbol and every call, so `code_entities` returns exact `defines`/`calls`/`imports`
+edges. For prose, spaCy's `noun_chunks` (not its OntoNotes NER, which misses lowercase technical
+terms like `usearch`) supply the nodes, and edges come from normalized-PMI co-occurrence.
+
+```python
+from litesearch import database, build_graph, resolve_entities, topic_nodes, spacy_pipe
+from litesearch.data import dir2chunks
+from litesearch.utils import FastEncode, doc_encoder
+
+enc    = FastEncode()
+emb_fn = doc_encoder(enc)
+chunks = dir2chunks('litesearch', file_glob='*.py')
+
+db = database('.claude/kg.db')
+store = db.get_store(hash=True, ann=True)     # index chunks as usual, then:
+
+build_graph(db, chunks, prose=False, emb_fn=emb_fn)
+# {'entities': 296, 'mentions': 568, 'edges': 753, 'windows': 96}
+
+resolve_entities(db)        # merges surface variants; skips exact AST symbols
+topic_nodes(db)             # clusters the HNSW index into yake-labelled topic nodes
+
+hits = db.graph_search(q, enc.encode_query([q])[0].tobytes(), columns=['content'], limit=10)
+```
+
+`graph_search` seeds a personalized-PageRank walk from the top hybrid hits, then fuses
+FTS + vector + graph with `rrf_all`. The graph leg reaches documents that share no terms with
+the query — only an entity path.
+
+| Function | Description |
+|---|---|
+| `db.get_graph(store)` | Create `entities` / `mentions` / `edges` tables |
+| `build_graph(db, chunks, ...)` | Extract entities, mentions and edges from chunks |
+| `code_entities(chunk)` | Exact `(defined, called, imported)` symbols from a Python AST |
+| `text_entities(text, nlp)` | Entity surfaces from prose (spaCy, or yake fallback) |
+| `resolve_entities(db)` | Merge duplicate entities via ANN + a lexical guard |
+| `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
+| `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
+| `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
+
+Two details that matter in practice:
+
+- **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
+  chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
+  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`.
+- **Resolution must skip exact identifiers.** `fts_search` tokenizes to `{fts, search}`, so a
+  naive merge collapses it into `search`. `resolve_entities` leaves `symbol`/`module`/`topic`
+  kinds alone.
+
+spaCy is optional — `pip install litesearch[graph]` then
+`python -m spacy download en_core_web_sm`. Without it the extractor falls back to yake
+keyphrases, which are weaker node identities.
+
 ## `litesearch.utils`
 
 ### [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) — ONNX Text Encoder

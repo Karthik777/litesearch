@@ -160,3 +160,7 @@ eval_queries.json
 nbs/longqa.db*
 longqa.db*
 .superpowers/
+
+# pdf image extraction artifacts (written next to the cwd when notebooks run)
+pdfs/images/
+nbs/pdfs/images/
