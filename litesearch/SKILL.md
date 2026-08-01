@@ -155,6 +155,10 @@ hits = db.graph_search(q, enc.encode_query([q])[0].tobytes(), columns=['content'
 Use `graph_search` when the answer is *related to* the query rather than worded like it — it
 reaches chunks connected only by a shared entity. Use plain `db.search` for direct lookup.
 
+On **code** corpora pass `graph_w=0`: call edges link different levels of abstraction, not
+substitutable answers, so the graph leg adds little to ranking. Use the code graph for context
+assembly instead — after retrieval, pull the callers/callees of the top hits as supporting context.
+
 For prose, pass `nlp=spacy_pipe(terms=code_symbols)` — the `EntityRuler` then links prose
 mentions of your functions to the code nodes. Needs `pip install litesearch[graph]` and
 `python -m spacy download en_core_web_sm`; without it, extraction falls back to yake.
@@ -181,7 +185,7 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 
 | Function | Description |
 |---|---|
-| `database(path)` | Open/create SQLite + usearch SIMD extensions |
+| `database(path)` | Open/create SQLite + usearch SIMD extensions + apsw FTS5 tokenizers |
 | `db.get_store(name, **cols)` | Create FTS5 + vector table; `**cols` adds typed columns |
 | `db.search(q, emb, ...)` | Hybrid FTS + vector search with RRF reranking |
 | `store.vec_search(emb, ...)` | Vector-only search |

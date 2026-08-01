@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['hash_embed', 'code_entities', 'spacy_pipe', 'prose_windows', 'text_entities', 'build_graph', 'resolve_entities',
-           'cooccur_edges', 'topic_nodes', 'rrf_all', 'graph_stats']
+           'cooccur_edges', 'ctfidf_labels', 'topic_nodes', 'rrf_all', 'graph_stats']
 
 # %% ../nbs/05_graph.ipynb #imports
 from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict
@@ -52,8 +52,20 @@ def _norm(s):
     if not re.search(r'[A-Za-z]', s): return None          # pure numbers / punctuation
     return s.lower()
 
-def _toks(s): return set(_TOK.findall(s.lower()))
+def _toks(s):
+    '''Tokens for the lexical guard. UAX#29 treats `_` as a word joiner, so `fts_search` stays one
+    token — splitting it gives {fts, search}, which merges it into `search` by containment.'''
+    try: from apsw.unicode import word_iter, casefold
+    except ImportError: return set(_TOK.findall(s.lower()))
+    return {casefold(t) for t in word_iter(s or '') if any(c.isalnum() for c in t)}
+
 def _acr(s):  return ''.join(w[0] for w in s.split() if w)
+
+def _sentences(text):
+    'UAX#29 sentence split via apsw; falls back to the whole text as one window.'
+    try: from apsw.unicode import sentence_iter
+    except ImportError: return [text]
+    return [s for s in (x.strip() for x in sentence_iter(text)) if s]
 
 def _jac(a, b):
     A, B = _toks(a), _toks(b)
@@ -156,7 +168,17 @@ def prose_windows(text,                 # chunk text
     '''Entity surfaces grouped into co-occurrence windows — one per sentence when spaCy is available.
     Sentence windows are what make PMI meaningful: page-sized chunks turn every entity pair into a
     clique and no amount of pruning recovers from that.'''
-    if nlp is None: return L([_yake_terms(text, topk).map(lambda t: (t, 'keyphrase'))])
+    if nlp is None:
+        # one yake pass for the chunk vocabulary, then place each phrase in the sentences it
+        # occurs in — so the no-spaCy path gets real windows instead of one per chunk
+        terms = _yake_terms(text, topk)
+        if not terms: return L()
+        wins = []
+        for s in _sentences(text):
+            sl = s.lower()
+            hit = L([(t, 'keyphrase') for t in terms if t.lower() in sl])
+            if hit: wins.append(hit)
+        return L(wins)
     doc = nlp(text)
     wins = []
     for sent in doc.sents:
@@ -406,6 +428,41 @@ def cooccur_edges(db,                 # Database
     return len(out)
 
 # %% ../nbs/05_graph.ipynb #topics
+# connector words — cluster names built from these describe the corpus, not the cluster
+_STOP = set('''the a an and or of to in is are was were be been being for on at by with from this that these those
+it its as not but if then than so such can will would could should may might do does did have has had he she they
+we you i him her them our your their about into over under after before between out up down off only own same too
+very just also each other more most some any no nor own s t don now here there when where why how all both'''.split())
+_LWORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]{2,}')   # keeps identifiers whole
+
+def ctfidf_labels(texts,        # one text per member, aligned with `lab`
+                  lab,          # cluster index per member
+                  k,            # number of clusters
+                  top_n=4,      # terms per label
+                  stop=None,    # stopword set (defaults to _STOP)
+                  sep=', '):
+    '''Name each cluster by terms common inside it and rare across the other clusters.
+
+    Plain term frequency names every cluster after the same few words the corpus is made of;
+    weighting by IDF across the *clusters* is what makes the names differ from each other,
+    which is the only job they have. (Approach taken from lego/atlas/cluster.py.)'''
+    st = _STOP if stop is None else stop
+    tf = [{} for _ in range(k)]
+    for t, j in zip(texts, lab):
+        for w in set(_LWORD.findall((t or '').lower())):
+            if w in st or len(w) < 3: continue
+            tf[j][w] = tf[j].get(w, 0) + 1
+    df = {}
+    for d in tf:
+        for w in d: df[w] = df.get(w, 0) + 1
+    out = []
+    for j, d in enumerate(tf):
+        n = max(1, sum(1 for x in lab if x == j))
+        sc = {w: (c/n) * math.log(k/df[w]) for w, c in d.items() if df[w] < k}
+        top = sorted(sc.items(), key=lambda kv: -kv[1])[:top_n]
+        out.append(sep.join(w for w, _ in top))
+    return out
+
 def _usearch_clusters(idx, min_count, max_count):
     '''Clusters straight off the HNSW graph. usearch walks the index levels, so it needs a tall
     enough graph and raises "Index too small to cluster!" on small corpora — caller falls back.'''
@@ -453,10 +510,10 @@ def topic_nodes(db,                # Database
                 max_count=None,    # usearch cluster max size
                 k=8,               # neighbours per node in the fallback kNN graph
                 min_size=2,        # smallest cluster kept as a topic
-                label_k=4,         # keyphrases per topic label
+                label_k=4,         # terms per topic label
                 max_label_chars=4000,
                 dtype=np.float16):
-    'Cluster the store index into topic nodes labelled with yake. Returns {topics, method}.'
+    'Cluster the store index into topic nodes labelled by c-TF-IDF. Returns {topics, method}.'
     g = db.get_graph(store, prefix)
     m = db._ann_meta(store)
     if not (m and m['ndim']): return dict(topics=0, method=None)
@@ -468,14 +525,20 @@ def topic_nodes(db,                # Database
         groups, method = _usearch_clusters(idx, min_count, max_count), 'usearch'
     except Exception:
         groups, method = _knn_clusters(idx, rid2cid.keys(), k, dtype=dt), 'knn'
+    kept = [[rid2cid[r] for r in mem if r in rid2cid] for mem in groups]
+    kept = [c for c in kept if len(c) >= min_size]
+    if not kept: return dict(topics=0, method=method)
+    # labels are scored across all clusters at once, so gather members first
+    txt = {r['id']: r['content'] for r in db.t[store](select='id, content',
+                                                      where=_in('id', [c for g_ in kept for c in g_[:24]]))}
+    texts, lab = [], []
+    for j, cids in enumerate(kept):
+        for c in cids[:24]: texts.append((txt.get(c) or '')[:max_label_chars]); lab.append(j)
+    names = ctfidf_labels(texts, lab, len(kept), label_k)
     ents, mens = [], []
-    for gi, members in enumerate(groups):
-        cids = [rid2cid[r] for r in members if r in rid2cid]
-        if len(cids) < min_size: continue
-        txt = ' '.join(L(db.t[store](select='content', where=_in('id', cids[:24]))).itemgot('content'))
-        lab = ', '.join(_yake_terms(txt[:max_label_chars], label_k))
+    for j, cids in enumerate(kept):
         # deliberately not _norm(): topic labels are multi-phrase and would trip its 5-token cap
-        name = f'topic: {_WS.sub(" ", lab).strip().lower()}'[:60] if lab.strip() else f'topic-{gi}'
+        name = f'topic: {names[j]}'[:60] if names[j] else f'topic-{j}'
         eid = _slug(name)
         ents.append(dict(content=name, kind='topic', freq=len(cids), canon=eid))
         mens += [dict(chunk_id=c, entity_id=eid, surface=name, n=1) for c in cids]
@@ -551,11 +614,17 @@ def graph_search(self:Database,
                  hops:int=2,            # edge-table BFS depth
                  damping:float=0.85,    # PPR damping
                  iters:int=10,          # PPR iterations
-                 graph_w:float=1.0,     # weight of the graph leg in the fusion
+                 graph_w:float=0.5,     # weight of the graph leg (low by default — see docstring)
                  rrf_k:int=60,
                  use_canon=True,
                  **kw):                 # forwarded to Database.search
-    'Hybrid search plus a graph leg: PPR over the entity graph seeded by the top hybrid hits.'
+    '''Hybrid search plus a graph leg: PPR over the entity graph seeded by the top hybrid hits.
+
+    The graph leg is weighted low on purpose. It pays when the answer shares no vocabulary with
+    the query and is reachable only along an entity path — common in prose, rare in code, where
+    call edges link different levels of abstraction rather than substitutable answers. On code
+    corpora prefer `graph_w=0` and use the graph for context assembly (callers/callees of a hit)
+    rather than for ranking.'''
     g = self.get_graph(table_name, prefix)
     cols = list(columns or [])
     if 'rowid' not in cols: cols = ['rowid'] + cols

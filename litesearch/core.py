@@ -18,6 +18,21 @@ _np_dtype = {'i8':np.int8, 'f16':np.float16, 'f32':np.float32, 'f64':np.float64}
 
 def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN clause; callers guard against empty vals
 
+# `porter unicode61` (the FTS5 default) splits on `_` and then stems the pieces, so `fts_search`
+# indexes as `ft`+`search` and a search for it matches almost anything. apsw's UAX#29 tokenizer
+# treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
+_FTS_TOKENIZE = 'porter simplify casefold 1 unicodewords'
+
+def _register_fts_tokenizers(conn):
+    '''Register apsw's fts5 tokenizers on a connection. Every connection opening a db whose FTS
+    tables use them must do this — SQLite resolves the tokenizer by name at query time and raises
+    "error in tokenizer constructor" without it, so a plain `sqlite3` shell cannot query them.'''
+    try:
+        import apsw.fts5
+        apsw.fts5.register_tokenizers(conn, apsw.fts5.map_tokenizers)
+        return True
+    except Exception: return False
+
 def _slug(content):
     "Content hash matching a hash-id store's `id` (hash over the content column)."
     return hash_record({'content': content}) if content else None
@@ -57,6 +72,7 @@ def get_store(self:Database,        # database connection
             expansion_add:int=None, # HNSW add expansion
             expansion_search:int=None, # HNSW search expansion
             index_path:str=None,    # sidecar path (defaults to <db>.<name>.usearch; None db -> in-memory)
+            tokenize:str=None,      # FTS5 tokenizer (default: apsw unicodewords chain, else 'porter')
             **kw,                   # additional args to pass to fastlite create
 ):
     "creates a content/embedding/metadata table with FTS5. Set ann=True to also maintain a usearch HNSW index."
@@ -64,7 +80,8 @@ def get_store(self:Database,        # database connection
     if hash: cols.update(dict(hash_id='id',hash_id_columns=['content']))
     else: cols.update(dict(id=int, not_null=['content']))
     _content = self.t[name].create(**cols,if_not_exists=True, **kw)
-    if not _content.detect_fts(): _content.enable_fts(['content','metadata'], create_triggers=True, tokenize='porter', replace=True)
+    tok = tokenize or (_FTS_TOKENIZE if getattr(self, '_fts_tokenizers', False) else 'porter')
+    if not _content.detect_fts(): _content.enable_fts(['content','metadata'], create_triggers=True, tokenize=tok, replace=True)
     if ann: self._register_ann(name, ndim, metric, dtype, connectivity, expansion_add, expansion_search, index_path)
     return _content
 
@@ -273,6 +290,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     _db = Database(pth_or_uri, **kw)
     if wal: _db.enable_wal()
+    _db._fts_tokenizers = _register_fts_tokenizers(_db.conn)   # must happen on every connection
     if not sem_search: return _db
     from usearch import sqlite_path
     _db.conn.enableloadextension(True)

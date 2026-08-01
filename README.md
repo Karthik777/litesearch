@@ -121,6 +121,25 @@ code_store(select='id,content')
      {'id': 'bb979740c5bc3904c4011ecaa5627c33080b119a', 'content': 'hi there'},
      {'id': '2a432c1def89853eba5c30b06a5d5826f6af7ae1', 'content': 'goodbye now'}]
 
+#### Tokenisation — identifiers survive
+
+FTS5's stock `porter unicode61` splits on `_` and then stems the fragments, so `fts_search` is
+indexed as `ft` + `search` and searching for it matches almost anything:
+
+``` python
+porter unicode61                          →  ['ft', 'search', 'run']
+porter simplify casefold 1 unicodewords   →  ['fts_search', 'run']
+```
+
+`database()` registers [apsw's FTS5 tokenizers](https://rogerbinns.github.io/apsw/textsearch.html)
+and `get_store` defaults to the second chain — apsw's UAX#29 segmentation treats `_` as a word
+joiner, so identifiers stay whole while porter still stems ordinary prose. Override per store with
+`get_store(tokenize=...)`; pass `tokenize='porter'` for the old behaviour.
+
+One consequence worth knowing: the tokenizer is resolved by name at query time, so **any** connection
+opening the database must register it. `database()` always does. A plain `sqlite3` shell will not —
+it raises `error in tokenizer constructor` on FTS queries against these tables.
+
 ### `db.search()` — Hybrid FTS + Vector with RRF
 
 `db.search()` runs **both** an FTS5 keyword query and a vector similarity search, then merges the ranked lists with Reciprocal Rank Fusion. Documents that appear in *both* lists get a score boost — the best of both worlds. `rrf` is turned on by default; pass `rrf=False` to see the raw FTS and vector legs separately.
@@ -405,14 +424,23 @@ the query — only an entity path.
 | `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
 | `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
 
-Two details that matter in practice:
+Details that matter in practice:
 
 - **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
   chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
-  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`.
-- **Resolution must skip exact identifiers.** `fts_search` tokenizes to `{fts, search}`, so a
-  naive merge collapses it into `search`. `resolve_entities` leaves `symbol`/`module`/`topic`
-  kinds alone.
+  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
+  come from spaCy, or from `apsw.unicode.sentence_iter` on the no-spaCy path.
+- **Resolution must not touch exact identifiers.** `resolve_entities` leaves `symbol`/`module`/
+  `topic` kinds alone, and `_toks` uses UAX#29 segmentation so `fts_search` never decomposes into
+  `{fts, search}` and collapses into `search`.
+- **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
+  clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
+  IDF is what makes labels distinguish clusters from each other.
+- **The graph leg is weighted low (`graph_w=0.5`) on purpose.** It pays when the answer shares no
+  vocabulary with the query and is reachable only along an entity path — common in prose, rare in
+  code, where call edges connect different levels of abstraction rather than substitutable answers.
+  On code corpora prefer `graph_w=0` and use the graph for context assembly (pull callers/callees of
+  a hit) rather than for reranking.
 
 spaCy is optional — `pip install litesearch[graph]` then
 `python -m spacy download en_core_web_sm`. Without it the extractor falls back to yake
