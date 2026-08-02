@@ -1,6 +1,25 @@
 # Release notes <!-- do not remove -->
 
-## 0.1.0
+## Unreleased
+
+### New
+
+- `litesearch.tree` — a PageIndex-style document-structure layer. `db.get_tree()` adds `docs` and
+  `nodes` tables beside any chunk store; `add_doc`/`add_file`/`add_dir` build a node tree per
+  document (markdown headings → chapter lines → page windows) and link every chunk to a node.
+  `db.doc_search` adds adaptive RRF weighting, span merging and breadcrumbs; `db.sections` rolls
+  evidence up to whole sections; `db.toc`/`db.read` navigate structure with no embeddings at all.
+  No LLM is required anywhere — `summarize=`, `chunker=` and `build_tree` are all replaceable.
+- `store.ann_neighbors(rowid, ...)` — nearest rows to an already-indexed row, reusing the stored
+  vector so nothing is re-embedded. `store.ann_vec(rowid)` exposes the vector itself.
+- `store.clusters(...)` and `store.peers(rowid, ...)` — the clustering that `topic_nodes` used
+  internally, now public and labelled with c-TF-IDF. Both return `method` and `note`, so a
+  degraded or empty answer says why instead of looking like a broken index.
+
+### Fixed
+
+- `ann_search` returned up to `2 × limit` rows. It still over-fetches from the index so `where`
+  has candidates to filter, but now trims to `limit` as documented.
 graph added and fts5 stemmers added
 
 ## 0.0.37

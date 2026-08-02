@@ -463,19 +463,19 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     return out
 
 def _usearch_clusters(idx, min_count, max_count):
-    '''Clusters straight off the HNSW graph. usearch walks the index levels, so it needs a tall
-    enough graph and raises "Index too small to cluster!" on small corpora — caller falls back.'''
+    '''(centroid, members) straight off the HNSW graph. usearch walks the index levels, so it needs
+    a tall enough graph and raises "Index too small to cluster!" on small corpora — caller falls back.'''
     kw = {k: v for k, v in dict(min_count=min_count, max_count=max_count).items() if v}
     cl = idx.cluster(**kw)
     keys, _ = cl.centroids_popularity
     out = L()
     for ck in np.atleast_1d(keys).tolist():
-        try: out.append(np.atleast_1d(cl.members_of(ck)).tolist())
+        try: out.append((int(ck), [int(x) for x in np.atleast_1d(cl.members_of(ck)).tolist()]))
         except Exception: continue
     return out
 
 def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16):
-    '''Greedy clustering over the kNN graph harvested from HNSW. Works at any index size.
+    '''(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.
     Seeds at the densest unassigned node and claims its unassigned neighbours, so clusters stay
     bounded — plain label propagation collapses a dense kNN graph into one giant component.'''
     keys = list(keys)
@@ -499,8 +499,24 @@ def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16)
         for nk, s in sorted(nbr.get(kk, []), key=lambda t: -t[1]):
             if len(grp) >= cap: break
             if nk not in seen and s >= min_sim: grp.append(nk); seen.add(nk)
-        out.append(grp)
+        out.append((int(kk), [int(x) for x in grp]))
     return out
+
+def _cluster_groups(idx,               # usearch Index
+                    keys=None,         # keys to cluster (defaults to everything in the index)
+                    min_count=None,    # usearch: smallest cluster to emit
+                    max_count=None,    # usearch: largest cluster to emit
+                    k=8,               # neighbours per node in the kNN fallback
+                    dtype=np.float16):
+    '''`([(centroid, members)], method)` for an index.
+
+    usearch raises rather than degrading when the HNSW graph has too few levels to cut, so the
+    greedy kNN pass is not a nicety: without it clustering is simply unavailable on a fresh or
+    small store, which is exactly when someone is most likely to try it.'''
+    try: return _usearch_clusters(idx, min_count, max_count), 'usearch'
+    except Exception:
+        ks = np.atleast_1d(idx.keys).tolist() if keys is None else list(keys)
+        return _knn_clusters(idx, ks, k, dtype=dtype), 'knn'
 
 def topic_nodes(db,                # Database
                 store='store',     # chunk store (must be ANN-registered)
@@ -520,11 +536,8 @@ def topic_nodes(db,                # Database
     if idx.size < 4: return dict(topics=0, method=None)
     dt = _np_dtype.get(m['dtype'], dtype)
     rid2cid = {r['rowid']: r['id'] for r in db.t[store](select=f'{_rid()}, id')}
-    try:
-        groups, method = _usearch_clusters(idx, min_count, max_count), 'usearch'
-    except Exception:
-        groups, method = _knn_clusters(idx, rid2cid.keys(), k, dtype=dt), 'knn'
-    kept = [[rid2cid[r] for r in mem if r in rid2cid] for mem in groups]
+    groups, method = _cluster_groups(idx, rid2cid.keys(), min_count, max_count, k, dt)
+    kept = [[rid2cid[r] for r in mem if r in rid2cid] for _, mem in groups]
     kept = [c for c in kept if len(c) >= min_size]
     if not kept: return dict(topics=0, method=method)
     # labels are scored across all clusters at once, so gather members first
@@ -544,6 +557,95 @@ def topic_nodes(db,                # Database
     if ents: g.entities.insert_all(ents, upsert=True, hash_id='id', hash_id_columns=['content'])
     if mens: g.mentions.insert_all(mens, upsert=True, pk=('chunk_id','entity_id'))
     return dict(topics=len(ents), method=method)
+
+# %% ../nbs/05_graph.ipynb #1c98b260
+@patch
+def _cluster_cached(self:Table, min_count, max_count, k, dtype):
+    'Cluster once per (store, params, index size). `peers` would otherwise recluster on every call.'
+    idx = self.db.get_index(self.name)
+    ck = (self.name, min_count, max_count, k, idx.size)
+    cache = getattr(self.db, '_cluster_cache', None)
+    if cache is None: cache = self.db._cluster_cache = {}
+    if ck not in cache:
+        groups, method = _cluster_groups(idx, None, min_count, max_count, k, dtype)
+        assign = {m: g for _, g in groups for m in g}
+        cache[ck] = (groups, method, assign)
+    return cache[ck]
+
+@patch
+def _member_rows(self:Table, keys, columns=None):
+    'Store rows for a list of usearch keys, keyed by rowid. `content` is always fetched (labels need it).'
+    if not keys: return {}
+    cols = list(dict.fromkeys([c for c in (columns or []) if c != 'rowid'] + ['content']))
+    sel, out = ','.join(cols + [_rid()]), {}
+    for i in range(0, len(keys), 400):
+        for r in self.db.q(f'select {sel} from {self.name} where {_in("rowid", keys[i:i+400])}'): out[r['rowid']] = r
+    return out
+
+@patch
+def clusters(self:Table,              # ANN-registered store
+             min_count:int=None,      # usearch: smallest cluster to emit
+             max_count:int=None,      # usearch: largest cluster to emit
+             k:int=8,                 # neighbours per node in the kNN fallback
+             min_size:int=2,          # drop groups smaller than this
+             label_k:int=4,           # terms per c-TF-IDF label
+             members:int=24,          # member rows fetched per cluster
+             columns:list=None,       # store columns to return per member row
+             max_label_chars:int=4000,# per-member text budget for labelling
+             dtype=np.float16):
+    '''The corpus grouped by embedding shape, each group named by c-TF-IDF.
+
+    Returns `AttrDict(clusters, method, note)`; each cluster is
+    `AttrDict(centroid, size, label, member_keys, members)`. `method` is `usearch` or the `knn` fallback.'''
+    m = self.db._ann_meta(self.name)
+    if not m: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} is not an ANN store')
+    if not m['ndim']: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} has no vectors yet')
+    idx = self.db.get_index(self.name)
+    if idx.size < 4: return AttrDict(clusters=L(), method=None, note=f'index holds {idx.size} vectors; too few to cluster')
+    dt = _np_dtype.get(m['dtype'], dtype)
+    groups, method, _ = self._cluster_cached(min_count, max_count, k, dt)
+    kept = [(c, g) for c, g in groups if len(g) >= min_size]
+    if not kept: return AttrDict(clusters=L(), method=method, note=f'no group reached min_size={min_size}')
+    rows = self._member_rows([r for _, g in kept for r in g[:members]], columns)
+    texts, lab = [], []
+    for j, (_, g) in enumerate(kept):
+        for r in g[:members]: texts.append(((rows.get(r) or {}).get('content') or '')[:max_label_chars]); lab.append(j)
+    names = ctfidf_labels(texts, lab, len(kept), label_k)
+    out = L(AttrDict(centroid=c, size=len(g), label=names[j] or f'group-{j}', member_keys=g,
+                     members=L(rows[r] for r in g[:members] if r in rows))
+            for j, (c, g) in enumerate(kept))
+    return AttrDict(clusters=out.sorted(key=lambda c: -c.size), method=method,
+                    note=f'{len(out)} clusters over {idx.size} vectors ({method})')
+
+@patch
+def peers(self:Table,            # ANN-registered store
+          key:int,               # usearch key (rowid) whose group you want
+          limit:int=25,          # members to return
+          columns:list=None,     # store columns to return per member row
+          min_count:int=None,    # usearch: smallest cluster to emit
+          max_count:int=None,    # usearch: largest cluster to emit
+          k:int=8,               # neighbours per node in the kNN fallback
+          dtype=np.float16):
+    '''The group `key` belongs to — its family, not a ranked list of what is nearest to it.
+
+    Degrades to `ann_neighbors` (and says so in `note`) whenever the index cannot be clustered or
+    the row landed in a group of one. Returns `AttrDict(hits, method, note)`.'''
+    nbr = lambda note: AttrDict(hits=L(self.ann_neighbors(key, limit, columns, dtype=dtype)), method='ann', note=note)
+    m = self.db._ann_meta(self.name)
+    if not m: return AttrDict(hits=L(), method=None, note=f'{self.name!r} is not an ANN store')
+    if not m['ndim']: return AttrDict(hits=L(), method=None, note=f'{self.name!r} has no vectors yet')
+    idx = self.db.get_index(self.name)
+    if not idx.size or not idx.contains(key): return AttrDict(hits=L(), method=None, note=f'key {key} is not indexed')
+    dt = _np_dtype.get(m['dtype'], dtype)
+    if idx.size < 4: return nbr(f'index holds {idx.size} vectors; showing nearest neighbours')
+    _, method, assign = self._cluster_cached(min_count, max_count, k, dt)
+    grp = assign.get(key)
+    if not grp: return nbr('row is in no cluster; showing nearest neighbours')
+    mem = [x for x in grp if x != key][:limit]
+    if not mem: return nbr('cluster has one member; showing nearest neighbours')
+    rows, order = self._member_rows(mem, columns), {r: i for i, r in enumerate(mem)}
+    return AttrDict(hits=L(rows[r] for r in sorted(rows, key=lambda r: order.get(r, 1<<30)) if r in rows),
+                    method=method, note=f'cluster of {len(grp)} ({method})')
 
 # %% ../nbs/05_graph.ipynb #ppr
 def _adjacency(g, nodes, hops=2, max_nodes=4000):

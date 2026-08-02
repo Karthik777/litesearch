@@ -163,6 +163,61 @@ For prose, pass `nlp=spacy_pipe(terms=code_symbols)` — the `EntityRuler` then 
 mentions of your functions to the code nodes. Needs `pip install litesearch[graph]` and
 `python -m spacy download en_core_web_sm`; without it, extraction falls back to yake.
 
+## Document structure (`litesearch.tree`)
+
+For books, reports, papers and doc sites — anything where "which chapter" is a better answer than
+"which 400 characters". Every document gets a node tree at ingest time (markdown headings →
+chapter lines → page windows), every chunk is linked to a node, and search results roll up.
+
+```python
+db = database('library.db')
+db.get_tree('store')                                  # docs + nodes tables beside the chunk store
+db.add_file('books/report.pdf', emb_fn=doc_encoder(enc))
+db.add_dir('books/', emb_fn=doc_encoder(enc))         # pdf, md, txt, rst, ipynb
+
+db.doc_search(q, qv, limit=5)      # hybrid search; each hit carries a breadcrumb + node_id
+db.sections(q, qv, limit=3)        # ranked *sections*, each with snippets and a read() handle
+db.toc('report', max_depth=2)      # the tree — no embeddings computed
+db.read('a1b2c3d4#12')             # one whole section + its children
+```
+
+Two rules of thumb:
+
+- Use `sections()` when the question is about a topic ("how is X timed and interpreted") and
+  `doc_search()` when it is about a fact. `sections` groups hits by node and sums their RRF mass,
+  so five weak hits in one chapter outrank one strong hit in an unrelated appendix.
+- Use `toc()` + `read()` and skip retrieval entirely when the agent already knows where to look
+  ("summarise chapter 3", template filling). That path costs no embedding at all.
+
+`add_doc(pages, title, ...)` is the lower-level entry point when you have text in hand rather than
+a file. `summarize=` and `chunker=` are callables — an LLM summariser per node is the highest-value
+place to spend tokens, because `toc()` is what an agent reads when deciding where to go.
+
+**Source code does not belong here.** Its tree is module › class › function and comes from the
+AST, not from headings — that is `kosha`.
+
+## Neighbours, clusters and peers
+
+Three questions about *shape* rather than about a query string. All three need `ann=True` on the
+store and cost no model call — they reuse the vectors usearch already holds.
+
+```python
+store.ann_neighbors(rowid, limit=15, columns=['content'])   # what else looks like this row
+res = store.clusters(min_size=3, columns=['content'])       # a map of the whole corpus
+[(c.size, c.label) for c in res.clusters]                   # labels are c-TF-IDF, not an LLM
+store.peers(rowid, limit=25, columns=['content'])           # the family this row belongs to
+```
+
+`clusters()` and `peers()` return `AttrDict(…, method, note)`. **Show `note` to the user.** It
+says `usearch` (HNSW cut) or `knn` (greedy fallback, used when the index is too small to cut), and
+on an empty result it says why — an index with no vectors, a store with no ANN registration, or a
+row that landed in a group of one. A clustering that silently returns `[]` is indistinguishable
+from a broken index.
+
+Reach for `peers` over `ann_neighbors` when the question is "where else did we already do this?".
+k-NN always returns `limit` rows whether or not they are related; a cluster returns a family and
+can be honest about its size.
+
 ## Invocation
 
 Use clikernel — state persists, no re-import cost. Start once with `! clikernel`, then:
@@ -189,6 +244,14 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 | `db.get_store(name, **cols)` | Create FTS5 + vector table; `**cols` adds typed columns |
 | `db.search(q, emb, ...)` | Hybrid FTS + vector search with RRF reranking |
 | `store.vec_search(emb, ...)` | Vector-only search |
+| `store.ann_neighbors(rowid, ...)` | Nearest rows to an already-indexed row (no re-embedding) |
+| `store.clusters(...)` | Labelled clusters over the whole store (`.clusters`, `.method`, `.note`) |
+| `store.peers(rowid, ...)` | The cluster a row belongs to; degrades to k-NN and says so |
+| `db.get_tree(store)` | Add docs/nodes tables + node-aware columns to a chunk store |
+| `db.add_file(path, ...)` / `db.add_dir(dir, ...)` | Ingest documents: tree → node-linked chunks → embed |
+| `db.doc_search(q, emb, ...)` | Hybrid search with adaptive RRF, span merging, breadcrumbs |
+| `db.sections(q, emb, ...)` | Ranked sections with snippets and `read()` handles |
+| `db.toc(doc)` / `db.read(node_id)` | Navigate structure with no embeddings at all |
 | `rrf_merge(fts, vec)` | Merge FTS and vector result lists manually |
 | `pre(q)` | Preprocess FTS query: keywords, wildcards, OR |
 | `build_graph(db, chunks, ...)` | Extract entities/mentions/edges into the graph tables |
