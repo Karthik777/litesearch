@@ -142,8 +142,7 @@ def spacy_pipe(model='en_core_web_sm',  # spaCy model name
                terms=None,              # exact-match terms for an EntityRuler (e.g. code symbols)
                label='SYMBOL'):         # label applied to ruler matches
     'spaCy pipeline with an optional EntityRuler seeded from exact terms. None when spaCy is unavailable.'
-    try: import spacy
-    except ImportError: return None
+    import spacy
     try: nlp = spacy.load(model)
     except (OSError, IOError): return None
     if terms:

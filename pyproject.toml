@@ -27,15 +27,13 @@ dependencies = [
     "tokenizers>=0.22.2",
     "usearch>=2.23.0",
     "yake>=0.7.3",
-    "flashrank>=0.2.10"
+    "flashrank>=0.2.10",
+    "spacy>=3.8.0",
+    "en-core-web-sm",
 ]
 
 [project.optional-dependencies]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
-# graph entity extraction on prose. Without it litesearch.graph falls back to yake keyphrases,
-# which are weaker node identities: `pip install litesearch[graph]` then
-# `python -m spacy download en_core_web_sm`
-graph = ["spacy>=3.8.0"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"
@@ -54,7 +52,6 @@ dev = [
     'jupyterlab',
     'jupyterlab-quarto',
     'selectolax',
-    'lisette',
     'ddgs',
     'pyperclip',
     "chonkie",
@@ -78,3 +75,6 @@ include = [
 ]
 
 [tool.nbdev]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

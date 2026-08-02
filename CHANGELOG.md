@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.0
+graph added and fts5 stemmers added
+
 ## 0.0.37
 ann latency bug fixbug fix
 
@@ -170,6 +173,3 @@ Pypi release for litesearch
 
 
 ## 0.0.1
-
-
-
