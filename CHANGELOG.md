@@ -41,6 +41,8 @@ node-linked one 93%.
 
 - `ann_search` returned up to `2 × limit` rows. It still over-fetches from the index so `where`
   has candidates to filter, but now trims to `limit` as documented.
+
+## 0.1.0
 graph added and fts5 stemmers added
 
 ## 0.0.37
