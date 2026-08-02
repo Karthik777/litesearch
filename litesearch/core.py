@@ -268,7 +268,7 @@ def rebuild_index(self:Table, dtype=None):
     self.db._save_index(self.name)
     return idx.size
 
-# %% ../nbs/01_core.ipynb #5497a942
+# %% ../nbs/01_core.ipynb #cac7c8f1
 @patch
 def ann_vec(self:Table,          # ANN-registered store
             key:int,             # usearch key (the row's rowid)

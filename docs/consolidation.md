@@ -99,9 +99,84 @@ checked against the source.
   `graph=True` enrichment (callers, callees, pagerank).
 - The same three exposed as MCP tools.
 
+## 3a. What the evaluation showed
+
+`nbs/07_doc_eval.ipynb` runs the whole stack against the version of litesearch that came before it,
+over 486 pages of EU legislation plus one paper — 150 known-item queries, one per Article, in a
+verbatim and a keyword-degraded variant. Four systems share one corpus, one encoder and one query
+set. The important one is **flat-fine**: the tree's own chunk texts in a plain store with no nodes
+and no headings, which stops the tree layer taking credit for chunking finer.
+
+*(Encoder caveat: `huggingface.co` is blocked by policy in this environment, so the dense leg is
+TF-IDF + SVD fitted on the corpus rather than an ONNX model. Comparisons between systems hold;
+anything that depends on semantic quality is being judged in its worst case.)*
+
+**Passage retrieval, degraded queries (MRR):**
+
+| system | MRR | note |
+|---|---|---|
+| flat-page (litesearch before) | 0.330 | page-sized chunks |
+| flat-fine (chunking only) | **0.522** | +58% — from smaller chunks alone |
+| tree `doc_search` | 0.503 | fractionally *behind* flat-fine |
+| tree − heading context | 0.509 | heading context is noise here |
+
+**"Which Article answers this", verbatim (MRR):**
+
+| system | MRR |
+|---|---|
+| flat-page | 0.537 |
+| flat-fine | 0.957 |
+| tree `doc_search` | 0.957 |
+| `sections(score='max')` | 0.954 |
+| `sections(score='sum')` | 0.847 |
+
+Four conclusions, two of them uncomfortable:
+
+1. **Chunk granularity dominates every structural feature.** The entire measured retrieval win over
+   the old baseline is finer chunks. The tree causes those chunks — node segments are narrower than
+   pages — but heading context and adaptive fusion add nothing measurable and should not be sold as
+   if they did.
+2. **The structural argument survives anyway, in the right place.** `flat-page` finds the right
+   *text* 94% of the time and names the right Article only 27% of the time at rank 1, because a
+   page-sized chunk spans several articles and cannot say which one. Rolling up to a section is
+   what a flat store structurally cannot do.
+3. **`sections()` was ranking backwards.** Summing RRF mass across a node is a length prior in
+   disguise; long chapters outranked the precise article. `score='max'` moved section retrieval
+   from clearly worse than chunk search to level with it, while returning the more useful unit.
+4. **Bad structure is worse than no structure, and it is easy to ship by accident.** pdf-oxide marks
+   16–31 lines per page as h1 on these PDFs, so the first run built a 5,242-node "tree" of one-line
+   sections for the VAT directive. Only running it on real documents surfaced that.
+
+### Changes the evaluation forced
+
+| finding | change |
+|---|---|
+| markdown headings unusable on converted PDFs | `detect_mode` rejects high-density/no-depth markdown; `struct_levels` derives a per-document ladder from CHAPTER/TITLE/Article words. 5,242 → 1,983 nodes over 4 real levels |
+| `sections()` summed RRF mass | default `score='max'` (+0.11 MRR verbatim, +0.16 degraded) |
+| `adaptive_weights` never fired on prose, and an FTS-coverage replacement measured worse | `doc_search(adaptive=…)` now defaults **off**, kept opt-in and documented |
+| chunking beats everything | §4.1 promoted to the top of the order |
+
+## 3b. Boundary audit
+
+The rule — generic search in litesearch, code search in kosha — holds, with three things worth
+naming:
+
+- **litesearch does not import kosha anywhere.** Clean.
+- **Code *parsing* lives in litesearch** (`pyparse`, `pkg2chunks`, `dir2chunks`, `code_exts`,
+  `file_sigs`). This is ingestion, not search, and kosha builds on it — defensible, and worth a
+  deliberate decision rather than an accident. `litesearch.tree` deliberately excludes code: its
+  tree comes from headings, and code's comes from the AST.
+- **Generic ranking is still stranded in kosha.** `_boost_multi_chunk`, the saturation decay and the
+  top-k loop in `rank_results` would read the same on a corpus of PDFs. Same for the mechanism
+  behind `parseq`/`filt2wh` — parsing `key:value` tokens out of a query is generic; only the key
+  names (`package`, `lang`, `type`) are code-specific. Both are §4.4.
+
 ## 4. Roadmap
 
 ### 4.1 Chunking — port chitragupta's cost-model splitter
+
+**Promoted to first by the evaluation:** granularity moved MRR further than every other feature
+here combined, and this is the one change that targets it directly.
 
 `litesearch.tree` currently chunks with `chunk_markdown` (chonkie `FastChunker`). chitragupta's
 three-stage splitter is better on prose and is already written and tested:
@@ -212,28 +287,39 @@ argument to `ctfidf_labels`, not a new algorithm.
 
 | # | work | repo | size |
 |---|---|---|---|
-| 1 | ~~cluster/neighbour API~~ | litesearch | done |
-| 2 | ~~document tree layer~~ | litesearch | done |
-| 3 | ~~code-side similarity~~ | kosha | done |
-| 4 | leela's `Search` collapses onto kosha | leela | small |
-| 5 | cost-model chunking | litesearch | medium |
-| 6 | `project()` + generic atlas block | litesearch + lego | medium |
-| 7 | code trees | kosha | medium |
-| 8 | chitragupta delegates to `litesearch.tree` | chitragupta | medium |
-| 9 | `rank_results` split | litesearch + kosha | medium |
-| 10 | notes + evidence packs | litesearch | small |
-| 11 | Rishi seams: summaries first, then query rewriting | all | ongoing |
+| — | ~~cluster/neighbour API~~ | litesearch | done |
+| — | ~~document tree layer + structural heading ladder~~ | litesearch | done |
+| — | ~~code-side similarity~~ | kosha | done |
+| — | ~~evaluation harness~~ | litesearch | done |
+| 1 | **cost-model chunking** | litesearch | medium |
+| 2 | leela's `Search` collapses onto kosha | leela | small |
+| 3 | `project()` + generic atlas block | litesearch + lego | medium |
+| 4 | code trees | kosha | medium |
+| 5 | `rank_results` split | litesearch + kosha | medium |
+| 6 | chitragupta delegates to `litesearch.tree` | chitragupta | medium |
+| 7 | notes + evidence packs | litesearch | small |
+| 8 | Rishi seams: node summaries first, then query rewriting | all | ongoing |
 
-4 is first because it deletes code and proves the new API against a real caller. 8 is late because
-chitragupta is the most invasive migration and benefits from 5 landing first.
+Chunking is first because the evaluation says granularity is where the retrieval gains are, and
+nothing else on this list competes with it. 2 is next because it deletes code and proves the new
+API against a real caller. 6 is late because chitragupta is the most invasive migration and
+benefits from 1 landing first.
+
+Every item from 1 onward should be re-measured with `nbs/07_doc_eval.ipynb` rather than argued
+about — two of the features already built did not survive that test.
 
 ## 7. Open questions
 
 1. **Notes: same store or separate?** Recommendation above is same store with a `kind` column.
-2. **Does `sections()` normalise by section length?** It currently sums RRF mass, which favours
-   long sections. Corpus-dependent; left explicit rather than guessed.
-3. **Is `lego/atlas` meant to be published?** It is referenced from litesearch but absent from the
+2. ~~**Does `sections()` normalise by section length?**~~ **Answered by the evaluation**: summing
+   was costing 0.11–0.16 MRR. Default is now `score='max'` — a section is as relevant as its best
+   evidence — with `mean` within noise and `sum` still reachable.
+3. **Should heading context stay on by default?** It measured as noise under an LSA encoder, which
+   is its worst case — the whole point is semantic context, and TF-IDF+SVD cannot use it. It is
+   cheap and currently on. Worth re-running `07_doc_eval` once a real ONNX embedder is reachable
+   before deciding.
+4. **Is `lego/atlas` meant to be published?** It is referenced from litesearch but absent from the
    repo, so §5 is unverified against your code.
-4. **How far does chitragupta migrate?** It could become a thin CLI + acquisition layer over
+5. **How far does chitragupta migrate?** It could become a thin CLI + acquisition layer over
    `litesearch.tree`, or keep its own `Library` facade. The first is less code; the second keeps
    its API stable for anything already using it.

@@ -16,6 +16,27 @@
   internally, now public and labelled with c-TF-IDF. Both return `method` and `note`, so a
   degraded or empty answer says why instead of looking like a broken index.
 
+### Changed by evaluation
+
+`nbs/07_doc_eval.ipynb` runs the stack against pre-`tree` litesearch over 486 pages of EU
+legislation. Three features did not survive it unchanged:
+
+- **`detect_mode` guards `#` in both directions.** pdf-oxide marks 16–31 lines per page as h1 on
+  converted PDFs, so the first build produced a 5,242-node tree of one-line sections for the VAT
+  directive. High heading density with no variation in depth is now rejected as noise, and
+  `struct_levels` derives a per-document level ladder from CHAPTER/TITLE/Article words instead:
+  1,983 nodes across 4 real levels.
+- **`sections()` defaults to `score='max'`.** Summing RRF mass across a node is a length prior in
+  disguise — long chapters outranked the precise article. Worth 0.11 MRR on verbatim queries and
+  0.16 on keyword-degraded ones. `mean` and `sum` remain available.
+- **`doc_search(adaptive=...)` defaults off.** Its triggers never fired across 300 natural-language
+  queries, and a replacement rule keyed on FTS coverage measured worse. Kept opt-in.
+
+The headline result is that chunk granularity, not structure, drives retrieval quality here: the
+same corpus in page-sized chunks scores 0.330 MRR against 0.522 in node-scoped ones. Structure
+earns its place elsewhere — a page-sized chunk names the right Article 27% of the time, a
+node-linked one 93%.
+
 ### Fixed
 
 - `ann_search` returned up to `2 × limit` rows. It still over-fetches from the index so `where`
