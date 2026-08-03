@@ -4,7 +4,7 @@
 __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'TreeNode', 'summarize_extractive', 'struct_levels', 'detect_mode',
            'build_tree', 'heading_path', 'doc_id', 'adaptive_weights', 'merge_spans']
 
-# %% ../nbs/06_tree.ipynb #ab409709
+# %% ../nbs/06_tree.ipynb #a0a13ca8
 from fastcore.all import Path, patch, first, L, AttrDict, ifnone
 from fastlite import Database
 from apswutils.db import Table
@@ -16,7 +16,7 @@ import numpy as np
 from .core import _in, _rid, rrf_merge, process_content
 from .data import chunk_markdown
 
-# %% ../nbs/06_tree.ipynb #5f9281ae
+# %% ../nbs/06_tree.ipynb #f030bc6e
 _md_head  = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
 # A structural heading line, with an optional leading `#` — a PDF converter may already have
 # marked it up, and the word is a better signal than the markup either way.
@@ -97,7 +97,7 @@ def detect_mode(pages) -> str:
     if md >= (2 if len(pages) <= 3 else max(3, npg // 25)): return 'markdown'
     return 'chapter' if ch >= 3 else 'window' 
 
-# %% ../nbs/06_tree.ipynb #0fadc044
+# %% ../nbs/06_tree.ipynb #e00e8925
 def build_tree(pages,                  # [(page_no, text)] — markdown or plain text
                title:str='Document',   # title of the root node
                summarize=None,         # callable(text)->str for node summaries (LLM goes here)
@@ -176,7 +176,7 @@ def heading_path(tree,              # the node list from build_tree
         cur = tree[cur.parent] if cur.parent is not None else None
     return sep.join([title] + parts[::-1])[:max_len]
 
-# %% ../nbs/06_tree.ipynb #b9dbf3dc
+# %% ../nbs/06_tree.ipynb #7026c892
 def doc_id(source, title='') -> str:
     'Content-addressed document id — re-adding the same source is a no-op, not a duplicate.'
     return hash_record({'k': f'{source}|{title}'})[:16]
@@ -200,7 +200,7 @@ def get_tree(self:Database,
         self.t[t].create_index([c], if_not_exists=True)
     return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
 
-# %% ../nbs/06_tree.ipynb #d0c44013
+# %% ../nbs/06_tree.ipynb #303b401c
 MIN_CHUNK = 40
 
 def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK):
@@ -279,7 +279,7 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     g.docs.delete_where(where=f'id={did!r}')
     if self._ann_meta(store): g.store.rebuild_index()
 
-# %% ../nbs/06_tree.ipynb #c0a37cba
+# %% ../nbs/06_tree.ipynb #49bd0c55
 DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb'
 
 @patch
@@ -316,7 +316,7 @@ def add_dir(self:Database,
     return [self.add_file(p, store=store, prefix=prefix, **kw)
             for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
 
-# %% ../nbs/06_tree.ipynb #2bb1ffb5
+# %% ../nbs/06_tree.ipynb #81b003f1
 @patch
 def toc(self:Database,
         doc:str=None,           # doc id, or a substring of the title (None = every document)
@@ -382,7 +382,7 @@ def read(self:Database,
                 pages=(nd['page_start'], nd['page_end']), summary=nd['summary'],
                 children=[r['id'] for r in g.nodes(where=f'parent_id={node_id!r}')], text=text)
 
-# %% ../nbs/06_tree.ipynb #b9e12e9c
+# %% ../nbs/06_tree.ipynb #283dc191
 _QUOTED = re.compile(r'"[^"]+"')
 _NAMEY  = re.compile(r'[A-Z][a-z]{2,}|\d|_')
 

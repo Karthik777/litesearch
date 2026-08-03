@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.5
+use ann only if there isn't a where. exactness over speed
+
 ## 0.1.4
 
 ### New

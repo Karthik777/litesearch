@@ -186,7 +186,6 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     wh = f'where {_in("rowid", keys)}' + (f' AND {where}' if where else '')
     rows = self.db.q(f'select {sel} from {self.name} {wh}', where_args or None)
     for r in rows: r['_dist'] = dist.get(r['rowid'])
-    # over-fetched by 2x above so `where` has something to filter; the caller asked for `limit`
     return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))[:limit]
 
 @patch
@@ -259,7 +258,7 @@ def rebuild_index(self:Table, dtype=None):
     self.db._save_index(self.name)
     return idx.size
 
-# %% ../nbs/01_core.ipynb #1d19c569
+# %% ../nbs/01_core.ipynb #37b807cc8a8402b7
 @patch
 def ann_vec(self:Table,          # ANN-registered store
             key:int,             # usearch key (the row's rowid)
@@ -356,7 +355,7 @@ def search(self: Database,  # database connection
            dtype=np.float16,  # embedding dtype
            id_key:str='rowid',  # key to join RRF results on
            quote:bool=True,  # quote FTS query to disable special chars
-           ann:bool=False,  # use the HNSW ANN index instead of brute-force vec scan (where/offset ignored for the vector leg)
+           ann:bool=False,  # use the HNSW ANN index for the vector leg (falls back to the exact vec scan when `where` is set, since post-filtering ANN candidates cannot honor the filter)
            parallel=True,
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
            rerank_model:str=None  # flashrank model name (None -> fast default)
@@ -368,8 +367,9 @@ def search(self: Database,  # database connection
     if rrf and id_key not in cols: cols = [id_key] + cols
     if reranking and 'content' not in cols: cols = cols + ['content']  # need text for the cross-encoder
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
+    use_ann = ann and not where
     exec_ls = [lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, quote),
-          lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if ann else tbl.vec_search(
+          lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else tbl.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
     fn = lambda f: f()
     fts, vec = fcp(fn, exec_ls, threadpool=True) if parallel else L(exec_ls).map(fn)
