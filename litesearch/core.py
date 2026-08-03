@@ -8,6 +8,7 @@ from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, filter
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict, hash_record
+from apsw.fts5 import register_tokenizers, map_tokenizers
 import numpy as np
 
 # %% ../nbs/01_core.ipynb #d4622bb9
@@ -22,16 +23,6 @@ def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN c
 # indexes as `ft`+`search` and a search for it matches almost anything. apsw's UAX#29 tokenizer
 # treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
 _FTS_TOKENIZE = 'porter simplify casefold 1 unicodewords'
-
-def _register_fts_tokenizers(conn):
-    '''Register apsw's fts5 tokenizers on a connection. Every connection opening a db whose FTS
-    tables use them must do this — SQLite resolves the tokenizer by name at query time and raises
-    "error in tokenizer constructor" without it, so a plain `sqlite3` shell cannot query them.'''
-    try:
-        import apsw.fts5
-        apsw.fts5.register_tokenizers(conn, apsw.fts5.map_tokenizers)
-        return True
-    except Exception: return False
 
 def _slug(content):
     "Content hash matching a hash-id store's `id` (hash over the content column)."
@@ -290,7 +281,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     _db = Database(pth_or_uri, **kw)
     if wal: _db.enable_wal()
-    _db._fts_tokenizers = _register_fts_tokenizers(_db.conn)   # must happen on every connection
+    _db._fts_tokenizers = register_tokenizers(_db.conn, map_tokenizers)
     if not sem_search: return _db
     from usearch import sqlite_path
     _db.conn.enableloadextension(True)

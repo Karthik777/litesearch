@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.3
+apsw fts5 instead of yake for kw
+
 ## 0.1.2
 spacy models are lazy loaded
 

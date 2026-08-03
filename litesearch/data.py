@@ -291,8 +291,7 @@ def clean(q:str,  # query to be passed for fts search
           pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
           ):
     '''Clean the query by removing * and returning None for empty queries.
-    `_` is deliberately kept: the store tokenises `get_store` as one token, so splitting the
-    query on underscores makes identifier searches unmatchable.'''
+    `_` is deliberately kept.'''
     import re
     return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
@@ -314,16 +313,8 @@ before between out up down off only own same too very just also each other more 
 def kw(q:str,          # query to be passed for fts search
        stop:set=None   # stopwords to drop (defaults to _QSTOP)
        ):
-    '''Query keywords by UAX#29 word segmentation (apsw), minus stopwords.
-
-    yake is a document keyphrase extractor and mangles short code queries — it returned
-    `get_store` as "store" and `fts_search vs vec_search` as "vec fts ranking vs search",
-    dropping the identifiers that matter most, at ~200x the cost. Falls back to yake only
-    if apsw.unicode is unavailable.'''
-    try: from apsw.unicode import word_iter, casefold
-    except ImportError:
-        from yake import KeywordExtractor as KW
-        return ' '.join(set(concat([k.split(' ') for k, s in KW().extract_keywords(q)])))
+    '''Query keywords by UAX#29 word segmentation (apsw), minus stopwords.'''
+    from apsw.unicode import word_iter, casefold
     st = _QSTOP if stop is None else stop
     ws = [casefold(t) for t in word_iter(q)]
     out = [w for w in ws if len(w) > 1 and w not in st]
