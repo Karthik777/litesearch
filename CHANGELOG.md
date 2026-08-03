@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.1
+bump
+
 ## 0.1.0
 graph added and fts5 stemmers added
 
