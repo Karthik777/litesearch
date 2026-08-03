@@ -27,7 +27,10 @@ RESULTS = Path(__file__).parent/'results'
 QVEC    = Path(__file__).parent/'cache/qvec'
 
 GRAINS   = ('page', 'c1024', 'c512', 'c256')
-ENCODERS = ('potion-32M', 'bge-small', 'jina-v2-sm', 'egemma-300m', 'nomic-v1.5')
+# nomic-v1.5 is registered in `encoders.py` but deliberately not run: at 3.6 chunks/s it costs the
+# same 45 minutes as egemma-300m to answer a question egemma already answers (is a 10x dearer
+# encoder worth it), and jina-v2-sm already covers the 8192-token context window.
+ENCODERS = ('potion-32M', 'bge-small', 'jina-v2-sm', 'egemma-300m')
 BASE_GRAIN = 'c512'          # the granularity every non-granularity sweep holds fixed
 
 
