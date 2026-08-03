@@ -152,8 +152,13 @@ def build_tree(genre, chunking, encoder, with_heading=True, bold=False, force=Fa
                    0.0, t_all, 0.0, 0.0, rows, nodes=nnodes)
 
 
-def build_late(genre, chunking, encoder, force=False):
-    'Late chunking: embed the document, then pool token vectors per chunk span.'
+def build_late(genre, chunking, encoder, fast=True, force=False):
+    '''Late chunking: embed the document, then pool token vectors per chunk span.
+
+    `fast=True` uses `evals.fastlate`, which computes the same vectors with binary search instead of
+    a per-span scan of the window's token offsets. The library's own path is O(spans × tokens) per
+    window, which on these documents is minutes per book of pure Python — see `evals.fastlate.check`
+    for the equivalence assertion and the measured ratio.'''
     p = db_path(genre, chunking, encoder, 'late')
     if p.exists() and not force: return dict(path=str(p), skipped=True)
     _clean(p)
@@ -161,9 +166,11 @@ def build_late(genre, chunking, encoder, force=False):
     assert e.late is not None, f'{encoder} has no context window to late-chunk over'
     t0 = time.time(); docs = doc_spans(genre, chunking); t_chunk = time.time()-t0
     rows, tiers, t_embed = [], {}, 0.0
+    pool = (lambda txt, sp: __import__('evals.fastlate', fromlist=['x']).encode_auto_fast(e.late, txt, sp)) \
+           if fast else (lambda txt, sp: e.late.encode_auto(txt, sp))
     for title, d in docs.items():
         t0 = time.time()
-        vs, tier = e.late.encode_auto(d['text'], [(s, en) for s, en, _, _ in d['spans']])
+        vs, tier = pool(d['text'], [(s, en) for s, en, _, _ in d['spans']])
         t_embed += time.time()-t0
         tiers[tier] = tiers.get(tier, 0) + 1
         for (s, en, txt, pg), v in zip(d['spans'], vs):
@@ -178,7 +185,7 @@ def build_late(genre, chunking, encoder, force=False):
     t_insert = time.time()-t0
     t0 = time.time(); n_idx = st.rebuild_index(); t_index = time.time()-t0
     return _record(genre, chunking, encoder, 'late', p, len(rows), n_idx,
-                   t_chunk, t_embed, t_insert, t_index, rows, tiers=tiers)
+                   t_chunk, t_embed, t_insert, t_index, rows, tiers=tiers, fast_pool=fast)
 
 
 def build_fulldoc(genre, encoder, force=False):

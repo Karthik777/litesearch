@@ -98,6 +98,19 @@ def build_trees():
 
 def build_lates():
     'Late chunking needs a context window; `fulldoc` is the control at the other extreme.'
+    from .fastlate import check
+    from .build import doc_spans
+    # equivalence + cost of the pooling shortcut, on one real document of each genre
+    eq = []
+    for g in C.GENRES:
+        d = doc_spans(g, BASE_GRAIN)
+        title = max(d, key=lambda k: len(d[k]['text']))
+        spans = [(s, e) for s, e, _, _ in d[title]['spans']]
+        r = check(enc('jina-v2-sm').late, d[title]['text'], spans)
+        r |= dict(genre=g, doc=title)
+        eq.append(r); print(f'  pooling check {g}/{title[:26]}: {r}', flush=True)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    (RESULTS/'late_pooling.json').write_text(json.dumps(eq, indent=1))
     for g in C.GENRES:
         print(f'  {g} late:', flush=True)
         print(show(build_late(g, BASE_GRAIN, 'jina-v2-sm')), flush=True)
@@ -149,10 +162,15 @@ def eval_grain():
 
 
 def eval_encoder():
+    '''Every encoder at fixed granularity, with and without a reranker on top.
+
+    `rerank` is in here rather than only in the strategy sweep because the tier question is not
+    "does a cross-encoder help" but "does a cheap encoder plus a cross-encoder reach a dear encoder
+    alone" — and that comparison needs the reranker measured on all five.'''
     rows = []
     for g in C.GENRES:
         for e in ENCODERS:
-            r = run_store(g, BASE_GRAIN, e, 'flat', ('vec', 'hybrid', 'hybrid-pre'))
+            r = run_store(g, BASE_GRAIN, e, 'flat', ('vec', 'hybrid', 'hybrid-pre', 'rerank'))
             for x in r: print('  ' + fmt(f"{g}/{e}/{x['strategy']}/{x['flavour']}", x, 52))
             rows += r
     save('encoder', rows)
