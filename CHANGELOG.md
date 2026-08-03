@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.2
+spacy models are lazy loaded
+
 ## 0.1.1
 bump
 
