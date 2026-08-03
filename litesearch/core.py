@@ -186,7 +186,8 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     wh = f'where {_in("rowid", keys)}' + (f' AND {where}' if where else '')
     rows = self.db.q(f'select {sel} from {self.name} {wh}', where_args or None)
     for r in rows: r['_dist'] = dist.get(r['rowid'])
-    return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))
+    # over-fetched by 2x above so `where` has something to filter; the caller asked for `limit`
+    return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))[:limit]
 
 @patch
 def _idx_remove(self:Table, idx, keys):
@@ -257,6 +258,36 @@ def rebuild_index(self:Table, dtype=None):
             np.stack([np.frombuffer(b, dtype=dt) for b in rows.itemgot('embedding')]))
     self.db._save_index(self.name)
     return idx.size
+
+# %% ../nbs/01_core.ipynb #cac7c8f1
+@patch
+def ann_vec(self:Table,          # ANN-registered store
+            key:int,             # usearch key (the row's rowid)
+            dtype=np.float16):   # fallback dtype when the registry has none
+    'The vector the index already holds for `key`, or None when the key is not indexed.'
+    m = self.db._ann_meta(self.name)
+    if not (m and m['ndim']): return None
+    idx = self.db.get_index(self.name)
+    if not idx.size or not idx.contains(key): return None
+    return np.asarray(idx[key], dtype=_np_dtype.get(m['dtype'], dtype)).reshape(-1)
+
+@patch
+def ann_neighbors(self:Table,             # ANN-registered store
+                  key:int,                # usearch key (rowid) to search from
+                  limit:int=15,           # neighbours to return
+                  columns:list=None,      # columns to return (rowid always included)
+                  where:str=None,         # additional where clause
+                  where_args:dict=None,   # args for where clause
+                  include_self:bool=False,# keep the anchor row in the results
+                  dtype=np.float16):      # embedding dtype
+    '''Rows nearest an already-indexed row — "what else looks like this".
+
+    Reuses the stored vector rather than re-embedding the row, so no model is loaded and no
+    text is tokenised: the whole call is one HNSW probe plus one `rowid IN (...)` fetch.'''
+    v = self.ann_vec(key, dtype)
+    if v is None: return []
+    rows = self.ann_search(v.tobytes(), columns, limit + (0 if include_self else 1), where, where_args, dtype)
+    return rows[:limit] if include_self else [r for r in rows if r['rowid'] != key][:limit]
 
 # %% ../nbs/01_core.ipynb #3eefbddac870085a
 def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
