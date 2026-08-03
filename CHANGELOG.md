@@ -1,5 +1,7 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.4
+
 ### New
 
 - `litesearch.tree` — a PageIndex-style document-structure layer. `db.get_tree()` adds `docs` and

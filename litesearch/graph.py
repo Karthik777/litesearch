@@ -565,7 +565,7 @@ def topic_nodes(db,                # Database
     if mens: g.mentions.insert_all(mens, upsert=True, pk=('chunk_id','entity_id'))
     return dict(topics=len(ents), method=method)
 
-# %% ../nbs/05_graph.ipynb #aa7225a3
+# %% ../nbs/05_graph.ipynb #10f12a21
 @patch
 def _cluster_cached(self:Table, min_count, max_count, k, dtype):
     'Cluster once per (store, params, index size). `peers` would otherwise recluster on every call.'
