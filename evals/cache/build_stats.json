@@ -351,5 +351,37 @@
   "t_insert": 10.45,
   "t_index": 0.4,
   "bytes": 21785664
+ },
+ "astrology__flat__c512__bge-small": {
+  "genre": "astrology",
+  "chunking": "c512",
+  "encoder": "bge-small",
+  "mode": "flat",
+  "path": "/home/user/litesearch/evals/dbs/astrology__flat__c512__bge-small.db",
+  "chunks": 4977,
+  "indexed": 4977,
+  "mean_chars": 431,
+  "max_chars": 512,
+  "t_chunk": 0.12,
+  "t_embed": 274.86,
+  "t_insert": 11.38,
+  "t_index": 0.31,
+  "bytes": 17163560
+ },
+ "astrology__flat__c256__potion-32M": {
+  "genre": "astrology",
+  "chunking": "c256",
+  "encoder": "potion-32M",
+  "mode": "flat",
+  "path": "/home/user/litesearch/evals/dbs/astrology__flat__c256__potion-32M.db",
+  "chunks": 10358,
+  "indexed": 10356,
+  "mean_chars": 207,
+  "max_chars": 256,
+  "t_chunk": 0.17,
+  "t_embed": 1.67,
+  "t_insert": 21.1,
+  "t_index": 0.93,
+  "bytes": 32821120
  }
 }
