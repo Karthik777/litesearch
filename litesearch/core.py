@@ -9,7 +9,7 @@ from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict, hash_record
 from apsw.fts5 import register_tokenizers, map_tokenizers
-import numpy as np
+import numpy as np, warnings
 
 # %% ../nbs/01_core.ipynb #d4622bb9
 _dtype_suffixes = {np.int8: 'i8', np.float16: 'f16', np.float64: 'f64', np.float32: 'f32'}
@@ -141,6 +141,27 @@ def fts_search(self:Table,
     sql = self.search_sql(columns,order_by,limit,offset,where,include_rank)
     return self.db.q(sql, merge(dict(query=fts_q), where_args or {}))
 
+def _dtype_check(tbl, dtype, rows):
+    '''Warn when `dtype` cannot be the dtype these vectors were stored as.
+
+    The failure is otherwise silent and total. `model2vec` returns float32, `FastEncode` returns
+    float16, and this function defaults to float16 — store the first and search as the second and
+    `distance_cosine_f16` reads the f32 bytes as twice as many f16 values, which for normalised
+    embeddings comes out as *exactly zero for every row*. No exception, no empty result: the vector
+    leg just silently returns rows in rowid order, and a hybrid search quietly degrades to FTS only.'''
+    want = _dtype_suffix(dtype)
+    m = tbl.db._ann_meta(tbl.name)
+    if m and m['dtype'] and m['dtype'] != want:
+        warnings.warn(f'{tbl.name!r}: vector search using dtype={want!r} but the store is registered '
+                      f'as {m["dtype"]!r}. Distances are being computed over reinterpreted bytes — '
+                      f'pass dtype= matching the embeddings you inserted.')
+    elif len(rows) > 1 and all(r.get('_dist') == 0 for r in rows):
+        warnings.warn(f'{tbl.name!r}: every distance came back 0, which usually means dtype={want!r} '
+                      f'does not match how the embeddings were stored (e.g. float32 vectors from '
+                      f'model2vec searched as float16). The ranking is meaningless.')
+    return rows
+
+
 @patch
 def vec_search(self: Table,
                emb: bytes,                    # query embedding vector (as bytes)
@@ -158,8 +179,9 @@ def vec_search(self: Table,
     sel_cols = [f'{c} as {c}' if c == 'rowid' else c for c in columns] if columns else ['*']
     sel = ','.join(sel_cols) + f', {dist} as _dist'
     wh = f'{emb_col} is not null' + (f' AND {where}' if where else '')
-    return self.db.q(f'SELECT {sel} FROM {self.name} WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
+    rows = self.db.q(f'SELECT {sel} FROM {self.name} WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
                 dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
+    return _dtype_check(self, dtype, rows)
 
 # %% ../nbs/01_core.ipynb #bc63f7ed
 def _rid(): return 'rowid as rowid'
