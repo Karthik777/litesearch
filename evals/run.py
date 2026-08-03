@@ -33,12 +33,16 @@ BASE_GRAIN = 'c512'          # the granularity every non-granularity sweep holds
 
 # ------------------------------------------------------------------ helpers
 def qvecs(genre, encoder, refresh=False):
-    'Cached query embeddings, one array per flavour.'
+    'Cached query embeddings, one array per flavour. Invalidated when the query set changes.'
     QVEC.mkdir(parents=True, exist_ok=True)
     f = QVEC/f'{genre}__{encoder}.npz'
+    qs = build_queries(genre)
     if f.exists() and not refresh:
-        z = np.load(f); return {k: z[k] for k in z.files}
-    qs, e = build_queries(genre), enc(encoder)
+        z = np.load(f)
+        if set(z.files) == set(FLAVOURS) and len(z[FLAVOURS[0]]) == len(qs):
+            return {k: z[k] for k in z.files}
+        print(f'  qvec cache for {genre}/{encoder} is stale; re-encoding', flush=True)
+    e = enc(encoder)
     out = {fl: e.qry([q[fl] for q in qs]) for fl in FLAVOURS}
     np.savez(f, **out)
     return out
@@ -190,6 +194,12 @@ def eval_late():
 
 
 def eval_graph():
+    '''The graph leg at three weights, then the same graph with its topic nodes removed.
+
+    Removing the topics is how the clustering layer's contribution *to ranking* gets isolated:
+    `topic_nodes` writes one entity per cluster plus a mention per member, so deleting exactly those
+    rows leaves the spaCy/PMI graph intact and answers "did clustering the index help retrieval, or
+    only help a human read the corpus".'''
     rows = []
     for g in C.GENRES:
         for w in (0.25, 0.5, 1.0):
@@ -197,6 +207,23 @@ def eval_graph():
         rows += run_store(g, BASE_GRAIN, 'bge-small', 'tree', ('hybrid', 'hybrid-pre'))
     for x in rows: print('  ' + fmt(f"{x['genre']}/{x['strategy']}{x.get('graph_w','')}/{x['flavour']}", x, 52))
     save('graph', rows)
+    # --- now without topic nodes
+    notopic = []
+    for g in C.GENRES:
+        p = db_path(g, BASE_GRAIN, 'bge-small', 'tree')
+        if not p.exists(): continue
+        db = database(str(p))
+        tids = [r['id'] for r in db.t.entities(select='id', where="kind='topic'")]
+        if not tids: print(f'  {g}: no topic nodes to remove'); continue
+        from litesearch.core import _in
+        db.t.mentions.delete_where(where=_in('entity_id', tids))
+        db.t.entities.delete_where(where=_in('id', tids))
+        print(f'  {g}: removed {len(tids)} topic nodes', flush=True)
+        r = run_store(g, BASE_GRAIN, 'bge-small', 'tree', ('graph',), graph_w=0.5)
+        for x in r: x['mode'] = 'tree-notopic'
+        notopic += r
+        for x in r: print('  ' + fmt(f"{g}/graph-notopic/{x['flavour']}", x, 52))
+    save('graph_notopic', notopic)
 
 
 def eval_mixed():
