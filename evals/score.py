@@ -3,10 +3,11 @@
 Three levels of "right answer", all derived from `refindex` and none of them dependent on how the
 store under test chunked the corpus:
 
-- **passage** — a hit is correct if its text contains the source sentence. Coarse chunks hold more
-  text and so are *favoured* by this metric; it is a floor for fine chunking, not a thumb on its side.
-- **section** — a hit is correct if the sentences it contains belong to the target Article / CHAPTER
-  / paper section. This is the question a reader actually asks of a document.
+- **passage** — a hit is correct if its text overlaps the source sentence by five consecutive words,
+  counting only 5-grams unique to the target section. Coarse chunks hold more text and so are
+  *favoured* by this metric; it is a floor for fine chunking, not a thumb on its side.
+- **section** — a hit is correct if any 5-gram it contains belongs to the target Article / CHAPTER /
+  paper section. This is the question a reader actually asks of a document.
 - **document** — a hit is correct if it comes from the right document. Easy here (8–12 documents per
   genre) and reported only to show where a configuration has collapsed.
 """
@@ -106,14 +107,25 @@ def s_hybrid(db, q, qv, limit=K, **kw):
     return db.search(q, qv, columns=COLS, limit=limit) or []
 
 
-def s_hybrid_pre(db, q, qv, limit=K, rrf_k=60, **kw):
-    '''Hybrid with `pre()` on the FTS leg only.
+def s_hybrid_pre(db, q, qv, limit=K, rrf_k=60, depth=None, **kw):
+    '''Hybrid with `pre()` on the FTS leg only, at the same candidate depth as `db.search`.
 
     Kept separate from `s_hybrid` because `db.search` sends one string to both legs: pass a
-    preprocessed query and the reranker (and any future lexical scoring) sees `word* OR word*`.'''
-    fts = s_fts_pre(db, q, qv, max(limit*3, 30))
-    vec = db.t.store.vec_search(qv, ['rowid'] + COLS, limit=max(limit*3, 30))
+    preprocessed query and the reranker (and any future lexical scoring) sees `word* OR word*`.
+
+    `depth` defaults to `limit`, matching what `db.search` fetches per leg. That equality is the
+    whole point — fusing 30 candidates per leg and returning 10 beats fusing 10 and returning 10
+    regardless of how the query was written, so a deeper `pre()` arm would credit preprocessing for
+    a gain that belongs to candidate depth.'''
+    d = depth or limit
+    fts = s_fts_pre(db, q, qv, d)
+    vec = db.t.store.vec_search(qv, ['rowid'] + COLS, limit=d)
     return rrf_merge(fts, vec, rrf_k, limit)
+
+
+def s_hybrid_pre_deep(db, q, qv, limit=K, fanout=30, **kw):
+    'The same, fusing `fanout` candidates per leg. Isolates candidate depth from everything else.'
+    return s_hybrid_pre(db, q, qv, limit, depth=max(fanout, limit))
 
 
 def s_hybrid_ann(db, q, qv, limit=K, **kw):
@@ -122,8 +134,11 @@ def s_hybrid_ann(db, q, qv, limit=K, **kw):
 
 
 def s_rerank(db, q, qv, limit=K, fanout=30, **kw):
-    'Hybrid, then a flashrank cross-encoder over the merged list.'
-    hits = s_hybrid_pre(db, q, qv, fanout)
+    '''Hybrid, then a flashrank cross-encoder over the merged list.
+
+    Compare against `hybrid-pre-deep`, not `hybrid-pre`: both fuse `fanout` candidates, so the
+    difference is the cross-encoder and nothing else.'''
+    hits = s_hybrid_pre(db, q, qv, fanout, depth=fanout)
     from litesearch.core import rerank_hits
     return rerank_hits(q, hits, None, limit)
 
@@ -157,7 +172,8 @@ def s_graph(db, q, qv, limit=K, graph_w=0.5, **kw):
 
 STRATEGIES = {
     'fts': s_fts, 'fts-pre': s_fts_pre, 'vec': s_vec, 'ann': s_ann,
-    'hybrid': s_hybrid, 'hybrid-pre': s_hybrid_pre, 'hybrid-ann': s_hybrid_ann,
+    'hybrid': s_hybrid, 'hybrid-pre': s_hybrid_pre, 'hybrid-pre-deep': s_hybrid_pre_deep,
+    'hybrid-ann': s_hybrid_ann,
     'rerank': s_rerank, 'doc_search': s_doc_search, 'sections': s_sections,
     'graph': s_graph,
 }

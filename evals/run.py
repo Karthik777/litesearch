@@ -181,7 +181,8 @@ def eval_strategy():
     for g in C.GENRES:
         for e in ('potion-32M', 'bge-small'):
             r = run_store(g, BASE_GRAIN, e, 'flat',
-                          ('fts', 'fts-pre', 'vec', 'ann', 'hybrid', 'hybrid-ann', 'hybrid-pre', 'rerank'))
+                          ('fts', 'fts-pre', 'vec', 'ann', 'hybrid', 'hybrid-ann', 'hybrid-pre',
+                           'hybrid-pre-deep', 'rerank'))
             for x in r: print('  ' + fmt(f"{g}/{e}/{x['strategy']}/{x['flavour']}", x, 52))
             rows += r
     save('strategy', rows)
