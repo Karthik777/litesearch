@@ -173,3 +173,4 @@ evals/corpus/astrology/
 evals/cache/qvec/
 evals/cache/synonyms.json
 evals/cache/pages_*.json
+evals/cache/build_stats.json
