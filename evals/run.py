@@ -89,6 +89,7 @@ def build_trees():
         for e in ('potion-32M', 'bge-small', 'jina-v2-sm'):
             print(show(build_tree(g, BASE_GRAIN, e, with_heading=True)), flush=True)
         print(show(build_tree(g, BASE_GRAIN, 'bge-small', with_heading=False)), flush=True)
+        print(show(build_tree(g, BASE_GRAIN, 'bge-small', bold=True)), flush=True)
 
 
 def build_lates():
@@ -171,8 +172,9 @@ def eval_structure():
             rows += run_store(g, BASE_GRAIN, e, 'flat', ('hybrid', 'hybrid-pre'))
             rows += run_store(g, BASE_GRAIN, e, 'tree',
                               ('hybrid', 'hybrid-pre', 'doc_search', 'sections'))
-        rows += run_store(g, BASE_GRAIN, 'bge-small', 'tree-nohead',
-                          ('hybrid', 'hybrid-pre', 'doc_search', 'sections'))
+        for m in ('tree-nohead', 'tree-bold'):
+            rows += run_store(g, BASE_GRAIN, 'bge-small', m,
+                              ('hybrid', 'hybrid-pre', 'doc_search', 'sections'))
     for x in rows: print('  ' + fmt(f"{x['genre']}/{x['mode']}/{x['encoder']}/{x['strategy']}/{x['flavour']}", x, 58))
     save('structure', rows)
 

@@ -16,9 +16,18 @@ import numpy as np
 from litesearch.core import rrf_merge
 from litesearch.data import pre
 
-from .refindex import ref, nrm
+from .refindex import ref, nrm, grams
 
 K = 10
+
+# A passage counts as found when it overlaps the target sentence by five consecutive words. Strict
+# containment of the whole sentence would be unmeasurable for 256-character chunks — the sentence
+# straddles two of them — and would score fine chunking at zero for a reason that has nothing to do
+# with retrieval. Overlap still favours big chunks, which have more surface to overlap with; that
+# bias is left in place because it runs against the conclusion this evaluation reaches.
+def overlaps(text, key_grams, max_words=900):
+    if not key_grams: return False
+    return any(g in key_grams for g in grams(text, max_words))
 
 
 # ------------------------------------------------------------------ metrics
@@ -29,15 +38,16 @@ def _rank(hits, ok, k=K):
     return None
 
 
-def score_one(hits, q, r, k=K):
+def score_one(hits, q, r, k=K, key_grams=None):
     'Passage / section / document ranks for one query.'
-    key, unit = q['key'], q['unit']
+    unit = q['unit']
+    kg = key_grams if key_grams is not None else set(grams(q['key']))
     # flat stores carry the document title in `doc_id`, tree stores the library's hash of it, and
     # the mixed store prefixes the title with its genre
     title = q.get('doc_title') or ''
     docs = {q['doc'], title}
     ok_doc = lambda h: (d_ := (h.get('doc_id') or '\0')) in docs or (title and d_.endswith(f':{title}'))
-    p = _rank(hits, lambda h: key in nrm(h.get('content')), k)
+    p = _rank(hits, lambda h: overlaps(h.get('content'), kg), k)
     u = _rank(hits, lambda h: unit in r.units_of_text(h.get('content')), k)
     d = _rank(hits, ok_doc, k)
     return p, u, d
@@ -156,9 +166,22 @@ GRAPH_ONLY = ('graph',)
 
 
 # ------------------------------------------------------------------ runner
+def key_grams(q, r):
+    '''The 5-grams of the source sentence that are unique to its section.
+
+    Filtering to unique grams is what stops the passage metric from firing on `of the european union
+    and`: a chunk retrieved from the wrong Article shares plenty of legislative boilerplate with the
+    right one, and counting that as a hit would flatter every configuration equally and the coarse
+    ones most.'''
+    gs = grams(q['key'])
+    keep = {g for g in gs if r.gram2u.get(g) == q['unit']}
+    return keep or set(gs)
+
+
 def eval_store(db, genre, queries, flavour, qvecs, strategy='hybrid', limit=K, **kw):
     'Run one strategy over one store for one flavour. Returns metrics + median query latency.'
     r, fn, ranks, lat, cont = ref(genre), STRATEGIES[strategy], [], [], []
+    kgs = [key_grams(q, r) for q in queries]
     for q, qv in zip(queries, qvecs):
         t0 = time.time()
         try: hits = fn(db, q[flavour], qv.tobytes(), limit, **kw) or []
@@ -166,7 +189,7 @@ def eval_store(db, genre, queries, flavour, qvecs, strategy='hybrid', limit=K, *
             hits = []
             if len(ranks) == 0: print(f'    ! {strategy} raised {type(ex).__name__}: {ex}', flush=True)
         lat.append((time.time()-t0)*1000)
-        ranks.append(score_one(hits, q, r, limit))
+        ranks.append(score_one(hits, q, r, limit, kgs[len(ranks)]))
         cont.append(contamination(hits, genre, limit))
     out = aggregate(ranks, limit)
     out['ms_p50'] = float(np.median(lat)); out['ms_p90'] = float(np.percentile(lat, 90))

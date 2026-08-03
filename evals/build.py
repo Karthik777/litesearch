@@ -125,9 +125,9 @@ def build_flat(genre, chunking, encoder, force=False):
                    t_chunk, t_embed, t_insert, t_index, chunks)
 
 
-def build_tree(genre, chunking, encoder, with_heading=True, force=False):
+def build_tree(genre, chunking, encoder, with_heading=True, bold=False, force=False):
     'The `litesearch.tree` path: a node tree per document, chunks linked to nodes.'
-    mode = 'tree' if with_heading else 'tree-nohead'
+    mode = 'tree-bold' if bold else ('tree' if with_heading else 'tree-nohead')
     p = db_path(genre, chunking, encoder, mode)
     if p.exists() and not force: return dict(path=str(p), skipped=True)
     _clean(p)
@@ -136,8 +136,12 @@ def build_tree(genre, chunking, encoder, with_heading=True, force=False):
     db = database(str(p))
     db.get_tree('store', ndim=e.dim, dtype=DT)
     emb = lambda ts, **kw: encode_sorted(e, ts)
+    docs = C.load(genre)
+    if bold:
+        from .boldhead import promote_docs
+        docs, _ = promote_docs(docs)
     t0 = time.time()
-    for title, pages in C.load(genre).items():
+    for title, pages in docs.items():
         db.add_doc(pages, title=title, source=title, kind='doc', emb_fn=emb,
                    chunker=ck, with_heading=with_heading)
     t_all = time.time()-t0

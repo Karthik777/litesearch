@@ -21,6 +21,15 @@ MIN_SENT = 40
 _SENT = re.compile(r'[^.!?\n]{%d,320}[.!?]' % MIN_SENT)
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z'-]{2,}")
+_TOK = re.compile(r"[A-Za-z0-9']+")
+GRAM_N = 5
+
+
+def grams(text, max_words=None, n=GRAM_N):
+    'Word `n`-grams of a text, lowercased, in order. The unit of overlap everywhere downstream.'
+    ws = [w.lower() for w in _TOK.findall(text or '')]
+    if max_words: ws = ws[:max_words]
+    return [' '.join(ws[i:i+n]) for i in range(max(0, len(ws)-n+1))]
 _NUMERAL = re.compile(r'^([IVXLCDM]+|\d+[A-Za-z]?)$', re.I)
 _STRUCT_WORD = re.compile(r'^(BOOK|TITLE|PART|ANNEX|APPENDIX|CHAPTER|SECTION|SUBTITLE|ARTICLE|RULE|'
                           r'CLAUSE|LESSON|SCHEDULE|PAGES)$', re.I)
@@ -58,6 +67,7 @@ class RefIndex:
         self._build_units()
         self._build_sentmap()
         self._build_df()
+        self._build_grams()
 
     # ---- units -------------------------------------------------------------
     def _unit(self, nid):
@@ -106,12 +116,30 @@ class RefIndex:
         for s in self.segments:
             for w in {w.lower() for w in _WORD.findall(s['content'])}: self.df[w] += 1
 
+    def _build_grams(self):
+        '''`{word 5-gram: unit_id}`, dropping every 5-gram that occurs in more than one section.
+
+        Sentences are the wrong unit for this map. A 256-character chunk often contains no complete
+        sentence at all, so a sentence-keyed map would score fine chunking as unable to find
+        anything — an artefact of the metric, not a property of the configuration. A 5-gram is
+        short enough that any chunk worth returning contains several, and long enough that the ones
+        which survive the uniqueness filter really do name a place in the corpus.'''
+        owner, dup = {}, set()
+        for s in self.segments:
+            u = self.unit_of.get(s['node_id'])
+            if not u: continue
+            for g in grams(s['content']):
+                if g in owner:
+                    if owner[g] != u: dup.add(g)
+                else: owner[g] = u
+        self.gram2u = {g: u for g, u in owner.items() if g not in dup}
+
     # ---- mapping a retrieved passage back onto sections --------------------
-    def units_of_text(self, text, max_units=8):
+    def units_of_text(self, text, max_units=8, max_words=900):
         'Sections covered by a retrieved passage, in order of first appearance. Chunking-agnostic.'
         out, seen = [], set()
-        for m in _SENT.finditer(text or ''):
-            u = self.sent2u.get(nrm(m.group(0)))
+        for g in grams(text, max_words):
+            u = self.gram2u.get(g)
             if u and u not in seen:
                 seen.add(u); out.append(u)
                 if len(out) >= max_units: break
