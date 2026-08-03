@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.6
+graph and tree need their own hash columns not generic content
+
 ## 0.1.5
 use ann only if there isn't a where. exactness over speed
 

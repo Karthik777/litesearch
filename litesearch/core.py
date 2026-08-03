@@ -41,6 +41,7 @@ def process_content(store,          # target Table (hash-id store)
                     content,        # iterable of chunk dicts
                     embed=True,     # embed content before upsert
                     emb_fn=None,    # embedder, required when embed=True
+                    hash_id_columns=('content',),  # columns the row id is hashed over; add 'node_id' to keep identical text in different sections distinct
                     **kw):          # forwarded to emb_fn
     'Embed chunks (optional) and upsert into a hash-id store. No-op on empty content.'
     content = list(content or [])
@@ -48,7 +49,7 @@ def process_content(store,          # target Table (hash-id store)
         assert emb_fn, 'emb_fn is required when embed=True'
         content = embed_chunk(content, emb_fn, **kw)
     if not content: return
-    return store.insert_all(content, upsert=True, hash_id='id', hash_id_columns=['content'])
+    return store.insert_all(content, upsert=True, hash_id='id', hash_id_columns=list(hash_id_columns))
 
 # %% ../nbs/01_core.ipynb #3a08e489
 @patch

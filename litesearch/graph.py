@@ -288,7 +288,7 @@ def build_graph(db,                  # Database with a chunk store
     for c in L(chunks):
         txt = c.get('content')
         if not (txt and txt.strip()): continue
-        cid = _slug(txt)
+        cid = c.get('id') or _slug(txt)
         if code and _is_code(c):
             dname, calls, imps = code_entities(c)
             did = ent(dname, 'symbol') if dname else None

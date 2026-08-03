@@ -266,7 +266,7 @@ def add_doc(self:Database,
         fn = emb_fn if not (emb_fn and with_heading) else (
             lambda ts, **kw: emb_fn([f"{h}\n\n{t}" if (h := heads.get(t)) else t for t in ts], **kw))
         heads = {c['content']: c['heading'] for c in chunks}
-        process_content(g.store, list(chunks), embed=bool(emb_fn), emb_fn=fn)
+        process_content(g.store, list(chunks), embed=bool(emb_fn), emb_fn=fn, hash_id_columns=['node_id','content'])
         if self._ann_meta(store): g.store.rebuild_index()
     return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
 
