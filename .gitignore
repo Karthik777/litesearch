@@ -165,3 +165,11 @@ longqa.db*
 pdfs/images/
 nbs/pdfs/images/
 nbs/pdfs/scanned_test.pdf
+
+# eval harness artifacts: rebuilt by `python -m evals.run`, not worth versioning
+evals/dbs/
+evals/corpus/arxiv/
+evals/corpus/astrology/
+evals/cache/qvec/
+evals/cache/synonyms.json
+evals/cache/pages_*.json
