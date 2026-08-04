@@ -16,7 +16,7 @@ Two of the cheapest knobs in the library are worth more than everything expensiv
 | add a flashrank reranker | +0.03 to +0.08 | ~40ms per query |
 | upgrade potion-32M → egemma-300m | **+0.007** | 1,700× the indexing compute |
 | add the PPR graph leg | **−0.07 to −0.11** | 5–8× the query latency |
-| late-chunk instead of embedding chunks independently | **−0.05** (regulatory) | 3× the indexing time |
+| late-chunk instead of embedding chunks independently | **−0.03 to −0.05**, and −0.18 on the vector leg alone | 3× the indexing time |
 
 The single best configuration measured on every genre uses **no embeddings at all**: FTS5 with
 `pre()`, at 256–512 character chunks, scoring 0.880 / 0.807 / 0.777 at 2–9ms. The best configuration
@@ -237,17 +237,37 @@ did we already do this?", on the reasoning that k-NN returns `limit` rows whethe
 related while a cluster returns a family. Measured, the family is *less* related than the same number
 of nearest neighbours. Group size was matched precisely so this could not be a `limit` artifact.
 
-### Late chunking — negative on the genre measured
+### Late chunking — negative on all three genres, and it damages the vectors
 
-On regulatory, jina-v2-sm at c512, late chunking against embedding the same chunks independently:
+jina-v2-sm (8192-token context) at c512, late chunking against embedding the same chunks
+independently:
 
-| strategy | independent | late |
+| genre | hybrid-pre: independent → late | vec only: independent → late |
 |---|---|---|
-| hybrid-pre | **0.781** | 0.728 |
-| vec only | **0.622** | 0.437 |
+| arxiv | 0.826 → **0.781** (−0.045) | 0.605 → **0.430** (−0.175) |
+| regulatory | 0.781 → **0.728** (−0.053) | 0.622 → **0.437** (−0.185) |
+| astrology | 0.672 → **0.638** (−0.034) | 0.384 → **0.198** (−0.186) |
 
-It also costs ~3× the indexing time, because every window is a full 8192-token forward pass. The
-arXiv and astrology arms are still building; this row will be updated.
+The vector-only column is the diagnostic, and it is not a subtle ranking effect: late chunking
+roughly **halves** the quality of the vector leg. The chunk vectors come out less discriminative, and
+the hybrid only looks less damaged because the FTS leg carries it.
+
+The mechanism is visible in the tier the encoder chose. Every document here lands in `encode_auto`'s
+`longer` tier — 28,600-character windows over documents of 200+ pages. Mean-pooling a span's token
+embeddings when those embeddings were computed over 8,192 tokens of surrounding text makes every span
+in a window look like its window. Late chunking's premise is that a chunk should see its context;
+when the "context" is a whole VAT directive or a whole book, that context is not coherent and the
+pooling homogenises rather than informs.
+
+**What this does not say.** `nbs/04_latechunk_eval.ipynb` measures late chunking on LongEmbed
+(narrativeqa, 2wikimqa), where the task is picking the right *document* and documents are far shorter
+than these. That result can hold while this one does. The untested middle case is the interesting one:
+late-chunk **within a section** rather than within a whole document, so the pooled context is one
+coherent passage. That is a small change to `doc_spans` and it is the variant worth trying before
+concluding anything about the technique itself.
+
+It also costs ~3× the indexing time of independent embedding, because every window is a full
+8192-token forward pass — 838s for the astrology corpus against 201s.
 
 Two mechanical notes from doing it:
 
