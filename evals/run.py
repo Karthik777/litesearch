@@ -2,13 +2,13 @@
 
     python -m evals.run build_core        # stores for the granularity + encoder sweeps
     python -m evals.run build_tree        # tree / tree-nohead stores
-    python -m evals.run build_late        # late chunking + fulldoc controls
+    python -m evals.run build_late        # late chunking stores
     python -m evals.run build_graph       # entity graph + topic nodes over the tree stores
     python -m evals.run eval_grain        # granularity x flavour
     python -m evals.run eval_encoder      # encoder x flavour
     python -m evals.run eval_strategy     # retrieval strategy x flavour
     python -m evals.run eval_structure    # flat vs tree vs tree-nohead
-    python -m evals.run eval_late         # naive vs late vs fulldoc
+    python -m evals.run eval_late         # independent chunk embedding vs late chunking
     python -m evals.run eval_cluster      # clustering, intrinsically
 """
 import json, sys, time
@@ -18,7 +18,7 @@ import numpy as np
 from litesearch import database
 
 from . import corpus as C
-from .build import (build_flat, build_tree, build_late, build_fulldoc, db_path, show, slug)
+from .build import (build_flat, build_tree, build_late, db_path, show, slug)
 from .encoders import enc
 from .queries import build as build_queries, FLAVOURS
 from .score import eval_store, STRATEGIES, fmt
@@ -100,7 +100,7 @@ def build_trees():
 
 
 def build_lates():
-    'Late chunking needs a context window; `fulldoc` is the control at the other extreme.'
+    'Late chunking needs a context window, so this is the jina-v2-sm arm only.'
     from .fastlate import check
     from .build import doc_spans
     # equivalence + cost of the pooling shortcut, on one real document of each genre
@@ -114,10 +114,14 @@ def build_lates():
         eq.append(r); print(f'  pooling check {g}/{title[:26]}: {r}', flush=True)
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS/'late_pooling.json').write_text(json.dumps(eq, indent=1))
+    # `fulldoc` is dropped, not forgotten. One 8192-token forward pass over a whole document needs
+    # roughly 2 GB per attention matrix, and after the pooling checks have grown onnxruntime's BFC
+    # arena the process gets OOM-killed on a 15 GB machine. It was only ever a control for "one
+    # vector per document is worse than chunking", which the `late` vs `flat` comparison does not
+    # need — and a document-level vector is uninterpretable on a passage metric anyway.
     for g in C.GENRES:
         print(f'  {g} late:', flush=True)
         print(show(build_late(g, BASE_GRAIN, 'jina-v2-sm')), flush=True)
-        print(show(build_fulldoc(g, 'jina-v2-sm')), flush=True)
 
 
 def build_graphs():
@@ -210,7 +214,6 @@ def eval_late():
     for g in C.GENRES:
         rows += run_store(g, BASE_GRAIN, 'jina-v2-sm', 'flat', ('hybrid-pre', 'vec'))
         rows += run_store(g, BASE_GRAIN, 'jina-v2-sm', 'late', ('hybrid-pre', 'vec'))
-        rows += run_store(g, 'doc', 'jina-v2-sm', 'fulldoc', ('hybrid-pre', 'vec'))
     for x in rows: print('  ' + fmt(f"{x['genre']}/{x['mode']}/{x['strategy']}/{x['flavour']}", x, 52))
     save('late', rows)
 
