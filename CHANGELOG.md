@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.7
+fts pre check, dtype mismatch warning, embeddinggemma template change
+
+
+
 ## 0.1.6
 graph and tree need their own hash columns not generic content
 

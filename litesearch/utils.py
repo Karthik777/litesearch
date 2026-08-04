@@ -18,7 +18,7 @@ from tokenizers import Tokenizer, AddedToken
 from model2vec import StaticModel
 
 # %% ../nbs/03_utils.ipynb #5b8ed63b321a17d2
-embedding_gemma_prompt = AttrDict(document='Instruct: document \n document: {text}', query='Instruct: query \n query: {text}')
+embedding_gemma_prompt = AttrDict(document='title: none | text: {text}', query='task: search result | query: {text}')
 nomic_prompt = AttrDict(document='search_document: {text}', query='search_query: {text}')
 modernbert_prompt = nomic_prompt  # alias — same prefix format
 

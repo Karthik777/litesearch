@@ -295,10 +295,16 @@ def clean(q:str,  # query to be passed for fts search
     import re
     return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
+_BARE = re.compile(r'^[A-Za-z0-9_]+$')
+
 def add_wc(q:str  # query to be passed for fts search
            ):
-    '''Add wild card * to each word in the query.'''
-    return ' '.join(map(lambda w: w + '*', q.split(' ')))
+    '''Add wild card * to each word in the query.
+
+	A token that is not an FTS5 bareword is quoted first. `kw` uses UAX#29 segmentation, which keeps
+    the apostrophe inside `pathfinder's`, '''
+    esc = lambda w: w if _BARE.match(w) else '"%s"' % w.replace('"', '""')
+    return ' '.join(esc(w) + '*' for w in q.split(' ') if w)
 
 def mk_wider(q:str  # query to be passed for fts search
              ):

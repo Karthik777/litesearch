@@ -518,3 +518,96 @@ def sections(self:Database,
                         nchunks=nd.get('nchunks', 0), snippets=a['snippets'],
                         read=f'read({nid!r})'))
     return out
+
+# %% ../nbs/06_tree.ipynb #ba21b041
+def _prov(bc): return bool(bc) and '›' in bc   # a bare document title (the root) has no separator
+
+@patch
+def node_context(self:Database,
+                 node_id:str,          # a 'doc#seq' node id
+                 store:str='store',
+                 prefix:str=None):
+    'Where a section sits: its parent, siblings and children — a hit as a provision in a structure.'
+    p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
+    N = self.t[f'{p}nodes']
+    nd = first(N(where=f'id={node_id!r}'))
+    if not nd: return AttrDict(parent=None, siblings=L(), children=L())
+    pid = nd['parent_id']
+    parent = first(N(where=f'id={pid!r}')) if pid else None
+    sibs = L(N(where=f'parent_id={pid!r}')).filter(lambda r: r['id'] != node_id) if pid else L()
+    kids = L(N(where=f'parent_id={node_id!r}'))
+    pick = lambda r: AttrDict(id=r['id'], title=r['title'], level=r['level'])
+    return AttrDict(parent=pick(parent) if parent else None,
+                    siblings=sibs.sorted(key=lambda r: r['seq']).map(pick)[:8],
+                    children=kids.sorted(key=lambda r: r['seq']).map(pick)[:12])
+
+@patch
+def context(self:Database,
+            q:str,                  # query string
+            emb:bytes,              # query embedding
+            store:str='store',
+            prefix:str=None,
+            sections:int=6,         # operative sections returned
+            per:int=3,              # snippets kept per section
+            graph:bool=True,        # include graph-reached related sections
+            vector:bool=True,       # include embedding-nearest related sections
+            related:int=8,          # max related sections
+            max_read:int=6000,      # chars of assembled text per operative section
+            tree_ctx:bool=True,     # attach each section's parent/siblings/children
+            graph_w:float=0.6):
+    """One composed retrieval over a document tree: the operative sections plus what they connect to.
+
+    Returns `AttrDict(query, results, related)`. Each result is a whole **section** — the unit an
+    agent should read — carrying `node_id, doc_id, filename, title, breadcrumb, pages, summary,
+    text, score, snippets` and (optionally) its `tree` neighbourhood. `related` is other sections
+    reached from the query by the entity/cross-reference graph (`via='graph'`) and by embedding
+    similarity (`via='vector'`), deduped by breadcrumb and never overlapping the primary results;
+    the graph leg is skipped when no graph is built over the store. This is the retrieval a
+    structured corpus wants: not a fragment, but the provision in its context and what it reads with."""
+    p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
+    N, D = self.t[f'{p}nodes'], self.t[f'{p}docs']
+    src = {}
+    def doc_of(nid):
+        nd = first(N(where=f'id={nid!r}')); did = nd['doc_id'] if nd else None
+        if did and did not in src:
+            d = first(D(where=f'id={did!r}'))
+            src[did] = Path(d['source']).name if (d and d['source']) else (d['title'] if d else did)
+        return did, src.get(did)
+    secs = self.sections(q, emb, limit=sections * 3, per=per, store=store, prefix=prefix)
+    prim, seen, results = set(), set(), L()
+    for s in secs:
+        nid, bc = s.get('node_id'), s.get('breadcrumb')
+        if not nid or not _prov(bc) or bc in seen: continue
+        prim.add(nid); seen.add(bc)
+        rd = self.read(nid, store=store, prefix=prefix, max_chars=max_read)
+        did, fn = doc_of(nid)
+        results.append(AttrDict(node_id=nid, doc_id=did, filename=fn,
+            title=s.get('title') or rd.get('title'), breadcrumb=bc, pages=s.get('pages'),
+            summary=rd.get('summary') or s.get('summary'), text=rd.get('text', ''),
+            score=s.get('score', 0.0), snippets=L(s.get('snippets') or []),
+            tree=self.node_context(nid, store, prefix) if tree_ctx else None))
+        if len(results) >= sections: break
+    rel = {}
+    def add(nid, via, score, heading=None):
+        if not nid or nid in prim or nid in rel: return
+        rel[nid] = AttrDict(node_id=nid, via=via, score=score or 0.0, breadcrumb=heading)
+    if graph and f'{p}entities' in self.t:
+        for h in self.graph_search(q, emb, columns=['content', 'heading', 'node_id'],
+                                   limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w):
+            add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))
+    if vector:
+        for h in self.doc_search(q, emb, columns=['content'], limit=related * 2,
+                                 store=store, prefix=prefix, spans=False):
+            add(h.get('node_id'), 'vector', h.get('_rrf_score'), h.get('heading') or h.get('breadcrumb'))
+    related_list, seen_rel = L(), set(seen)
+    for r in sorted(rel.values(), key=lambda r: -r.score):
+        bc = r.breadcrumb or self.breadcrumb(r.node_id, store, prefix)
+        if not _prov(bc) or bc in seen_rel: continue
+        seen_rel.add(bc); r.breadcrumb = bc
+        nd = first(N(where=f'id={r.node_id!r}'))
+        r.title = nd['title'] if nd else r.node_id
+        r.doc_id, r.filename = doc_of(r.node_id)
+        related_list.append(r)
+        if len(related_list) >= related: break
+    return AttrDict(query=q, results=results, related=related_list)
+
