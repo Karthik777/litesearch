@@ -1,0 +1,35 @@
+[
+ {
+  "tier": "longer",
+  "spans": 1148,
+  "rows_differing": 0,
+  "max_abs_diff": 0.0,
+  "t_library": 215.86,
+  "t_fast": 197.3,
+  "speedup": 1.1,
+  "genre": "regulatory",
+  "doc": "dir_2006_112_2022-07-01_eng"
+ },
+ {
+  "tier": "longer",
+  "spans": 359,
+  "rows_differing": 0,
+  "max_abs_diff": 0.0,
+  "t_library": 78.03,
+  "t_fast": 79.01,
+  "speedup": 1.0,
+  "genre": "arxiv",
+  "doc": "astro-ph_0207156"
+ },
+ {
+  "tier": "longer",
+  "spans": 1081,
+  "rows_differing": 0,
+  "max_abs_diff": 0.0,
+  "t_library": 215.49,
+  "t_fast": 216.18,
+  "speedup": 1.0,
+  "genre": "astrology",
+  "doc": "ptolemy_tetrabiblos"
+ }
+]

@@ -1,17 +1,20 @@
 """Late chunking with the span→token lookup done by binary search instead of by scanning.
 
-`LateChunkFastEncode.encode_late_chunks` and `encode_long_document` both find a span's tokens with
+**This did not work, and the measurement is the point.** The hypothesis was that
+`LateChunkFastEncode.encode_late_chunks` and `encode_long_document` are dominated by
 
     idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>cs and s<ce]
 
-which is a full scan of the window's token offsets **per span**. On a 300 KB book late-chunked at 512
-characters that is ~700 spans × 8192 tokens × ~12 windows ≈ 70M Python-level comparisons per book,
-and the cost is entirely in that loop rather than in the ONNX forward pass.
+a full scan of the window's token offsets **per span** — on the VAT directive, 1,148 spans × 8,192
+tokens × ~20 windows, which counts out to something like 190M Python-level comparisons. Replacing it
+with two `searchsorted` calls per span produces bit-identical vectors (`max_abs_diff` 0.0 on all
+three genres) and is **1.0–1.1x faster**: 197s against 216s on the VAT directive, and no difference
+at all on the other two.
 
-Token offsets are sorted, so the same answer comes from two `searchsorted` calls per span. This
-module reimplements the pooling that way and asserts equivalence against the library's own output,
-so the eval can afford to run the late-chunking arm at all — and so the speed-up is a measured
-number rather than a suggestion.
+So the cost of late chunking is the ONNX forward passes over 8,192-token windows, not the pooling
+around them. There is no optimisation to recommend here, and `evals/results/late_pooling.json` is
+the evidence. What the module is still good for is `check()`, which pins the library's pooling
+against an independent implementation of the same arithmetic.
 """
 import numpy as np
 

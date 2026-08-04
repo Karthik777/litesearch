@@ -1,0 +1,248 @@
+{
+ "regulatory__bge-small": {
+  "genre": "regulatory",
+  "encoder": "bge-small",
+  "entities": 11254,
+  "mentions": 39307,
+  "edges": 13026,
+  "windows": 4700,
+  "resolved": {
+   "merged": 7093,
+   "by_ann": 3525,
+   "by_lexical": 3568,
+   "edges": 3301,
+   "entities": 11254,
+   "resolvable": 11254,
+   "canonical": 4161
+  },
+  "topics": {
+   "topics": 193,
+   "method": "usearch"
+  },
+  "t_graph": 175.1,
+  "t_resolve": 25.2,
+  "t_topics": 6.7,
+  "stats": {
+   "entities": 11445,
+   "canonical": 4352,
+   "mentions": 42715,
+   "edges": 3301,
+   "top_degree": [
+    {
+     "content": "goods",
+     "kind": "term",
+     "d": 972
+    },
+    {
+     "content": "right",
+     "kind": "term",
+     "d": 37
+    },
+    {
+     "content": "oj l",
+     "kind": "term",
+     "d": 32
+    },
+    {
+     "content": "ec",
+     "kind": "org",
+     "d": 22
+    },
+    {
+     "content": "passengers",
+     "kind": "term",
+     "d": 18
+    },
+    {
+     "content": "oj",
+     "kind": "term",
+     "d": 18
+    },
+    {
+     "content": "funds",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "eng",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "supplier",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "points",
+     "kind": "term",
+     "d": 15
+    }
+   ]
+  }
+ },
+ "arxiv__bge-small": {
+  "genre": "arxiv",
+  "encoder": "bge-small",
+  "entities": 13938,
+  "mentions": 28261,
+  "edges": 4869,
+  "windows": 5615,
+  "resolved": {
+   "merged": 7557,
+   "by_ann": 3426,
+   "by_lexical": 4131,
+   "edges": 2364,
+   "entities": 13938,
+   "resolvable": 13938,
+   "canonical": 6381
+  },
+  "topics": {
+   "topics": 127,
+   "method": "usearch"
+  },
+  "t_graph": 151.0,
+  "t_resolve": 28.3,
+  "t_topics": 4.5,
+  "stats": {
+   "entities": 14065,
+   "canonical": 6508,
+   "mentions": 30627,
+   "edges": 2364,
+   "top_degree": [
+    {
+     "content": "model",
+     "kind": "term",
+     "d": 319
+    },
+    {
+     "content": "wang",
+     "kind": "org",
+     "d": 105
+    },
+    {
+     "content": "michael collins",
+     "kind": "person",
+     "d": 42
+    },
+    {
+     "content": "al",
+     "kind": "term",
+     "d": 31
+    },
+    {
+     "content": "et",
+     "kind": "term",
+     "d": 27
+    },
+    {
+     "content": "proceedings",
+     "kind": "term",
+     "d": 24
+    },
+    {
+     "content": "dm",
+     "kind": "term",
+     "d": 22
+    },
+    {
+     "content": "figure",
+     "kind": "term",
+     "d": 22
+    },
+    {
+     "content": "answer",
+     "kind": "term",
+     "d": 18
+    },
+    {
+     "content": "danielle epstein",
+     "kind": "person",
+     "d": 17
+    }
+   ]
+  }
+ },
+ "astrology__bge-small": {
+  "genre": "astrology",
+  "encoder": "bge-small",
+  "entities": 32467,
+  "mentions": 83526,
+  "edges": 13845,
+  "windows": 13292,
+  "resolved": {
+   "merged": 19774,
+   "by_ann": 8606,
+   "by_lexical": 11168,
+   "edges": 2832,
+   "entities": 32467,
+   "resolvable": 32467,
+   "canonical": 12693
+  },
+  "topics": {
+   "topics": 266,
+   "method": "usearch"
+  },
+  "t_graph": 359.3,
+  "t_resolve": 64.8,
+  "t_topics": 9.2,
+  "stats": {
+   "entities": 32733,
+   "canonical": 12959,
+   "mentions": 88545,
+   "edges": 2832,
+   "top_degree": [
+    {
+     "content": "sun",
+     "kind": "org",
+     "d": 390
+    },
+    {
+     "content": "abraxas",
+     "kind": "term",
+     "d": 25
+    },
+    {
+     "content": "ota-fu-ku",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "buddha",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "qualities",
+     "kind": "term",
+     "d": 17
+    },
+    {
+     "content": "millet",
+     "kind": "person",
+     "d": 16
+    },
+    {
+     "content": "ise",
+     "kind": "term",
+     "d": 15
+    },
+    {
+     "content": "jochebed",
+     "kind": "term",
+     "d": 14
+    },
+    {
+     "content": "fan",
+     "kind": "term",
+     "d": 14
+    },
+    {
+     "content": "yucatan",
+     "kind": "gpe",
+     "d": 13
+    }
+   ]
+  }
+ }
+}

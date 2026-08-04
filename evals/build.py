@@ -155,10 +155,10 @@ def build_tree(genre, chunking, encoder, with_heading=True, bold=False, force=Fa
 def build_late(genre, chunking, encoder, fast=True, force=False):
     '''Late chunking: embed the document, then pool token vectors per chunk span.
 
-    `fast=True` uses `evals.fastlate`, which computes the same vectors with binary search instead of
-    a per-span scan of the window's token offsets. The library's own path is O(spans × tokens) per
-    window, which on these documents is minutes per book of pure Python — see `evals.fastlate.check`
-    for the equivalence assertion and the measured ratio.'''
+    `fast=True` uses `evals.fastlate`, which computes bit-identical vectors with binary search
+    instead of a per-span scan of the window's token offsets. It was expected to be much faster and
+    measured 1.0–1.1x: the cost is the ONNX passes over 8,192-token windows, not the pooling. Kept
+    because `fastlate.check` pins the library's pooling against an independent implementation.'''
     p = db_path(genre, chunking, encoder, 'late')
     if p.exists() and not force: return dict(path=str(p), skipped=True)
     _clean(p)
@@ -189,13 +189,20 @@ def build_late(genre, chunking, encoder, fast=True, force=False):
 
 
 def build_fulldoc(genre, encoder, force=False):
-    'One vector per document. The control that shows what chunking is worth.'
+    '''One vector per document. The control that shows what chunking is worth.
+
+    Encoded one document at a time, not in a batch. `FastEncode` pads a batch to its longest member,
+    so a batch of 8 documents against an 8192-token window asks onnxruntime for a 17 GB attention
+    buffer and dies — the practical rule being that batch size has to fall as the context window
+    rises, which is a cost of long-context models that their throughput figures never show.'''
     p = db_path(genre, 'doc', encoder, 'fulldoc')
     if p.exists() and not force: return dict(path=str(p), skipped=True)
     _clean(p)
     e = enc(encoder)
     docs = {t: '\n\n'.join(x or '' for _, x in pages) for t, pages in C.load(genre).items()}
-    t0 = time.time(); vecs = encode_sorted(e, list(docs.values())); t_embed = time.time()-t0
+    t0 = time.time()
+    vecs = np.concatenate([e.doc([t]) for t in docs.values()]) if docs else np.zeros((0, e.dim), dtype=DT)
+    t_embed = time.time()-t0
     db = database(str(p))
     st = db.get_store('store', hash=True, ann=True, ndim=e.dim, dtype=DT, doc_id=str, page=int)
     rows = [dict(content=t, embedding=v.tobytes(), doc_id=k, page=0)
