@@ -10,7 +10,7 @@ from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import hash_record
 from dataclasses import dataclass, field
-import re
+import re, tempfile
 import numpy as np
 
 from .core import _in, _rid, rrf_merge, process_content
@@ -289,11 +289,21 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
 DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb'
 
 @patch
+def assets(self:Database, name:str=None) -> Path:
+    'Where extracted assets (PDF images) go: beside the database file, never the working directory.'
+    f = self.conn.filename
+    d = (Path(f).parent if f else Path(tempfile.gettempdir())/'litesearch')/'assets'
+    d.mkdir(parents=True, exist_ok=True)
+    return d/name if name else d
+
+@patch
 def add_file(self:Database,
              path,                 # file to ingest
              title:str=None,       # defaults to a prettified filename
              store:str='store',
              prefix:str=None,
+             kind:str=None,        # overrides the kind inferred from the extension
+             out_path=None,        # dir for extracted PDF images; defaults to `assets/<stem>` beside the db
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
     'Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.'
@@ -301,13 +311,14 @@ def add_file(self:Database,
     ttl = title or p.stem.replace('_',' ').replace('-',' ').strip()
     if p.suffix.lower() == '.pdf':
         from litesearch.data import pdf_parse
-        pages, kind = list(enumerate(pdf_parse(str(p)))), 'pdf'
+        pages = list(enumerate(pdf_parse(str(p), out_path=out_path or self.assets(p.stem))))
+        knd = 'pdf'
     elif p.suffix.lower() == '.ipynb':
         from litesearch.data import ipynb_parse
-        pages, kind = [(0, '\n\n'.join(c['content'] for c in ipynb_parse(p)))], 'notebook'
+        pages, knd = [(0, '\n\n'.join(c['content'] for c in ipynb_parse(p)))], 'notebook'
     else:
-        pages, kind = [(0, p.read_text(errors='replace'))], p.suffix.lstrip('.').lower() or 'text'
-    return self.add_doc(pages, ttl, source=str(p), kind=kind, store=store, prefix=prefix, **kw)
+        pages, knd = [(0, p.read_text(errors='replace'))], p.suffix.lstrip('.').lower() or 'text'
+    return self.add_doc(pages, ttl, source=str(p), kind=kind or knd, store=store, prefix=prefix, **kw)
 
 @patch
 def add_dir(self:Database,
@@ -561,18 +572,9 @@ def context(self:Database,
             max_read:int=6000,      # chars of assembled text per operative section
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
             graph_w:float=0.6):
-    """One composed retrieval over a document tree: the operative sections plus what they connect to.
-
-    Returns `AttrDict(query, results, related)`. Each result is a whole **section** — the unit an
-    agent should read — carrying `node_id, doc_id, filename, title, breadcrumb, pages, summary,
-    text, score, snippets` and (optionally) its `tree` neighbourhood. `related` is other sections
-    reached from the query by the entity/cross-reference graph (`via='graph'`) and by embedding
-    similarity (`via='vector'`), deduped by breadcrumb and never overlapping the primary results;
-    the graph leg is skipped when no graph is built over the store. This is the retrieval a
-    structured corpus wants: not a fragment, but the provision in its context and what it reads with."""
+    'One composed retrieval over a document tree: the operative sections plus what they connect to.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
-    N, D = self.t[f'{p}nodes'], self.t[f'{p}docs']
-    src = {}
+    N, D, src = self.t[f'{p}nodes'], self.t[f'{p}docs'], {}
     def doc_of(nid):
         nd = first(N(where=f'id={nid!r}')); did = nd['doc_id'] if nd else None
         if did and did not in src:
@@ -602,8 +604,7 @@ def context(self:Database,
                                    limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w):
             add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))
     if vector:
-        for h in self.doc_search(q, emb, columns=['content'], limit=related * 2,
-                                 store=store, prefix=prefix, spans=False):
+        for h in self.doc_search(q,emb,columns=['content'],limit=related * 2,store=store,prefix=prefix,spans=False):
             add(h.get('node_id'), 'vector', h.get('_rrf_score'), h.get('heading') or h.get('breadcrumb'))
     related_list, seen_rel = L(), set(seen)
     for r in sorted(rel.values(), key=lambda r: -r.score):
@@ -616,4 +617,3 @@ def context(self:Database,
         related_list.append(r)
         if len(related_list) >= related: break
     return AttrDict(query=q, results=results, related=related_list)
-

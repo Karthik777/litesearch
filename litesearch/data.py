@@ -8,10 +8,9 @@ __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'needs_oc
            'images_to_pdf', 'mv_skill_md']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
-import os,re
 from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_,fdelegates
 from pdf_oxide import PdfDocument
-import struct as _struct
+import struct as _struct, re
 
 # %% ../nbs/02_data.ipynb #fc014ece1162af13
 @patch
@@ -73,25 +72,22 @@ def ocr_parse(pdf:str|PdfDocument|bytes|Path, # PdfDocument object
 
 @fdelegates(PdfDocument.to_markdown_all)
 def oxide_parse(pdf: str|PdfDocument|bytes|Path,
-                out_path:str|Path|None=None, # Path to dir to hold image output dir
+                out_path:str|Path|None=None, # dir that holds the image subdir; images link relative to it
                 preserve_layout=False, # preserrve layout in pdf-oxide
                 image_dir='images', # subdir for extracted images
                 **kwargs # extra kwargs passed to pdf-oxide
 ) -> tuple[list[str],bool]:
-	'Parse a pdf using pdf-oxide to markdown with images extracted to a subdir.'
+	"""Parse a pdf using pdf-oxide to markdown with images extracted to a subdir."""
 	if not isinstance(pdf, PdfDocument): pdf=PdfDocument.from_bytes(pdf) if isinstance(pdf, bytes) else PdfDocument(pdf)
-	cwd = os.getcwd()
-	out_path = Path(out_path or 'pdfs/').resolve()
-	os.chdir(out_path.parent)
-	imdir = Path(out_path.stem) / image_dir
-	Path(imdir).mkdir(exist_ok=True, parents=True)
+	out_path = Path(out_path or 'pdfs').resolve()
+	imdir = out_path/image_dir
+	imdir.mkdir(exist_ok=True, parents=True)
 	kw = dict(image_output_dir=str(imdir), include_images=True,embed_images=False, **kwargs)
-	md = clean_md(pdf.to_markdown_all(preserve_layout, **kw))
-	os.chdir(cwd)
+	md = clean_md(pdf.to_markdown_all(preserve_layout, **kw)).replace(f'{imdir}/', f'{image_dir}/')
 	return md.split('\n---\n'), needs_ocr(md)
 
 def pdf_parse(pdf: PdfDocument | str | Path | bytes,  # PdfDocument object
-              out_path:str|Path|None=None,  # Path to notebook file (used to determine image output dir)
+              out_path:str|Path|None=None,  # dir that holds the image subdir; images link relative to it
               image_dir='images',  # subdir for extracted images
               preserve_layout=False,  # preserrve layout in pdf-oxide
               ocr_selection:str='auto'  # choosing ocr (auto, off, on). auto uses pdf-oxide's ocr detection
@@ -115,7 +111,6 @@ def _char_start(b:bytes, i:int) -> int:
 
 class SafeFastChunker(FastChunker):
     """`FastChunker` whose cuts land on character boundaries.
-
     chonkie-core returns *byte* offsets and `FastChunker.chunk` decodes each slice on its own, so a
     size cut that falls inside a multi-byte character raises `UnicodeDecodeError` — which any long
     unbroken paragraph containing an em dash or a curly quote will do, i.e. most scraped web pages.
