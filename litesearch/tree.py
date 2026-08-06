@@ -18,6 +18,7 @@ from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #f030bc6e
 _md_head  = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
+_fence    = re.compile(r'^\s{0,3}(```+|~~~+)')
 # A structural heading line, with an optional leading `#` — a PDF converter may already have
 # marked it up, and the word is a better signal than the markup either way.
 _STRUCT = ('BOOK','TITLE','PART','ANNEX','APPENDIX','CANTO','CHAPTER','ADHYAYA','SECTION','SUBTITLE',
@@ -31,7 +32,18 @@ _STRUCT_RANK = {'book':0, 'title':0, 'part':0, 'annex':0, 'appendix':0, 'canto':
                 'article':3, 'rule':3, 'clause':3, 'lesson':3, 'schedule':3}
 # Above this many markdown headings per page, `#` has stopped meaning "heading" — see `detect_mode`.
 MAX_HEAD_DENSITY = 4.0
-_ws       = re.compile(r'\s+')
+_ws = re.compile(r'\s+')
+
+def _md_lines(txt):
+    "Yield `(line, in_code)` for `txt`, A fenced block's lines are kept as text, but never read as a heading."
+    fence = None
+    for ln in (txt or '').splitlines():
+        if (m := _fence.match(ln)):
+            tok = m.group(1)
+            if fence is None: fence = tok
+            elif tok[0] == fence[0] and len(tok) >= len(fence): fence = None
+            yield ln, True
+        else: yield ln, fence is not None
 
 @dataclass
 class TreeNode:
@@ -62,7 +74,8 @@ def struct_levels(pages, max_levels:int=4) -> dict:
     by frequency: the rarer heading word names the bigger division.'''
     seen = {}
     for _, txt in pages:
-        for ln in (txt or '').splitlines():
+        for ln, code in _md_lines(txt):
+            if code: continue
             if (m := _chapter.match(ln)): seen[m.group(1).lower()] = seen.get(m.group(1).lower(), 0) + 1
     if not seen: return {}
     unknown = sorted((n, w) for w, n in seen.items() if w not in _STRUCT_RANK)
@@ -72,28 +85,20 @@ def struct_levels(pages, max_levels:int=4) -> dict:
     return {w: min(order.index(rank[w]) + 1, max_levels) for w in seen}
 
 def _md_stats(pages):
-    'Markdown heading count and how many distinct `#` depths appear.'
+    'Markdown heading count and how many distinct `#` depths appear, ignoring fenced code.'
     n, lvls = 0, set()
     for _, txt in pages:
-        for ln in (txt or '').splitlines():
+        for ln, code in _md_lines(txt):
+            if code: continue
             if (m := _md_head.match(ln)): n += 1; lvls.add(len(m.group(1)))
     return n, len(lvls)
 
 def detect_mode(pages) -> str:
-    '''Which structural signal this document carries: `markdown`, `chapter` or `window`.
-
-    Two thresholds, because `#` fails in both directions. Too few headings and a 600-page scan is
-    being judged on three stray hashes, so the bar rises with length. Too *many* — a PDF converter
-    that marks every bold line as an h1, which is the common case for legislation and reports —
-    and `#` has stopped carrying structure at all: the tell is a high density with no variation in
-    depth, and the words in the text (CHAPTER, Article) are then the better signal.'''
+    'Which structural signal this document carries: `markdown`, `chapter` or `window`.'
     md, depths = _md_stats(pages)
-    ch = sum(1 for _, txt in pages for ln in (txt or '').splitlines() if _chapter.match(ln))
+    ch = sum(1 for _, txt in pages for ln, code in _md_lines(txt) if not code and _chapter.match(ln))
     npg = max(1, len(pages))
-    if md/npg > MAX_HEAD_DENSITY and depths < 2:
-        return 'chapter' if ch >= 3 else 'window'
-    # short docs are usually born-markdown (a README, a note); long ones are usually scans where a
-    # stray `#` is punctuation, so the bar rises with length instead of being one fixed number
+    if md/npg > MAX_HEAD_DENSITY and depths < 2: return 'chapter' if ch >= 3 else 'window'
     if md >= (2 if len(pages) <= 3 else max(3, npg // 25)): return 'markdown'
     return 'chapter' if ch >= 3 else 'window' 
 
@@ -119,9 +124,10 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
     root = fresh(title, 0, None, pages[0][0] if pages else 0)
     stack, cur, buf, cur_page = [root], root, [], root.page_start
     def open_node(t, lvl, page):
+        'Attach a heading under the nearest open ancestor shallower than it.'
         nonlocal cur
         lvl = min(lvl, max_levels)
-        while len(stack) > lvl: stack.pop()
+        while len(stack) > 1 and stack[-1].level >= lvl: stack.pop()
         cur = fresh(t, lvl, stack[-1].seq, page)
         stack.append(cur)
     def flush(page):
@@ -140,8 +146,8 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         cur = root
     else:
         for p, txt in pages:
-            for ln in txt.splitlines():
-                m = _md_head.match(ln) if mode == 'markdown' else _chapter.match(ln)
+            for ln, code in _md_lines(txt):
+                m = None if code else (_md_head.match(ln) if mode == 'markdown' else _chapter.match(ln))
                 # a lowercase first character usually means a `#` that was punctuation, not a heading
                 if m and (mode == 'chapter' or (len(t := _clean_title(m.group(2))) >= 2 and not t[0].islower())):
                     flush(cur_page)

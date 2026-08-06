@@ -110,7 +110,7 @@ def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
                    chunker:BaseChunker=None
 ) -> L:
 	'Split markdown into paragraph chunks on blank lines'
-	r = chunker or FastChunker()
+	r = chunker or FastChunker(chunk_size=512)
 	return L(r(text)).map(lambda c: c.text)
 
 @patch
@@ -128,7 +128,7 @@ def chunk_spans(text:str,            # text to split
                 chunker:BaseChunker=None
 ) -> L:
     'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
-    r = chunker or FastChunker()
+    r = chunker or FastChunker(chunk_size=512)
     return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
 # %% ../nbs/02_data.ipynb #171a3906ce544f95
@@ -197,7 +197,7 @@ def non_py_sigs(p):
 def chunk_texts(text:str):
 	'Chunk texts using Fast Chunker'
 	from chonkie import FastChunker
-	return L(FastChunker(delimiters='\n\n')(text)).map(lambda c: c.text)
+	return L(FastChunker(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
 
 @delegates(pyparse)
 def file_parse(p:Path=None,  # path to a code file
