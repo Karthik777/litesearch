@@ -51,7 +51,10 @@ from litesearch import database
 from litesearch.utils import FastEncode
 import numpy as np
 
-enc = FastEncode()   # EmbeddingGemma — best retrieval quality
+# EmbeddingGemma. Strongest of the encoders measured — by 0.007 over a 32M static embedder, at
+# 1,700x the indexing cost (docs/rag_tiers.md). For memory, which is small and written once, that
+# trade is fine; for a corpus you re-index, start with static_retrieval_embedder().
+enc = FastEncode()
 mem = database('.claude/memory.db')
 
 store = mem.get_store('memory',
@@ -152,12 +155,23 @@ topic_nodes(db)          # cluster the HNSW index into labelled topic nodes
 hits = db.graph_search(q, enc.encode_query([q])[0].tobytes(), columns=['content'], limit=10)
 ```
 
-Use `graph_search` when the answer is *related to* the query rather than worded like it — it
-reaches chunks connected only by a shared entity. Use plain `db.search` for direct lookup.
+**Default to `graph_w=0`.** The graph leg was measured over 351 known-item queries on three prose
+corpora (`docs/rag_tiers.md`) and it lost on all of them, monotonically in `graph_w`: 0.798 → 0.707 →
+0.688 → 0.672 on papers as the weight rises through 0.25/0.5/1.0, and the same shape on legislation
+and on books. It also costs 55–107ms against 8–13ms. The loss holds on the queries it was written for,
+where the answer shares no vocabulary with the query at all.
 
-On **code** corpora pass `graph_w=0`: call edges link different levels of abstraction, not
-substitutable answers, so the graph leg adds little to ranking. Use the code graph for context
-assembly instead — after retrieval, pull the callers/callees of the top hits as supporting context.
+That was already the standing advice for **code** corpora, where call edges link levels of
+abstraction rather than substitutable answers. It turns out to hold for prose too: sharing an entity
+is not evidence of answering a question.
+
+Build the graph anyway if you want it for **context assembly** — after retrieval, pull the
+callers/callees or co-mentioned entities of the top hits as supporting context. That use is not what
+these numbers measure, and it is the one the graph is good for.
+
+`topic_nodes()` adds nothing to *ranking*: deleting every topic entity from a built graph moved the
+score by +0.003 to +0.006, i.e. very slightly better without them. Call it because `clusters()`-style
+labels in the graph are useful to read, not to improve retrieval.
 
 For prose, pass `nlp=spacy_pipe(terms=code_symbols)` — the `EntityRuler` then links prose
 mentions of your functions to the code nodes. Needs `pip install litesearch[graph]` and
@@ -184,8 +198,15 @@ db.read('a1b2c3d4#12')             # one whole section + its children
 Two rules of thumb:
 
 - Use `sections()` when the question is about a topic ("how is X timed and interpreted") and
-  `doc_search()` when it is about a fact. `sections` groups hits by node and sums their RRF mass,
-  so five weak hits in one chapter outrank one strong hit in an unrelated appendix.
+  `doc_search()` when it is about a fact. `sections` groups hits by node and scores each node by its
+  *best* evidence (`score='max'`); summing the RRF mass of every hit in a node is a length prior in
+  disguise and measured worse, so `sum` is opt-in.
+- **The tree layer is a wash for retrieval.** Against flat chunks at the same encoder and chunk size
+  it measured −0.05 to +0.01 across three genres — a small positive on legislation, negative on
+  papers. Use it for `toc()`, `read()`, breadcrumbs and section-scoped answers, which is what it is
+  for; do not expect ranking to improve. On papers, `with_heading=False` scored *better* than the
+  default (0.817 vs 0.798): a heading path repeated across every chunk of a section dilutes more than
+  it contextualises.
 - Use `toc()` + `read()` and skip retrieval entirely when the agent already knows where to look
   ("summarise chapter 3", template filling). That path costs no embedding at all.
 
@@ -214,9 +235,17 @@ on an empty result it says why — an index with no vectors, a store with no ANN
 row that landed in a group of one. A clustering that silently returns `[]` is indistinguishable
 from a broken index.
 
-Reach for `peers` over `ann_neighbors` when the question is "where else did we already do this?".
-k-NN always returns `limit` rows whether or not they are related; a cluster returns a family and
-can be honest about its size.
+**Use `clusters()` for a map, and `ann_neighbors()` for neighbours.** Measured over three genres
+(`docs/rag_tiers.md`), `clusters()` is good at what it claims: 0.99 coverage, 0.97 purity when asked
+to separate three genres in one store, labels 120–400x more frequent inside their cluster than in the
+corpus, all in under half a second.
+
+`peers()` is the part to avoid. At matched group size its members share the anchor's section 2–3x
+*less* often than the same number of nearest neighbours do — 0.046 against 0.124 on legislation,
+0.273 against 0.453 on papers, 0.109 against 0.287 on books. The "a cluster returns a family, k-NN
+returns a list" intuition is appealing and did not survive measurement, so prefer `ann_neighbors` for
+"where else did we already do this?" and keep `peers` for when you specifically want a bounded group
+rather than a ranked list.
 
 ## Invocation
 
@@ -259,13 +288,49 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 | `resolve_entities(db)` | Merge duplicate entities (ANN + lexical guard) |
 | `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
 
+## Two things that matter more than the model
+
+Measured over 351 known-item queries on legislation, papers and 1820s–1920s books
+(`docs/rag_tiers.md`). Both are free.
+
+**Both of these are now defaults, as of 0.1.6.** Together they moved `db.search` on its own defaults
+by +0.10 to +0.13 weighted section MRR. They are described here because the second one is a trade you
+may want to turn off.
+
+**1. Chunks are ~512 characters (`data.CHUNK_SIZE`).** They used to be 4096 — `FastChunker`'s own
+default — and since `add_doc` calls the chunker once per node segment, nothing was ever split and a
+chunk was a whole page. Page-sized against 512-character chunks costs **0.06 to 0.14** section MRR,
+the largest single effect measured, and a 2,300-character chunk overflows a 512-token encoder so its
+tail is embedded by nothing. `RecursiveChunker(chunk_size=512, tokenizer='character')` scores ~0.01
+better again and chunks at 30 MB/s against 100 MB/s (3.3x): `db.add_doc(..., chunker=ck)`. Either way
+chunking is ~0.1% of indexing cost, so pick on quality, not on this.
+
+**2. The FTS leg goes through `pre()` (`search(fts_pre=True)`).** Quoting every token made FTS an
+implicit AND over the whole query, so a reworded question matched nothing and the hybrid quietly
+became vector-only. **This is a trade:**
+
+| your users | setting | why |
+|---|---|---|
+| type questions and paraphrases | `fts_pre=True` (default) | worth +0.09 to +0.33 on reworded queries |
+| paste exact phrases, cite terms of art | `fts_pre=False` | conjunctive quoting is worth +0.02 to +0.24 on verbatim queries |
+
+The verbatim penalty is largest at coarse chunk sizes and small (≈0.016) at 512 characters, which is
+why the two changes shipped together — at page size, `pre()` was a net *loss* on two genres of three.
+Do not fuse deeper candidate lists hoping for more: 30 per leg instead of 10 measured *worse*
+everywhere.
+
+**And if you are going to spend latency, spend it on `reranking=True` rather than on a bigger
+encoder.** A flashrank cross-encoder is worth +0.03 to +0.08 for ~40ms. Upgrading a 32M static
+embedder to a 300M transformer was worth +0.007 for 1,700x the indexing compute, and lost on one
+genre of three.
+
 ## search() parameters
 
 | Param | Default | Notes |
 |---|---|---|
 | `q` | required | FTS5 query string |
 | `emb` | required | Query embedding as bytes |
-| `dtype` | `np.float16` | Must match encoding dtype; `np.float32` for most ONNX models |
+| `dtype` | `np.float16` | **Must match what you inserted.** `FastEncode` returns float16 (its own default), `model2vec`/`StaticModel.encode` returns float32. Get it wrong and every distance comes back exactly 0.0 with no error — the vector leg returns rowid order and hybrid search silently becomes FTS-only. Since 0.1.6 this warns; before it did not. |
 | `columns` | all | Columns to return |
 | `where` | None | SQL WHERE clause for filtering |
 | `where_args` | None | Parameters for WHERE clause |

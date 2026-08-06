@@ -1,0 +1,353 @@
+{
+ "clusters": [
+  {
+   "genre": "regulatory",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "164 clusters over 3058 vectors (usearch)",
+   "n_clusters": 164,
+   "indexed": 3058,
+   "coverage": 0.984,
+   "size_med": 13,
+   "size_max": 109,
+   "t_cluster": 0.56,
+   "purity_doc": 0.699,
+   "nmi_doc": 0.308,
+   "label_dist": 119.06,
+   "labels": [
+    "109: database, author, protection, whatever",
+    "97: financing, suboptimal, solutions, market",
+    "90: vat, taxable, liable, return",
+    "85: commission, simultaneously, opinion, committee",
+    "61: commission, council, adopted, directive",
+    "59: second, paragraphs, l0112, acts"
+   ],
+   "purity_sec": 0.173,
+   "nmi_sec": 0.61
+  },
+  {
+   "genre": "regulatory",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "178 clusters over 3058 vectors (usearch)",
+   "n_clusters": 178,
+   "indexed": 3058,
+   "coverage": 0.991,
+   "size_med": 12,
+   "size_max": 89,
+   "t_cluster": 0.26,
+   "purity_doc": 0.699,
+   "nmi_doc": 0.306,
+   "label_dist": 142.42,
+   "labels": [
+    "89: investeu, synergies, fund, programme",
+    "87: programme, strategic, broad, objectives",
+    "86: repealing, parliament, council, decision",
+    "84: decides, suspended, guarantee, commission",
+    "66: amending, repealing, parliament, eec",
+    "53: exempt, goods, supply, taxable"
+   ],
+   "purity_sec": 0.176,
+   "nmi_sec": 0.621
+  },
+  {
+   "genre": "arxiv",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "123 clusters over 2400 vectors (usearch)",
+   "n_clusters": 123,
+   "indexed": 2400,
+   "coverage": 0.99,
+   "size_med": 11,
+   "size_max": 144,
+   "t_cluster": 0.24,
+   "purity_doc": 0.551,
+   "nmi_doc": 0.348,
+   "label_dist": 130.34,
+   "labels": [
+    "144: rag, retrieved, indiscriminately, higher",
+    "127: pulsars, scattering, emission, galactic",
+    "92: kpc, sm6, coefficient, clump",
+    "84: clumps, sight, lines, voids",
+    "83: tc93, measurements, scattering, distance",
+    "60: pseudo, split, splits, samples"
+   ],
+   "purity_sec": 0.41,
+   "nmi_sec": 0.419
+  },
+  {
+   "genre": "arxiv",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "123 clusters over 2400 vectors (usearch)",
+   "n_clusters": 123,
+   "indexed": 2400,
+   "coverage": 0.993,
+   "size_med": 12,
+   "size_max": 111,
+   "t_cluster": 0.1,
+   "purity_doc": 0.593,
+   "nmi_doc": 0.391,
+   "label_dist": 135.4,
+   "labels": [
+    "111: rag, self, reflection, indiscriminately",
+    "85: distances, pulsar, pulsars, distance",
+    "82: answering, retrieval, domain, open",
+    "81: arxiv, language, doi, proceedings",
+    "74: gini, tree, splits, split",
+    "71: tuning, fine, annealing, triangular"
+   ],
+   "purity_sec": 0.449,
+   "nmi_sec": 0.435
+  },
+  {
+   "genre": "astrology",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "229 clusters over 4977 vectors (usearch)",
+   "n_clusters": 229,
+   "indexed": 4977,
+   "coverage": 0.986,
+   "size_med": 11,
+   "size_max": 260,
+   "t_cluster": 0.47,
+   "purity_doc": 0.523,
+   "nmi_doc": 0.21,
+   "label_dist": 266.84,
+   "labels": [
+    "260: moon, vulture, safeguard, snake",
+    "234: jupiter, mercury, mars, venus",
+    "154: planets, logic, cells, prorogatory",
+    "140: ascension, hours, meridian, latitude",
+    "122: astronomical, astronomy, explained, contemporary",
+    "97: tablet, anthems, blaze, broken"
+   ],
+   "purity_sec": 0.193,
+   "nmi_sec": 0.44
+  },
+  {
+   "genre": "astrology",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "242 clusters over 4977 vectors (usearch)",
+   "n_clusters": 242,
+   "indexed": 4977,
+   "coverage": 0.989,
+   "size_med": 13,
+   "size_max": 228,
+   "t_cluster": 0.44,
+   "purity_doc": 0.543,
+   "nmi_doc": 0.229,
+   "label_dist": 240.31,
+   "labels": [
+    "228: august, sign, mars, july",
+    "120: unlikely, saturn, ptolemy, able",
+    "104: longitude, horoscope, meridian, latitude",
+    "92: function, system, supports, constructive",
+    "88: pisces, libra, signs, aquarius",
+    "73: worn, longevity, chinese, exchanged"
+   ],
+   "purity_sec": 0.217,
+   "nmi_sec": 0.469
+  },
+  {
+   "genre": "mixed",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "521 clusters over 10435 vectors (usearch)",
+   "n_clusters": 521,
+   "indexed": 10435,
+   "coverage": 0.988,
+   "size_med": 11,
+   "size_max": 242,
+   "t_cluster": 0.33,
+   "purity_doc": 0.552,
+   "nmi_doc": 0.422,
+   "label_dist": 400.36,
+   "labels": [
+    "242: galactic, density, model, scattering",
+    "189: jupiter, mercury, saturn, mars",
+    "171: astrology, elementary, study, men",
+    "169: calculates, results, nlp, algorithm",
+    "146: lilly, planets, year, coincidences",
+    "129: card, attached, kind, tarot"
+   ],
+   "purity_genre": 0.961,
+   "nmi_genre": 0.378
+  },
+  {
+   "genre": "mixed",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "method": "usearch",
+   "note": "544 clusters over 10435 vectors (usearch)",
+   "n_clusters": 544,
+   "indexed": 10435,
+   "coverage": 0.991,
+   "size_med": 13,
+   "size_max": 157,
+   "t_cluster": 0.37,
+   "purity_doc": 0.573,
+   "nmi_doc": 0.434,
+   "label_dist": 334.63,
+   "labels": [
+    "157: cardan, butler, astrology, myriad",
+    "126: moon, parents, nativity, sun",
+    "112: years, eclipse, herschel, mahalaleel",
+    "108: mineral, soul, spiritual, life",
+    "104: astrology, cosmical, truths, scientific",
+    "104: nature, man, compel, potentialities"
+   ],
+   "purity_genre": 0.967,
+   "nmi_genre": 0.383
+  }
+ ],
+ "peers": [
+  {
+   "genre": "regulatory",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.046,
+   "knn_prec": 0.124,
+   "mean_group": 13.633,
+   "methods": {
+    "usearch": 120
+   },
+   "ms_peers": 0.25,
+   "ms_knn": 0.46
+  },
+  {
+   "genre": "regulatory",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.053,
+   "knn_prec": 0.152,
+   "mean_group": 13.683,
+   "methods": {
+    "usearch": 120
+   },
+   "ms_peers": 0.31,
+   "ms_knn": 0.46
+  },
+  {
+   "genre": "arxiv",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.237,
+   "knn_prec": 0.44,
+   "mean_group": 13.3,
+   "methods": {
+    "usearch": 119,
+    "ann": 1
+   },
+   "ms_peers": 0.27,
+   "ms_knn": 0.42
+  },
+  {
+   "genre": "arxiv",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.273,
+   "knn_prec": 0.453,
+   "mean_group": 13.758,
+   "methods": {
+    "usearch": 120
+   },
+   "ms_peers": 0.24,
+   "ms_knn": 0.49
+  },
+  {
+   "genre": "astrology",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.083,
+   "knn_prec": 0.249,
+   "mean_group": 13.333,
+   "methods": {
+    "usearch": 120
+   },
+   "ms_peers": 0.62,
+   "ms_knn": 0.71
+  },
+  {
+   "genre": "astrology",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "section",
+   "peers_prec": 0.109,
+   "knn_prec": 0.287,
+   "mean_group": 13.575,
+   "methods": {
+    "usearch": 119,
+    "ann": 1
+   },
+   "ms_peers": 0.48,
+   "ms_knn": 0.52
+  },
+  {
+   "genre": "mixed",
+   "encoder": "potion-32M",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "document",
+   "peers_prec": 0.327,
+   "knn_prec": 0.596,
+   "mean_group": 13.192,
+   "methods": {
+    "usearch": 120
+   },
+   "ms_peers": 1.15,
+   "ms_knn": 0.78
+  },
+  {
+   "genre": "mixed",
+   "encoder": "bge-small",
+   "mode": "flat",
+   "chunking": "c512",
+   "n": 120,
+   "label": "document",
+   "peers_prec": 0.37,
+   "knn_prec": 0.627,
+   "mean_group": 13.808,
+   "methods": {
+    "usearch": 119,
+    "ann": 1
+   },
+   "ms_peers": 0.58,
+   "ms_knn": 0.67
+  }
+ ]
+}
