@@ -376,13 +376,27 @@ def search(self: Database,  # database connection
            rrf_k:int=60,  # RRF k parameter
            dtype=np.float16,  # embedding dtype
            id_key:str='rowid',  # key to join RRF results on
-           quote:bool=True,  # quote FTS query to disable special chars
+           quote:bool=True,  # quote FTS query to disable special chars (ignored when fts_pre=True)
+           fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg (falls back to the exact vec scan when `where` is set, since post-filtering ANN candidates cannot honor the filter)
            parallel=True,
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
            rerank_model:str=None  # flashrank model name (None -> fast default)
            ):
-    'Search the litesearch store with fts and vector search combined.'
+    '''Search the litesearch store with fts and vector search combined.
+
+    `fts_pre=True` rewrites the FTS leg's query with `pre()` — stopwords dropped, a wildcard on each
+    term, terms joined by OR. Without it every token is quoted, which makes FTS an implicit AND over
+    the whole query: a reworded question then matches nothing and the hybrid quietly becomes
+    vector-only.
+
+    **It is a trade, and `docs/rag_tiers.md` measures both sides of it.** Over 351 known-item queries
+    on three genres, `pre()` is worth +0.09 to +0.33 section MRR on paraphrased and synonym-substituted
+    queries, and costs 0.02 to 0.24 on verbatim ones — the penalty being largest at coarse chunk sizes
+    and small (≈0.016) at 512 characters, which is now the default. Set `fts_pre=False` if your users
+    paste exact phrases and cite terms of art; keep it on if they type questions.
+
+    The reranker and the vector leg always see the original `q`; only the FTS leg is rewritten.'''
     if not q.strip(): return None
     tbl = self.t[table_name]
     cols = list(columns or [])
@@ -390,7 +404,13 @@ def search(self: Database,  # database connection
     if reranking and 'content' not in cols: cols = cols + ['content']  # need text for the cross-encoder
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
     use_ann = ann and not where
-    exec_ls = [lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, quote),
+    fts_q, fts_quote = q, quote
+    if fts_pre:
+        from .data import pre
+        # pre() emits `word* OR word*`, which must not then be quoted; fall back when it empties the
+        # query (a query of nothing but stopwords)
+        if (p := pre(q)): fts_q, fts_quote = p, False
+    exec_ls = [lambda: tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote),
           lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else tbl.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
     fn = lambda f: f()

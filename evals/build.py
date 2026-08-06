@@ -31,6 +31,10 @@ CHUNKERS = {
     'c512':  lambda: RecursiveChunker(chunk_size=512,  tokenizer='character'),
     'c256':  lambda: RecursiveChunker(chunk_size=256,  tokenizer='character'),
     'xl4096': lambda: FastChunker(chunk_size=4096),                   # the library default chunker
+    # FastChunker at 512: the candidate new default. Same class the library already uses, ~5x faster
+    # than RecursiveChunker on the real per-page call pattern, and it has to be shown to deliver the
+    # same granularity win before the default moves.
+    'f512':  lambda: FastChunker(chunk_size=512),
 }
 
 

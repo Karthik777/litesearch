@@ -1,5 +1,57 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.6
+
+### Changed by evaluation
+
+`docs/rag_tiers.md` measures 45 store configurations over three genres that fail differently — 489
+pages of EU legislation, 12 arXiv papers, and 1,275 pages of astrology books printed between 1822 and
+1920 — against 351 known-item queries in five flavours, from verbatim down to five content words with
+every one swapped for a WordNet synonym. Ground truth is derived from the corpus itself; no LLM is
+involved. Two defaults did not survive it.
+
+- **`chunk_markdown` chunks at 512 characters, not 4096.** `FastChunker`'s own default is 4096 and
+  `add_doc` calls the chunker once per node segment, so on ordinary pages nothing was ever split and a
+  "chunk" was a whole page. Page-sized against 512-character chunks costs **0.06–0.14 section MRR**
+  across all three genres — the largest single effect measured. A 2,300-character chunk also overflows
+  a 512-token encoder, so its tail was embedded by nothing. `chunk_spans` moves with it, and
+  `CHUNK_SIZE` is the one place to change it.
+
+- **`search(fts_pre=True)` sends the FTS leg through `pre()`.** Quoting each token made FTS an
+  implicit AND over the whole query, so a reworded question matched nothing and the hybrid quietly
+  became vector-only. This is a **trade, not a free win**: `pre()` is worth +0.09 to +0.33 on
+  paraphrased and synonym-substituted queries and costs 0.02 to 0.24 on verbatim ones. Pass
+  `fts_pre=False` if your users paste exact phrases. The reranker and the vector leg still see the
+  original query.
+
+The two are coupled. Together they move `db.search` on its own defaults by **+0.10 to +0.13** weighted
+section MRR (0.665→0.790 arXiv, 0.635→0.750 legislation, 0.597→0.699 books). Apart, `pre()` at page
+granularity is *worse* than what it replaces on two genres of three — the verbatim penalty only
+shrinks once chunks are small.
+
+The same evaluation found that several expensive things do not pay: the PPR graph leg loses 0.07–0.11
+at every `graph_w` on all three genres, `topic_nodes` contributes nothing to ranking, late chunking
+over whole long documents halves the quality of the vector leg, the document tree is a wash, and
+upgrading a 32M static embedder to a 300M transformer is worth 0.007 for 1,700x the indexing compute.
+`SKILL.md` has been corrected where it said otherwise — in particular `peers()` is 2–3x *worse* than
+`ann_neighbors()` at matched group size, the reverse of what it recommended.
+
+### Fixed
+
+- **`pre()` emitted invalid FTS5 for any query containing an apostrophe.** `kw()` segments with apsw's
+  UAX#29 tokenizer, which keeps the apostrophe inside a word, and `add_wc` then appended a wildcard:
+  `pathfinder's*` is a syntax error, so `db.search` raised `SQLITE_ERROR` rather than searching. Tokens
+  that are not FTS5 barewords are now quoted.
+- **`vec_search` warns when `dtype` cannot match how the vectors were stored.** A float32 store
+  searched with the default `dtype=np.float16` reinterprets each float32 as two float16s, and for
+  normalised embeddings every distance comes back *exactly 0.0* — no exception, no empty result, the
+  vector leg silently returning rows in rowid order. `model2vec` returns float32 and `search` defaults
+  to float16, so this was one line of ordinary code away.
+- **`embedding_gemma` used a prompt template EmbeddingGemma was never trained on.** The model card
+  specifies `title: none | text: {content}` for documents and `task: search result | query: {content}`
+  for queries; litesearch shipped an Instructor-style string. This is `FastEncode`'s default model.
+
+
 ## 0.1.5
 use ann only if there isn't a where. exactness over speed
 

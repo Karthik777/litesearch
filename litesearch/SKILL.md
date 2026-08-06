@@ -293,37 +293,30 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 Measured over 351 known-item queries on legislation, papers and 1820s–1920s books
 (`docs/rag_tiers.md`). Both are free.
 
-**1. Chunk at 512 characters, not at the default.** `chunk_markdown` uses
-`FastChunker(chunk_size=4096)` and `add_doc` feeds it one node segment at a time, so on ordinary
-pages it almost never splits and you get page-sized chunks. Going finer is worth **+0.06 to +0.14**
-section MRR — the largest single effect measured — and a 2,300-character chunk also overflows a
-512-token encoder, so you pay to embed text the model never sees.
+**Both of these are now defaults, as of 0.1.6.** Together they moved `db.search` on its own defaults
+by +0.10 to +0.13 weighted section MRR. They are described here because the second one is a trade you
+may want to turn off.
 
-```python
-from chonkie import RecursiveChunker
-ck = RecursiveChunker(chunk_size=512, tokenizer='character')
-db.add_doc(pages, title=..., emb_fn=doc_encoder(enc), chunker=ck)
-```
+**1. Chunks are ~512 characters (`data.CHUNK_SIZE`).** They used to be 4096 — `FastChunker`'s own
+default — and since `add_doc` calls the chunker once per node segment, nothing was ever split and a
+chunk was a whole page. Page-sized against 512-character chunks costs **0.06 to 0.14** section MRR,
+the largest single effect measured, and a 2,300-character chunk overflows a 512-token encoder so its
+tail is embedded by nothing. `RecursiveChunker(chunk_size=512, tokenizer='character')` scores ~0.01
+better again at ~5x the chunking cost: `db.add_doc(..., chunker=ck)`.
 
-**2. Decide how the FTS leg reads the query.** `search` quotes every token, which makes FTS an
-implicit AND over the whole query. `pre()` turns it into `word* OR word*`. `search` does not call
-`pre()`, and which one you want depends on your traffic:
+**2. The FTS leg goes through `pre()` (`search(fts_pre=True)`).** Quoting every token made FTS an
+implicit AND over the whole query, so a reworded question matched nothing and the hybrid quietly
+became vector-only. **This is a trade:**
 
-| your users | use | why |
+| your users | setting | why |
 |---|---|---|
-| paste exact phrases, cite terms of art | `db.search(q, qv)` as-is | conjunctive quoting is worth +0.02 to +0.24 on verbatim queries |
-| type questions and paraphrases | `pre()` on the FTS leg | worth +0.09 to +0.33 on reworded queries |
+| type questions and paraphrases | `fts_pre=True` (default) | worth +0.09 to +0.33 on reworded queries |
+| paste exact phrases, cite terms of art | `fts_pre=False` | conjunctive quoting is worth +0.02 to +0.24 on verbatim queries |
 
-```python
-from litesearch.core import rrf_merge
-fts = db.t.store.fts_search(pre(q), ['rowid','content'], 'rank', 10, quote=False)
-vec = db.t.store.vec_search(qv, ['rowid','content'], limit=10)
-hits = rrf_merge(fts, vec, 60, 10)
-```
-
-The penalty for `pre()` shrinks sharply at fine chunk sizes (0.016 on papers at 512 chars), so if you
-took point 1 it is nearly free upside. Do not fuse deeper candidate lists hoping for more: 30 per leg
-instead of 10 measured *worse* everywhere.
+The verbatim penalty is largest at coarse chunk sizes and small (≈0.016) at 512 characters, which is
+why the two changes shipped together — at page size, `pre()` was a net *loss* on two genres of three.
+Do not fuse deeper candidate lists hoping for more: 30 per leg instead of 10 measured *worse*
+everywhere.
 
 **And if you are going to spend latency, spend it on `reranking=True` rather than on a bigger
 encoder.** A flashrank cross-encoder is worth +0.03 to +0.08 for ~40ms. Upgrading a 32M static
