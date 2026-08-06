@@ -4,6 +4,7 @@
 __all__ = ['embed_chunk', 'process_content', 'rrf_merge', 'database', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #cda88b6a
+import warnings
 from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, filter_keys, not_, in_, parallel as fcp
 from fastlite import Database
 from apswutils.db import Table

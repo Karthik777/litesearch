@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.9
+warnings added (bug fix)
+
 ## 0.1.7
 fts pre check, dtype mismatch warning, embeddinggemma template change
 
