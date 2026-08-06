@@ -2,10 +2,10 @@
 
 # %% auto #0
 __all__ = ['CHUNK_SIZE', 'skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'needs_ocr', 'clean_md', 'ocr_parse',
-           'oxide_parse', 'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse', 'ipynb_parse',
-           'non_py_sigs', 'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks',
-           'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf',
-           'mv_skill_md']
+           'oxide_parse', 'pdf_parse', 'SafeChunker', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse',
+           'ipynb_parse', 'non_py_sigs', 'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks',
+           'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det',
+           'images_to_pdf', 'mv_skill_md']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 import os,re
@@ -107,24 +107,68 @@ def pdf_parse(pdf: PdfDocument | str | Path | bytes,  # PdfDocument object
 from chonkie import RecursiveChunker, FastChunker, BaseChunker
 
 # %% ../nbs/02_data.ipynb #chunk_markdown_cell
-CHUNK_SIZE = 512   # characters. See `chunk_markdown` for why this is 512 and not FastChunker's 4096.
+CHUNK_SIZE = 512   # bytes. See `chunk_markdown` for why this is 512 and not FastChunker's 4096.
+
+def _snap_utf8(b, i):
+	'Move byte offset `i` forward off a UTF-8 continuation byte, to the next codepoint boundary.'
+	n = len(b)
+	while i < n and (b[i] & 0xC0) == 0x80: i += 1
+	return i
+
+class SafeChunker:
+	'''`FastChunker` without its `UnicodeDecodeError`, and faster.
+
+	`chonkie.FastChunker` encodes to UTF-8, asks `chonkie_core` for byte offsets, then decodes each byte
+	slice. When no delimiter falls inside `chunk_size` bytes the core hard-cuts at an arbitrary byte, and
+	if that byte is mid-codepoint the decode raises:
+
+	    UnicodeDecodeError: 'utf-8' codec can't decode bytes in position 510-511: unexpected end of data
+
+	Any non-ASCII text can hit it — curly quotes, `naïve`, `—`, CJK, emoji — and the smaller the chunk the
+	likelier it is, because there are more cut points. Raising `chunk_size` does **not** fix it, it only
+	lowers the odds, which is worse than a crash: it fails on a fraction of a corpus.
+
+	Boundaries here are chonkie's own, snapped forward to the next codepoint boundary, so chunking is
+	identical to `FastChunker` on any text that does not trip the bug. It also measures ~2.4x faster
+	(235 MB/s against 97) — building `Chunk` objects through `BaseChunker` cost more than splitting did.'''
+	def __init__(self,
+				 chunk_size:int=CHUNK_SIZE,   # target chunk size, in bytes
+				 delimiters:str='\n.?'):      # split points, in preference order
+		self.chunk_size, self.delimiters = chunk_size, delimiters
+
+	def __call__(self, text:str):
+		from chonkie.types import Chunk
+		import chonkie_core
+		if not text: return []
+		b = text.encode('utf-8')
+		offs = chonkie_core.chunk_offsets(b, size=self.chunk_size, delimiters=self.delimiters)
+		out, pos = [], 0
+		for s, e in offs:
+			s, e = _snap_utf8(b, s), _snap_utf8(b, e)
+			if e <= s: continue
+			t = b[s:e].decode('utf-8')
+			out.append(Chunk(text=t, start_index=pos, end_index=pos+len(t), token_count=0))
+			pos += len(t)
+		return out
 
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
                    chunker:BaseChunker=None
 ) -> L:
-	'''Split markdown into chunks of about `CHUNK_SIZE` characters, on paragraph then sentence breaks.
+	'''Split markdown into chunks of about `CHUNK_SIZE` bytes, on paragraph then sentence breaks.
 
-	512 rather than `FastChunker`'s own default of 4096. `add_doc` calls this once per node segment, so
-	at 4096 the chunker almost never split anything and a "chunk" was a whole page — which measured as
-	the single largest quality loss in `docs/rag_tiers.md`: page-sized against 512-character chunks
-	costs 0.06–0.14 section MRR across EU legislation, arXiv papers and 1820s–1920s books. A 2,300-
-	character chunk also overflows a 512-token encoder, so the tail of it is embedded by nothing.
+	512 rather than `FastChunker`'s own default of 4096. `add_doc` calls this once per node segment, so at
+	4096 the chunker almost never split anything and a "chunk" was a whole page — which measured as the
+	single largest quality loss in `docs/rag_tiers.md`: page-sized against 512-byte chunks costs 0.06–0.14
+	section MRR across EU legislation, arXiv papers and 1820s–1920s books. A 2,300-character chunk also
+	overflows a 512-token encoder, so the tail of it is embedded by nothing.
 
-	`RecursiveChunker(chunk_size=512, tokenizer='character')` scores about 0.01 better again and runs
-	at 30 MB/s against this chunker's 100 MB/s (3.3x, measured over 551 page-sized texts); pass
-	`chunker=` if you want that trade. Chunking is ~0.1% of the cost of indexing either way — the
-	reason to default to `FastChunker` is that it is the class already in use, not the 22ms.'''
-	r = chunker or FastChunker(chunk_size=CHUNK_SIZE)
+	The default chunker is `SafeChunker`, not `chonkie.FastChunker`: at 512 bytes FastChunker raises
+	`UnicodeDecodeError` on non-ASCII text, which the old 4096 default hid by almost never splitting.
+
+	`RecursiveChunker(chunk_size=512, tokenizer='character')` scores about 0.01 better again and splits on
+	true character counts rather than bytes, at 32 MB/s against this chunker's 235; pass `chunker=` for
+	that trade. Chunking is ~0.1% of the cost of indexing at any of these settings, so choose on quality.'''
+	r = chunker or SafeChunker(CHUNK_SIZE)
 	return L(r(text)).map(lambda c: c.text)
 
 @patch
@@ -137,12 +181,13 @@ def pdf_chunks(self:PdfDocument, # PDF document
 	         for pg, md in enumerate(pdf_parse(self))
 	         for ci, chunk in enumerate(chunk_markdown(md, **kwargs)))
 
+
 # %% ../nbs/02_data.ipynb #0923fba8
 def chunk_spans(text:str,            # text to split
                 chunker:BaseChunker=None
 ) -> L:
     'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
-    r = chunker or FastChunker(chunk_size=CHUNK_SIZE)
+    r = chunker or SafeChunker(CHUNK_SIZE)
     return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
 # %% ../nbs/02_data.ipynb #171a3906ce544f95

@@ -1,5 +1,26 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.7
+
+### Fixed
+
+- **`chunk_markdown` at 512 crashed on non-ASCII text.** `chonkie.FastChunker` encodes to UTF-8, takes
+  byte offsets from `chonkie_core`, and decodes each byte slice; when no delimiter falls inside
+  `chunk_size` bytes the core hard-cuts at an arbitrary byte, and a cut mid-codepoint raises
+  `UnicodeDecodeError: 'utf-8' codec can't decode bytes in position 510-511`. Curly quotes, `naïve`,
+  an em-dash, CJK or emoji are enough. 0.1.6 exposed it by lowering the default chunk size to 512 —
+  at the old 4096 the chunker almost never split, so the bug was latent rather than absent.
+
+  Raising the size to 1024 is **not** a fix: it only lowers the odds of landing mid-codepoint, which is
+  worse than a crash because it then fails on a fraction of a corpus rather than on all of it.
+
+  `data.SafeChunker` is now the default. It uses chonkie's own offsets, snapped forward to the next
+  codepoint boundary, so chunking is **identical on all 2,007 page-texts of the eval corpus** — the
+  0.1.6 measurements carry over unchanged — and it happens to run **2.4x faster** (235 MB/s against 97),
+  because building `Chunk` objects through `BaseChunker` cost more than the splitting did. `chunk_spans`
+  moves with it, and `CHUNK_SIZE` is documented as bytes, which is what `FastChunker` always meant.
+
+
 ## 0.1.6
 
 ### Changed by evaluation
