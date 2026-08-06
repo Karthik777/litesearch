@@ -286,7 +286,9 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
          key_col:str=None,      # scope existing rows by this column's values (e.g. 'path','package'); None = whole table
          emb_fn=None,           # embedder for new/changed chunks
          embed:bool=True,       # embed before upsert
-         force:bool=False):     # treat all content as new (skip diff)
+         force:bool=False,      # treat all content as new (skip diff)
+         parallel:bool=False,   # chunked BEGIN IMMEDIATE writes; needs database(busy_timeout=...)
+         chunk:int=5_000):      # rows per transaction when parallel=True
     'Smart hash-diff update: delete stale rows, embed+upsert changed, mirror into the ANN index. Returns {changed,same,removed}.'
     content = L(content).filter(lambda d: d.get('content') and d['content'].strip())
     cont_hash = {_slug(d['content']): d for d in content}
@@ -302,7 +304,7 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
     dt = _np_dtype.get(m['dtype'], np.float16) if m else np.float16
     rm_rowids = L(self(select=_rid(), where=_in('id', stale))).itemgot('rowid') if (m and stale) else L()
     if stale: self.delete_where(where=_in('id', stale))
-    if to_add: process_content(self, list(to_add.values()), embed=embed, emb_fn=emb_fn)
+    if to_add: process_content(self, list(to_add.values()), embed=embed, emb_fn=emb_fn, parallel=parallel, chunk=chunk)
     if m: self._sync_index(list(to_add), list(rm_rowids), dt)
     return dict(changed=len(to_add), same=len(ex)-len(stale), removed=len(stale))
 

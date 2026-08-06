@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.11
+parallel sync
+
 ## 0.1.10
 tree heading bug fix _ parallel writes into sqlite by increasing busy_window
 
