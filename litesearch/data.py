@@ -120,8 +120,10 @@ def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
 	costs 0.06–0.14 section MRR across EU legislation, arXiv papers and 1820s–1920s books. A 2,300-
 	character chunk also overflows a 512-token encoder, so the tail of it is embedded by nothing.
 
-	`RecursiveChunker(chunk_size=512, tokenizer='character')` scores about 0.01 better again and is ~5x
-	slower per call; pass `chunker=` if you want that trade.'''
+	`RecursiveChunker(chunk_size=512, tokenizer='character')` scores about 0.01 better again and runs
+	at 30 MB/s against this chunker's 100 MB/s (3.3x, measured over 551 page-sized texts); pass
+	`chunker=` if you want that trade. Chunking is ~0.1% of the cost of indexing either way — the
+	reason to default to `FastChunker` is that it is the class already in use, not the 22ms.'''
 	r = chunker or FastChunker(chunk_size=CHUNK_SIZE)
 	return L(r(text)).map(lambda c: c.text)
 

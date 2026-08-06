@@ -15,7 +15,10 @@ involved. Two defaults did not survive it.
   "chunk" was a whole page. Page-sized against 512-character chunks costs **0.06–0.14 section MRR**
   across all three genres — the largest single effect measured. A 2,300-character chunk also overflows
   a 512-token encoder, so its tail was embedded by nothing. `chunk_spans` moves with it, and
-  `CHUNK_SIZE` is the one place to change it.
+  `CHUNK_SIZE` is the one place to change it. `FastChunker` rather than
+  `RecursiveChunker(512, tokenizer='character')`, which scores ~0.01 better and chunks at 30 MB/s
+  against 100 MB/s — chunking is ~0.1% of indexing cost either way, so the tiebreak is that
+  `FastChunker` is the class already in use.
 
 - **`search(fts_pre=True)` sends the FTS leg through `pre()`.** Quoting each token made FTS an
   implicit AND over the whole query, so a reworded question matched nothing and the hybrid quietly

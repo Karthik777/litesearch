@@ -302,7 +302,8 @@ default — and since `add_doc` calls the chunker once per node segment, nothing
 chunk was a whole page. Page-sized against 512-character chunks costs **0.06 to 0.14** section MRR,
 the largest single effect measured, and a 2,300-character chunk overflows a 512-token encoder so its
 tail is embedded by nothing. `RecursiveChunker(chunk_size=512, tokenizer='character')` scores ~0.01
-better again at ~5x the chunking cost: `db.add_doc(..., chunker=ck)`.
+better again and chunks at 30 MB/s against 100 MB/s (3.3x): `db.add_doc(..., chunker=ck)`. Either way
+chunking is ~0.1% of indexing cost, so pick on quality, not on this.
 
 **2. The FTS leg goes through `pre()` (`search(fts_pre=True)`).** Quoting every token made FTS an
 implicit AND over the whole query, so a reworded question matched nothing and the hybrid quietly
