@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.12
+SafeFastChunker and fts_pre
+
 ## 0.1.11
 parallel sync
 

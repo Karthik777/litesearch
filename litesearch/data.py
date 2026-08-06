@@ -2,9 +2,10 @@
 
 # %% auto #0
 __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'needs_ocr', 'clean_md', 'ocr_parse', 'oxide_parse',
-           'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs',
-           'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages',
-           'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md']
+           'pdf_parse', 'SafeFastChunker', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse',
+           'ipynb_parse', 'non_py_sigs', 'chunk_texts', 'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks',
+           'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre', 'img2png', 'png_det',
+           'images_to_pdf', 'mv_skill_md']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 import os,re
@@ -103,14 +104,42 @@ def pdf_parse(pdf: PdfDocument | str | Path | bytes,  # PdfDocument object
 	return op(pdf) if ocr_chk else md
 
 # %% ../nbs/02_data.ipynb #4a33701ff7ff248b
+import chonkie_core
 from chonkie import RecursiveChunker, FastChunker, BaseChunker
+from chonkie.types import Chunk
 
-# %% ../nbs/02_data.ipynb #chunk_markdown_cell
+def _char_start(b:bytes, i:int) -> int:
+    'Back a byte offset up to the first byte of the UTF-8 character it lands inside.'
+    while 0 < i < len(b) and b[i] & 0xC0 == 0x80: i -= 1
+    return i
+
+class SafeFastChunker(FastChunker):
+    """`FastChunker` whose cuts land on character boundaries.
+
+    chonkie-core returns *byte* offsets and `FastChunker.chunk` decodes each slice on its own, so a
+    size cut that falls inside a multi-byte character raises `UnicodeDecodeError` — which any long
+    unbroken paragraph containing an em dash or a curly quote will do, i.e. most scraped web pages.
+    Both sides of a cut are moved back to the start of the character it split, so the text is
+    repartitioned by up to three bytes and never lost."""
+    def chunk(self, text:str) -> list:
+        if not text: return []
+        kw = dict(size=self.chunk_size, prefix=self.prefix, consecutive=self.consecutive,
+                  forward_fallback=self.forward_fallback)
+        kw |= dict(pattern=self.pattern) if self.pattern else dict(delimiters=self.delimiters)
+        b, out, pos = text.encode(), [], 0
+        for s, e in chonkie_core.chunk_offsets(b, **kw):
+            t = b[_char_start(b, s):_char_start(b, e)].decode()
+            if not t: continue
+            out.append(Chunk(text=t, start_index=pos, end_index=pos+len(t), token_count=0))
+            pos += len(t)
+        return out
+
+# %% ../nbs/02_data.ipynb #4ddbb058066ad269
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
                    chunker:BaseChunker=None
 ) -> L:
 	'Split markdown into paragraph chunks on blank lines'
-	r = chunker or FastChunker(chunk_size=512)
+	r = chunker or SafeFastChunker(chunk_size=512)
 	return L(r(text)).map(lambda c: c.text)
 
 @patch
@@ -123,15 +152,15 @@ def pdf_chunks(self:PdfDocument, # PDF document
 	         for pg, md in enumerate(pdf_parse(self))
 	         for ci, chunk in enumerate(chunk_markdown(md, **kwargs)))
 
-# %% ../nbs/02_data.ipynb #0923fba8
+# %% ../nbs/02_data.ipynb #bd59b59ae64cea17
 def chunk_spans(text:str,            # text to split
                 chunker:BaseChunker=None
 ) -> L:
     'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
-    r = chunker or FastChunker(chunk_size=512)
+    r = chunker or SafeFastChunker(chunk_size=512)
     return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
-# %% ../nbs/02_data.ipynb #171a3906ce544f95
+# %% ../nbs/02_data.ipynb #d47391264283f71c
 from importlib.util import find_spec as fs
 from importlib.metadata import distribution as dist, distributions as dists, version
 from importlib.machinery import ModuleSpec
@@ -141,7 +170,7 @@ from codesigs import file_sigs
 from fastcore.basics import fdelegates, true
 from fastcore.nbio import read_nb
 
-# %% ../nbs/02_data.ipynb #2d62e37b470a1055
+# %% ../nbs/02_data.ipynb #e2d83d2c61b7dfe2
 skip_folder_re = r'^[.]|^(?:tests?|examples?|docs?|build|dist)$'
 skip_file_re = r'^[.]|^(?:setup\.py|conftest\.py)$'
 code_exts = '.py,.js,.ts,.jsx,.tsx,.java,.go,.cs,.ruby,.php,.swift,.kt,.kts,.rs,.scala,.lua'
@@ -196,8 +225,7 @@ def non_py_sigs(p):
 
 def chunk_texts(text:str):
 	'Chunk texts using Fast Chunker'
-	from chonkie import FastChunker
-	return L(FastChunker(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
+	return L(SafeFastChunker(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
 
 @delegates(pyparse)
 def file_parse(p:Path=None,  # path to a code file
@@ -214,7 +242,7 @@ def file_parse(p:Path=None,  # path to a code file
     if p.suffix == '.txt': return chunk_texts(p.read_text(encoding='utf-8')).map(fn)
     return L()
 
-# %% ../nbs/02_data.ipynb #76e3e47dd73aec50
+# %% ../nbs/02_data.ipynb #a8efe72ac0b7468a
 @delegates(globtastic)
 def pkg2files(pkg:str,								# package name
               skip_file_re=skip_file_re,  # regex to skip files
@@ -230,7 +258,7 @@ def pkg2files(pkg:str,								# package name
 	return globtastic(o, folder_re=nm.name, skip_folder_re=skip_folder_re,
 	                  skip_file_re=skip_file_re, func=func, **kwargs)
 
-# %% ../nbs/02_data.ipynb #71185cd58a7ad122
+# %% ../nbs/02_data.ipynb #41872245b3652853
 @delegates(globtastic)
 def dir2files(dir:str,  # package name
               skip_file_re=skip_file_re,  # regex to skip files
@@ -242,7 +270,7 @@ def dir2files(dir:str,  # package name
 	if not (rt :=Path(dir)).exists(): return L()
 	return globtastic(rt, skip_folder_re=skip_folder_re, skip_file_re=skip_file_re, func=func, **kwargs)
 
-# %% ../nbs/02_data.ipynb #55c525653e25a703
+# %% ../nbs/02_data.ipynb #33217682f16a1c9c
 def pkg2chunks(pkg:str,             # package name
                imports:bool=False,  # include import statements as code chunks
                **kw                 # additional args to pass to pkg2files
@@ -262,7 +290,7 @@ def dir2chunks(dir:str,             # directory path
     pykw = dict(imports=imports, assigns=assigns)
     return parallel(file_parse, dir2files(dir, **kwargs), threadpool=True, **pykw).concat().filter(true).map(upd_v)
 
-# %% ../nbs/02_data.ipynb #7652cb1d1f39fadc
+# %% ../nbs/02_data.ipynb #256e1606821e7674
 def installed_packages(nms:list=None,    # list of package names
                        pyproject:bool=False,  # restrict to pyproject.toml dependencies
                        xtras:str|None=None       # include extra groups as csv from pyproject.toml
@@ -286,7 +314,7 @@ def installed_packages(nms:list=None,    # list of package names
         return pkgs.filter(not_stdlib).map(lambda d: d.metadata['Name'])
     except Exception as e: print(f'Error checking installed packages: {e}')
 
-# %% ../nbs/02_data.ipynb #f887a2d1e48c7e1d
+# %% ../nbs/02_data.ipynb #1c4310460fd6c8ec
 def clean(q:str,  # query to be passed for fts search
           pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
           ):
@@ -299,9 +327,7 @@ _BARE = re.compile(r'^[A-Za-z0-9_]+$')
 
 def add_wc(q:str  # query to be passed for fts search
            ):
-    '''Add wild card * to each word in the query.
-
-	A token that is not an FTS5 bareword is quoted first. `kw` uses UAX#29 segmentation, which keeps
+    '''Add wild card * to each word in the query.`kw` uses UAX#29 segmentation, which keeps
     the apostrophe inside `pathfinder's`, '''
     esc = lambda w: w if _BARE.match(w) else '"%s"' % w.replace('"', '""')
     return ' '.join(esc(w) + '*' for w in q.split(' ') if w)

@@ -4,8 +4,7 @@
 __all__ = ['BUSY_TIMEOUT_MS', 'embed_chunk', 'busy_window', 'write_txn', 'process_content', 'rrf_merge', 'database',
            'rerank_hits']
 
-# %% ../nbs/01_core.ipynb #cda88b6a
-import warnings
+# %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, filter_keys, not_, in_, parallel as fcp
 from fastlite import Database
 from apswutils.db import Table
@@ -13,11 +12,11 @@ from apswutils.utils import cursor_row2dict, hash_record
 from apsw.fts5 import register_tokenizers, map_tokenizers
 from contextlib import contextmanager, nullcontext
 import apsw, apsw.bestpractice, threading
-import numpy as np
-
+import numpy as np, warnings
+from .data import pre
 BUSY_TIMEOUT_MS = 30_000   # lock wait during a busy_window; apsw's stock default is 100ms
 
-# %% ../nbs/01_core.ipynb #2105fc702c6a7170
+# %% ../nbs/01_core.ipynb #72086eb6ff361455
 _dtype_suffixes = {np.int8: 'i8', np.float16: 'f16', np.float64: 'f64', np.float32: 'f32'}
 def _dtype_suffix(dtype=np.float16): return _dtype_suffixes.get(dtype, 'f32')
 _usearch_metric = {'cosine':'cos', 'inner':'ip', 'sqeuclidean':'l2sq', 'divergence':'divergence'}
@@ -97,7 +96,7 @@ def process_content(store,          # target Table (hash-id store)
             with write_txn(store.db): _ins(content[i:i+chunk])
     return store
 
-# %% ../nbs/01_core.ipynb #3a08e489
+# %% ../nbs/01_core.ipynb #eb6da9000ce71a23
 @patch
 def get_store(self:Database,        # database connection
             name:str='store',       # table name
@@ -123,7 +122,7 @@ def get_store(self:Database,        # database connection
     if ann: self._register_ann(name, ndim, metric, dtype, connectivity, expansion_add, expansion_search, index_path)
     return _content
 
-# %% ../nbs/01_core.ipynb #e06da46d
+# %% ../nbs/01_core.ipynb #803a2e5497883d62
 @patch
 def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.float16,
                   connectivity=None, expansion_add=None, expansion_search=None, index_path=None):
@@ -170,7 +169,7 @@ def _save_index(self:Database, name):
     m = self._ann_meta(name)
     if m and m['path'] and name in self.ann_indices: self.ann_indices[name].save(m['path'])
 
-# %% ../nbs/01_core.ipynb #c1c04ba9
+# %% ../nbs/01_core.ipynb #aea0410ad7106548
 @patch
 def fts_search(self:Table,
                q:str, # query string
@@ -230,7 +229,7 @@ def vec_search(self: Table,
                 dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
     return _dtype_check(self, dtype, rows)
 
-# %% ../nbs/01_core.ipynb #bc63f7ed
+# %% ../nbs/01_core.ipynb #f77f5d4162ca5935
 def _rid(): return 'rowid as rowid'
 @patch
 def ann_search(self:Table,          # store table (must be ANN-registered)
@@ -329,7 +328,7 @@ def rebuild_index(self:Table, dtype=None):
     self.db._save_index(self.name)
     return idx.size
 
-# %% ../nbs/01_core.ipynb #37b807cc8a8402b7
+# %% ../nbs/01_core.ipynb #4258d0ab30d7610b
 @patch
 def ann_vec(self:Table,          # ANN-registered store
             key:int,             # usearch key (the row's rowid)
@@ -359,7 +358,7 @@ def ann_neighbors(self:Table,             # ANN-registered store
     rows = self.ann_search(v.tobytes(), columns, limit + (0 if include_self else 1), where, where_args, dtype)
     return rows[:limit] if include_self else [r for r in rows if r['rowid'] != key][:limit]
 
-# %% ../nbs/01_core.ipynb #3eefbddac870085a
+# %% ../nbs/01_core.ipynb #ecffd1079678f470
 def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
     "Reciprocal Rank Fusion: merges FTS and vector results. Items in both lists score highest."
     scores = {}
@@ -372,7 +371,7 @@ def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
         else: scores[rid] = merge(row, {'_rrf_score': 1.0/(k + rank)})
     return sorted(scores.values(), key=lambda x: x['_rrf_score'], reverse=True)[:limit]
 
-# %% ../nbs/01_core.ipynb #7499f3ed67d64806
+# %% ../nbs/01_core.ipynb #92985104635cbc5b
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
              sem_search:bool=True,          # enable usearch extensions
@@ -395,7 +394,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     _db.conn.enableloadextension(False)
     return _db
 
-# %% ../nbs/01_core.ipynb #rerankhelper
+# %% ../nbs/01_core.ipynb #b0ca47afb872e0d6
 _RERANKERS = {}
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
@@ -413,7 +412,7 @@ def rerank_hits(q, hits, model=None, limit=None, text_col='content'):
     out = [hits[r['id']] for r in ranked]
     return out[:limit] if limit else out
 
-# %% ../nbs/01_core.ipynb #1df24dd8254611bf
+# %% ../nbs/01_core.ipynb #533c9264e227dc25
 @patch
 def search(self: Database,  # database connection
            q:str,  # query string
@@ -430,7 +429,8 @@ def search(self: Database,  # database connection
            rrf_k:int=60,  # RRF k parameter
            dtype=np.float16,  # embedding dtype
            id_key:str='rowid',  # key to join RRF results on
-           quote:bool=True,  # quote FTS query to disable special chars
+           quote:bool=True,  # quote FTS query to disable special chars (ignored when fts_pre=True)
+           fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
            parallel=True,
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
@@ -444,7 +444,9 @@ def search(self: Database,  # database connection
     if reranking and 'content' not in cols: cols = cols + ['content']  # need text for the cross-encoder
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
     use_ann = ann and not where
-    exec_ls = [lambda: tbl.fts_search(q, cols, 'rank', lim, off, where, where_args, quote),
+    fts_q, fts_quote = q, quote
+    if fts_pre and (p := pre(q)): fts_q, fts_quote = p, False
+    exec_ls = [lambda: tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote),
           lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else tbl.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
     fn = lambda f: f()

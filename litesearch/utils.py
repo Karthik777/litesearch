@@ -17,7 +17,7 @@ import onnxruntime as ort
 from tokenizers import Tokenizer, AddedToken
 from model2vec import StaticModel
 
-# %% ../nbs/03_utils.ipynb #5b8ed63b321a17d2
+# %% ../nbs/03_utils.ipynb #be27730c21e0c597
 embedding_gemma_prompt = AttrDict(document='title: none | text: {text}', query='task: search result | query: {text}')
 nomic_prompt = AttrDict(document='search_document: {text}', query='search_query: {text}')
 modernbert_prompt = nomic_prompt  # alias — same prefix format
