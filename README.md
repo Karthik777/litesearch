@@ -446,6 +446,100 @@ spaCy is optional — `pip install litesearch[graph]` then
 `python -m spacy download en_core_web_sm`. Without it the extractor falls back to yake
 keyphrases, which are weaker node identities.
 
+## `litesearch.sanskrit` — verses, sections and parallels
+
+Everything in `litesearch.tree` assumes a document whose structure is in its headings and whose
+atom is a paragraph. A Sanskrit text is neither, so this module supplies the four things that
+follow — a transliteration fold, a verse-atomic chunker, a reference-driven section tree, and a
+graph whose edges are the relations Sanskrit texts actually have.
+
+It supplies them *through the existing seams*: `db.add_sanskrit` is `db.add_doc` with
+`tree_fn=verse_tree` and `chunk_fn=sanskrit_chunks`, the fold rides in the store's existing
+`metadata` column (already FTS-indexed by `get_store`), and the graph writes the tables
+`get_graph` already defines. So `toc`, `read`, `breadcrumb`, `doc_search`, `sections`,
+`graph_search`, `clusters` and `peers` all work on a Sanskrit corpus with no code of their own.
+
+```python
+from litesearch import database
+from litesearch.utils import FastEncode, doc_encoder
+
+enc = FastEncode()
+db  = database('sanskrit.db')
+db.get_store('store', hash=True, ann=True, doc_id=str, node_id=str, page=int, heading=str)
+
+# a GRETIL mirror: plain-text .htm, Devanagari or romanised, all handled
+db.add_sanskrit_dir('gretil/1_sanskr', emb_fn=doc_encoder(enc), per=4, stride=3)
+
+db.toc('Visnu-Purana')
+# Visnu-Purana › Amsa 1 › Adhyaya 1 ...  (levels named from the colophons, summaries taken from them)
+
+# the query matches in any transliteration -- and needs no model at all
+db.verse_search('dharmaksetre kuruksetre')      # or 'धर्मक्षेत्रे', or 'dharmakṣetre'
+db.by_ref('ViP_1,1.1')                          # exact lookup by citation
+
+from litesearch.sanskrit import verse_graph
+verse_graph(db)
+db.parallels('Mn_2.1')
+# -> [{'ref': ..., 'rel': 'parallel', 'weight': 1.0, 'kind': 'verse'}]   the same śloka, another text
+```
+
+| Function | Description |
+|---|---|
+| `fold(text)` / `loose(text)` | ASCII skeleton of a Sanskrit string; `loose` also absorbs `Krishna`-style spellings |
+| `to_iast` / `to_slp1` / `detect_scheme` | Devanagari ⇄ IAST ⇄ SLP1 ⇄ Harvard-Kyoto |
+| `split_verses(text)` | Verse records with citation, pādas, speaker, metre — four GRETIL layouts |
+| `syllables` / `detect_meter` / `METERS` | Classical scansion; 20 metres derived from their gaṇas |
+| `chunk_verses(verses, per, stride)` | Overlapping windows of *whole* verses |
+| `verse_tree(pages)` / `verse_mode` | Sections from references, colophons, unit headings or windows |
+| `db.add_sanskrit` / `add_sanskrit_file` / `add_sanskrit_dir` | Ingest, via `add_doc`'s seams |
+| `db.verse_search(q, emb=None)` | Hybrid or FTS-only search, transliteration-agnostic |
+| `db.by_ref(ref)` / `db.parallels(ref)` | Exact citation lookup; the same śloka elsewhere |
+| `verse_graph(db)` | `follows` / `parallel` / `quotes` / `chandas` edges over verse nodes |
+| `parallel_pairs(items)` | Near-identical passages by word-shingle Jaccard |
+| `chunk_units(content, refs)` | A stored window split back into its verses |
+| `load_conllu` / `db.add_dcs` | Digital Corpus of Sanskrit CoNLL-U, lemmas indexed beside the text |
+| `split_commentary(text)` | A mūla verse and its named glosses |
+
+Details that matter in practice:
+
+- **The verse is the atom.** Half a śloka is a metrical fragment, not a proposition, so nothing here
+  ever cuts inside one — `max_chars` shrinks a window rather than splitting a verse. A single śloka
+  is only ~120 characters, though, well below where either search leg works, so the unit is an
+  *overlapping window* of whole verses.
+- **The reference is the tree.** `ViP_1,1.1` is a complete address, stated for every leaf, so a
+  Sanskrit corpus needs none of the heading inference that `detect_mode` does — and cannot be fooled
+  the way a converter's stray `h1`s fooled it. Node titles are citations; when the colophons name
+  the ladder (`iti ... prathame 'ṃśe prathamo 'dhyāyaḥ` → aṃśa, adhyāya) the levels take those names
+  and the colophon becomes the node's summary.
+- **One fold, no new schema.** `kṛṣṇa`, `कृष्ण`, `kfzRa` and `Krishna` are one word that FTS5 sees as
+  four. Each chunk's fold goes into `metadata`, which `get_store` already indexes, so Devanagari
+  matches the content and `dharmaksetre` matches the fold.
+- **Metre is not ornament.** It is the verse/prose classifier the module needs anyway (unmetred text
+  between daṇḍas is bhāṣya and gets an ordinary chunker), a search facet, and a graph node. The
+  aspirates are the trap: `kh` is one consonant, so `atha` is light-light and `artha` heavy-light.
+- **Every verse is a graph entity.** `get_graph`'s `edges` table is entity-to-entity, so making the
+  verse a node (`kind='verse'`, named by its citation) is what lets `follows`, `parallel`, `quotes`
+  and `chandas` live in the existing schema — and lets `graph_search` walk them unchanged.
+- **`parallel` is the payoff, and it works per verse.** A Sanskrit verse is often not the property
+  of the text you found it in. Detection is lexical and offline — word-shingle Jaccard over the fold
+  — which within one language is the cheaper tool, because these parallels are usually verbatim once
+  orthographic noise is gone. `chunk_units` splits each stored window back into its verses first:
+  comparing windows would only find a parallel when two texts happened to window the same verses
+  together, which they do not. Metres above `max_meter_df` are dropped rather than linked: nine verses in ten are
+  anuṣṭubh, and a node for it is a clique over the whole store.
+- **Sandhi is the real ceiling, and it has a seam.** `verse_terms` extracts folded *surface* tokens,
+  not lemmas. `lemma_fn=` on `add_sanskrit` takes any segmenter, and `db.add_dcs` ingests DCS
+  CoNLL-U with its hand-validated lemmas — which is what makes `gam` find both `'gacchat` and
+  `agamat`, neither of which contains it.
+
+No model is required anywhere: scansion, segmentation, the tree, parallels and the fold are all
+deterministic. Formats were taken from
+[GRETIL](https://gretil.sub.uni-goettingen.de/gretil.html) (references, colophons, `[h: :h]`,
+`§X uvāca:`, commentary sigla), the
+[Digital Corpus of Sanskrit](http://www.sanskrit-linguistics.org/dcs/) (CoNLL-U, lemmas) and
+[Dharmamitra](https://dharmamitra.github.io/dharmamitra-guides/)'s MITRA parallel mining (the idea
+that finding the same passage elsewhere is a first-class result).
+
 ## `litesearch.utils`
 
 ### [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) — ONNX Text Encoder

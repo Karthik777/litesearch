@@ -24,9 +24,15 @@ def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN c
 # treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
 _FTS_TOKENIZE = 'porter simplify casefold 1 unicodewords'
 
-def _slug(content):
-    "Content hash matching a hash-id store's `id` (hash over the content column)."
-    return hash_record({'content': content}) if content else None
+def _slug(content, extra:dict=None):
+    """Content hash matching a hash-id store's `id`.
+
+    `extra` supplies the further columns the store hashes on. `add_doc` adds `doc_id`, because two
+    documents that share a passage *verbatim* must not collide onto one row. That is not a corner
+    case — a Sanskrit śloka is routinely quoted across texts, two editions of a regulation repeat
+    an annex, a paper repeats its preprint — and the failure is silent: the second document's chunk
+    simply replaces the first's, and the first document loses text it was indexed with."""
+    return hash_record({'content': content, **(extra or {})}) if content else None
 
 def embed_chunk(chunk,      # iterable of dicts with a 'content' key
                 emb_fn,     # callable: list[str] -> list of vectors (np arrays)
@@ -37,18 +43,19 @@ def embed_chunk(chunk,      # iterable of dicts with a 'content' key
     for e,b in zip(emb_fn(list(c.itemgot('content')), **kw), c): b['embedding'] = np.asarray(e).tobytes()
     return list(c)
 
-def process_content(store,          # target Table (hash-id store)
-                    content,        # iterable of chunk dicts
-                    embed=True,     # embed content before upsert
-                    emb_fn=None,    # embedder, required when embed=True
-                    **kw):          # forwarded to emb_fn
+def process_content(store,                     # target Table (hash-id store)
+                    content,                   # iterable of chunk dicts
+                    embed=True,                # embed content before upsert
+                    emb_fn=None,               # embedder, required when embed=True
+                    hash_cols=('content',),    # columns the row id is hashed over
+                    **kw):                     # forwarded to emb_fn
     'Embed chunks (optional) and upsert into a hash-id store. No-op on empty content.'
     content = list(content or [])
     if embed:
         assert emb_fn, 'emb_fn is required when embed=True'
         content = embed_chunk(content, emb_fn, **kw)
     if not content: return
-    return store.insert_all(content, upsert=True, hash_id='id', hash_id_columns=['content'])
+    return store.insert_all(content, upsert=True, hash_id='id', hash_id_columns=list(hash_cols))
 
 # %% ../nbs/01_core.ipynb #3a08e489
 @patch

@@ -264,8 +264,13 @@ def build_graph(db,                  # Database with a chunk store
                 min_n=2,             # min co-occurrence count
                 min_npmi=0.15,       # min normalized PMI
                 max_df=0.4,          # drop entities present in >max_df of windows
-                max_degree=48):      # max cooc edges kept per node
-    'Extract entities + mentions + edges (exact for code, PMI co-occurrence for prose) from chunks.'
+                max_degree=48,       # max cooc edges kept per node
+                hash_cols=('content',)):  # the store's id columns — a `add_doc` store is ('content','doc_id')
+    '''Extract entities + mentions + edges (exact for code, PMI co-occurrence for prose) from chunks.
+
+    `hash_cols` has to match how the store computes its row ids, or every mention points at a
+    chunk that is not there. Flat stores hash content alone; `db.add_doc` stores hash
+    `(content, doc_id)`.'''
     g = db.get_graph(store, prefix)
     ents, mens, edges, wins = {}, {}, {}, []
     def ent(name, kind):
@@ -288,7 +293,7 @@ def build_graph(db,                  # Database with a chunk store
     for c in L(chunks):
         txt = c.get('content')
         if not (txt and txt.strip()): continue
-        cid = _slug(txt)
+        cid = _slug(txt, {k: c.get(k) for k in hash_cols if k != 'content'})
         if code and _is_code(c):
             dname, calls, imps = code_entities(c)
             did = ent(dname, 'symbol') if dname else None
@@ -320,7 +325,10 @@ def build_graph(db,                  # Database with a chunk store
     return dict(entities=len(rows), mentions=len(mens), edges=len(edges), windows=len(wins))
 
 # %% ../nbs/05_graph.ipynb #resolve
-_EXACT_KINDS = ('symbol', 'module', 'topic')   # names that are already canonical — never merge these
+# Kinds whose names are already canonical — never merge these. `verse`, `chandas` and
+# `pratika` come from `litesearch.sanskrit`: a citation and a metre name are identifiers, and
+# `ViP_1,1.1` / `ViP_1,1.10` are two verses that every string similarity says are one.
+_EXACT_KINDS = ('symbol', 'module', 'topic', 'verse', 'chandas', 'pratika')
 
 def _uf_find(par, x):
     while par[x] != x: par[x] = par[par[x]]; x = par[x]
