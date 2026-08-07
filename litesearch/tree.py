@@ -93,14 +93,32 @@ def _md_stats(pages):
             if (m := _md_head.match(ln)): n += 1; lvls.add(len(m.group(1)))
     return n, len(lvls)
 
+def _cite_stats(pages):
+    'How many blocks carry a verse citation, and the deepest hierarchy any of them names.'
+    from litesearch.sanskrit import CITE_RE, cite_parts
+    n, depth = 0, 0
+    for _, txt in pages:
+        if (m := CITE_RE.search(txt or '')):
+            n += 1
+            depth = max(depth, len(cite_parts(f'{m.group(1)}_{m.group(2)}')[1]))
+    return n, depth
+
 def detect_mode(pages) -> str:
-    'Which structural signal this document carries: `markdown`, `chapter` or `window`.'
+    """Which structural signal this document carries: `markdown`, `verse`, `chapter` or `window`.
+
+    `verse` is tried before the markdown/chapter pair because a Sanskrit source satisfies neither
+    of them and would fall all the way through to `window` — measured on GRETIL's Manusmṛti, all
+    twelve adhyāyas and 2,685 verses collapsing into a single `Pages 1–1` node. Its own signal is
+    the citation marker, which is unambiguous and carries the hierarchy for free."""
     md, depths = _md_stats(pages)
     ch = sum(1 for _, txt in pages for ln, code in _md_lines(txt) if not code and _chapter.match(ln))
     npg = max(1, len(pages))
+    nc, cdepth = _cite_stats(pages)
+    # a citation on a real share of the blocks, naming more than a flat sequence
+    if nc >= 3 and nc/npg > 0.2 and cdepth >= 2 and nc > md: return 'verse'
     if md/npg > MAX_HEAD_DENSITY and depths < 2: return 'chapter' if ch >= 3 else 'window'
     if md >= (2 if len(pages) <= 3 else max(3, npg // 25)): return 'markdown'
-    return 'chapter' if ch >= 3 else 'window' 
+    return 'chapter' if ch >= 3 else 'window'
 
 # %% ../nbs/06_tree.ipynb #e00e8925
 def build_tree(pages,                  # [(page_no, text)] — markdown or plain text
@@ -108,12 +126,13 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
                summarize=None,         # callable(text)->str for node summaries (LLM goes here)
                window:int=8,           # pages per node in `window` mode
                min_level:int=1,        # floor for heading depth
-               max_levels:int=4        # deepest node level kept
+               max_levels:int=4,       # deepest node level kept
+               mode:str=None           # force a structural mode instead of detecting one
 ) -> list:
     'A flat list of `TreeNode` for a document (index = seq, root = 0).'
     pages = [(p, t or '') for p, t in pages]
     summarize = summarize or summarize_extractive
-    mode, nodes = detect_mode(pages), []
+    mode, nodes = mode or detect_mode(pages), []
     slev = struct_levels(pages, max_levels) if mode == 'chapter' else {}
     def fresh(t, lvl, parent, page):
         nd = TreeNode(seq=len(nodes), title=_clean_title(t) or f'Section {len(nodes)}',
@@ -135,7 +154,37 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         cur.page_end = max(cur.page_end, page)
         buf.clear()
 
-    if mode == 'window':
+    if mode == 'verse':
+        # `Mn_1.1` is both the verse's id and its address: everything but the last component names
+        # the division it sits in, so the tree comes out of the citations with no markup at all.
+        from litesearch.sanskrit import CITE_RE, cite_parts
+        last = []
+        for p, txt in pages:
+            # A heading is the other way a Sanskrit source names its divisions: GRETIL addresses
+            # verses by citation, but a stotra names sections (`## dhyanam`) and carries no
+            # citation at all. Verse mode has to read both or one of them gets a flat tree.
+            if (h := first(ln for ln, code in _md_lines(txt) if not code and _md_head.match(ln))):
+                m = _md_head.match(h)
+                flush(cur_page)
+                open_node(m.group(2), max(min_level, len(m.group(1))), p)
+                cur_page, last = p, []
+                if (rest := txt.replace(h, '', 1).strip()): buf.append(rest)
+                flush(p); cur_page = p
+                continue
+            sig, parts = '', []
+            if (m := CITE_RE.search(txt)):
+                sig, nums = cite_parts(f'{m.group(1)}_{m.group(2)}')
+                parts = nums[:-1][:max_levels]           # drop the verse itself; keep its address
+            for lvl in range(1, len(parts)+1):
+                if last[:lvl] != parts[:lvl]:
+                    flush(cur_page)
+                    open_node(f"{sig} {'.'.join(parts[:lvl])}".strip(), lvl, p)
+                    cur_page = p
+            last = parts
+            if txt.strip(): buf.append(txt)
+            flush(p)
+            cur_page = p
+    elif mode == 'window':
         for i in range(0, len(pages), window):
             grp = pages[i:i+window]
             lead = next((l.strip() for _, t in grp for l in t.splitlines() if l.strip()), '')
@@ -242,7 +291,8 @@ def add_doc(self:Database,
             summarize=None,         # callable(text)->str for node summaries
             with_heading:bool=True, # embed each chunk together with its heading path
             meta:dict=None,         # arbitrary json metadata for the doc row
-            force:bool=False        # re-ingest a document already present
+            force:bool=False,       # re-ingest a document already present
+            mode:str=None           # force a build_tree structural mode instead of detecting one
 ) -> dict:
     '''Ingest one document: build its tree, chunk it per node, embed and store.
 
@@ -256,7 +306,7 @@ def add_doc(self:Database,
     if first(g.docs(where=f'id={did!r}')):
         if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
         self.delete_doc(did, store, prefix)
-    tree = build_tree(pages, title=title, summarize=summarize)
+    tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
     g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
                        pages=(max(p for p, _ in pages)+1 if pages else 0),
                        meta=_json.dumps(meta or {})), replace=True)
@@ -286,7 +336,7 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     if self._ann_meta(store): g.store.rebuild_index()
 
 # %% ../nbs/06_tree.ipynb #49bd0c55
-DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb'
+DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb,.xml,.tei,.htm,.html,.conllu'
 
 @patch
 def assets(self:Database, name:str=None) -> Path:
@@ -306,9 +356,20 @@ def add_file(self:Database,
              out_path=None,        # dir for extracted PDF images; defaults to `assets/<stem>` beside the db
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
-    'Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.'
+    """Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.
+
+    A registered `Profile` wins over the extension table: it is the only thing that can tell a TEI
+    edition from any other `.xml`, and it carries the chunker and tree mode that format needs."""
+    from litesearch.data import profile_for
     p = Path(path)
     ttl = title or p.stem.replace('_',' ').replace('-',' ').strip()
+    if (prof := profile_for(p)) is not None and prof.parse:
+        pages, pmeta = prof.parse(p)
+        if prof.chunker: kw.setdefault('chunker', prof.chunker())
+        if prof.mode: kw.setdefault('mode', prof.mode)
+        return self.add_doc(pages, title or pmeta.get('title') or ttl, source=str(p),
+                            kind=kind or prof.kind or prof.name, store=store, prefix=prefix,
+                            meta=kw.pop('meta', None) or pmeta, **kw)
     if p.suffix.lower() == '.pdf':
         from litesearch.data import pdf_parse
         pages = list(enumerate(pdf_parse(str(p), out_path=out_path or self.assets(p.stem))))

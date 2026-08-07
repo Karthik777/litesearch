@@ -6,4 +6,5 @@ from .data import *
 from .utils import *
 from .graph import *
 from .tree import *
+from .sanskrit import *
 from pdf_oxide import *

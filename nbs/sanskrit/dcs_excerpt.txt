@@ -1,0 +1,60 @@
+# id = R.1.1.1
+tapaH	tapas	pos=n,comp=y
+svADyAya	svADyAya	pos=n,comp=y
+niratam	niram	pos=va,g=m,c=2,n=s,f=part
+tapasvI	tapasvin	pos=n,g=m,c=1,n=s
+vAc	vAc	pos=n,comp=y
+vidAm	vid	pos=a,g=m,c=6,n=p
+varam	vara	pos=a,g=m,c=2,n=s
+nAradam	nArada	pos=n,g=m,c=2,n=s
+paripapracCa	paripracC	pos=v,p=3,n=s,l=lit
+vAlmIkiH	vAlmIki	pos=n,g=m,c=1,n=s
+muni	muni	pos=n,comp=y
+puMgavam	puMgava	pos=n,g=m,c=2,n=s
+
+# id = R.1.1.2
+ko	ka	pos=n,g=m,c=1,n=s
+nv	nu	pos=i
+asmin	idam	pos=n,g=m,c=7,n=s
+sAmpratam	sAMpratam	pos=i
+loke	loka	pos=n,g=m,c=7,n=s
+guRavAn	guRavat	pos=a,g=m,c=1,n=s
+kaH	ka	pos=n,g=m,c=1,n=s
+ca	ca	pos=i
+vIryavAn	vIryavat	pos=a,g=m,c=1,n=s
+Darma	Darma	pos=n,comp=y
+jYaH	jYa	pos=a,g=m,c=1,n=s
+ca	ca	pos=i
+kftajYaH	kftajYa	pos=a,g=m,c=1,n=s
+ca	ca	pos=i
+satya	satya	pos=a,comp=y
+vAkyaH	vAkya	pos=n,g=m,c=1,n=s
+dfQa	dfQa	pos=a,comp=y
+vrataH	vrata	pos=n,g=m,c=1,n=s
+
+# id = R.1.1.3
+cAritreRa	cAritra	pos=n,g=n,c=3,n=s
+ca	ca	pos=i
+ko	ka	pos=n,g=m,c=1,n=s
+yuktaH	yuj	pos=va,g=m,c=1,n=s,f=part
+sarva	sarva	pos=n,comp=y
+BUtezu	BUta	pos=n,g=n,c=7,n=p
+ko	ka	pos=n,g=m,c=1,n=s
+hitaH	hita	pos=a,g=m,c=1,n=s
+vidvAn	vidvas	pos=a,g=m,c=1,n=s
+kaH	ka	pos=n,g=m,c=1,n=s
+kaH	ka	pos=n,g=m,c=1,n=s
+samarTaH	samarTa	pos=a,g=m,c=1,n=s
+ca	ca	pos=i
+kaH	ka	pos=n,g=m,c=1,n=s
+ca	ca	pos=i
+eka	eka	pos=n,comp=y
+priya	priya	pos=a,comp=y
+darSanaH	darSana	pos=n,g=m,c=1,n=s
+
+# id = R.1.1.4
+kasya	ka	pos=n,g=m,c=6,n=s
+biByati	BI	pos=v,p=3,n=p,l=lat
+devAH	deva	pos=n,g=m,c=1,n=p
+ca	ca	pos=i
+jAta	jan	pos=va,comp=y,f=part

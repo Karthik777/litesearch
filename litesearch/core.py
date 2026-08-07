@@ -27,7 +27,24 @@ def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN c
 # `porter unicode61` (the FTS5 default) splits on `_` and then stems the pieces, so `fts_search`
 # indexes as `ft`+`search` and a search for it matches almost anything. apsw's UAX#29 tokenizer
 # treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
-_FTS_TOKENIZE = 'porter simplify casefold 1 unicodewords'
+# `sanskrit` sits on the outside and only *adds* colocated tokens, so the chain below still stems
+# English and still keeps `fts_search` whole — measured identical on both across `running`, `cat`,
+# `fts_search` and `quickli`, while `srimata` against `श्रीमाता` goes 0 -> 2 hits. Additive, so it
+# is the default rather than something a Sanskrit corpus has to opt into: a store's tokenizer is
+# fixed when its table is created, and the first document ingested should not decide it.
+_FTS_TOKENIZE = 'sanskrit porter simplify casefold 1 unicodewords'
+
+def _tokenizers_ok(conn, chain:str=None) -> bool:
+    """Whether `chain` actually resolves on this connection.
+
+    The whole chain, not its names one at a time: `simplify` is a *wrapping* tokenizer and raises
+    "Expected additional tokenizer and arguments" when asked for on its own, so probing name by
+    name reports failure for a chain that works perfectly."""
+    parts = (chain or _FTS_TOKENIZE).split()
+    try:
+        conn.fts5_tokenizer(parts[0], parts[1:])
+        return True
+    except Exception: return False
 
 def _slug(content):
     "Content hash matching a hash-id store's `id` (hash over the content column)."
@@ -386,7 +403,16 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
         _db = Database(pth_or_uri, **kw)
         if busy_timeout: _db.conn.set_busy_timeout(busy_timeout)   # persists past the window
         if wal: _db.enable_wal()
-    _db._fts_tokenizers = register_tokenizers(_db.conn, map_tokenizers)
+    # `register_tokenizers` returns None on success, so the old `_fts_tokenizers = register(...)`
+    # was always falsy and `get_store` silently fell back to bare `porter` — the UAX#29 chain has
+    # never actually been reaching a store. Record whether the names really resolve instead.
+    register_tokenizers(_db.conn, map_tokenizers)
+    # Registered on every connection for the same reason the apsw chain is: FTS5 resolves a
+    # tokenizer by name at *query* time, so a connection that skipped this would raise `error in
+    # tokenizer constructor` on any search against a store built with it.
+    from litesearch.sanskrit import register_sanskrit
+    register_sanskrit(_db)
+    _db._fts_tokenizers = _tokenizers_ok(_db.conn)
     if not sem_search: return _db
     from usearch import sqlite_path
     _db.conn.enableloadextension(True)
