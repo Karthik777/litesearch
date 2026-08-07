@@ -99,10 +99,17 @@ def sanskrit_tokenizer(con, args):
     same row. Nothing transliterates at query time: both scripts fold to ASCII through fixed
     tables, which is what keeps this cheap enough to sit in the index path.
 
-    It wraps rather than replaces so it can sit on the *outside* of the existing chain —
-    `sanskrit porter simplify casefold 1 unicodewords` still stems English and still keeps
+    It wraps rather than replaces so it can sit *inside* the existing chain —
+    `porter simplify casefold 1 sanskrit unicodewords` still stems English and still keeps
     identifiers whole, and only adds tokens on top. Being purely additive is what makes it safe as
-    a default for every store rather than something a Sanskrit corpus has to opt into."""
+    a default for every store rather than something a Sanskrit corpus has to opt into.
+
+    **Inside, not outside, and the difference is a silent loss of hits.** Wrapping the whole chain
+    computes the fold on porter's output, and porter never touches Devanagari: `धर्मक्षेत्रे` is
+    then indexed under the unstemmed `dharmaksetre` while the ASCII query for the same word is
+    stemmed to `dharmaksetr`, and the two never meet. Emitted from inside, the fold is just another
+    token porter goes on to stem, so both sides land on the same string. Sanskrit case endings make
+    this routine rather than rare — the locative `-e` alone accounts for most of it."""
     import apsw.fts5
     rest = [a for a in args if '=' not in a]
     opts = dict(a.split('=', 1) for a in args if '=' in a)

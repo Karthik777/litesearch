@@ -27,12 +27,20 @@ def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN c
 # `porter unicode61` (the FTS5 default) splits on `_` and then stems the pieces, so `fts_search`
 # indexes as `ft`+`search` and a search for it matches almost anything. apsw's UAX#29 tokenizer
 # treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
-# `sanskrit` sits on the outside and only *adds* colocated tokens, so the chain below still stems
-# English and still keeps `fts_search` whole — measured identical on both across `running`, `cat`,
-# `fts_search` and `quickli`, while `srimata` against `श्रीमाता` goes 0 -> 2 hits. Additive, so it
-# is the default rather than something a Sanskrit corpus has to opt into: a store's tokenizer is
-# fixed when its table is created, and the first document ingested should not decide it.
-_FTS_TOKENIZE = 'sanskrit porter simplify casefold 1 unicodewords'
+# `sanskrit` only *adds* colocated tokens, so the chain below still stems English and still keeps
+# `fts_search` whole — measured identical across `running`, `cat`, `fts_search` and `quickli`,
+# while `dharmaksetre` against `धर्मक्षेत्रे` goes 0 -> 1 hits. Additive, so it is the default
+# rather than something a Sanskrit corpus has to opt into: a store's tokenizer is fixed when its
+# table is created, and the first document ingested should not decide it.
+#
+# `sanskrit` sits *inside* porter, and the position is load-bearing rather than cosmetic. Outside,
+# the fold is computed on porter's *output*: Devanagari passes porter untouched, so `धर्मक्षेत्रे`
+# is indexed under the unstemmed fold `dharmaksetre`, while the same word typed as an ASCII query
+# is stemmed to `dharmaksetr` and matches nothing. Emitting the fold before porter puts the indexed
+# token and the query token through the same stemmer. The locative `-e` is one of the commonest
+# endings in Sanskrit, so the failure is systematic and not a corner case — measured 3 of 14
+# ordinary Devanagari words unreachable by their own ASCII spelling.
+_FTS_TOKENIZE = 'porter simplify casefold 1 sanskrit unicodewords'
 
 def _tokenizers_ok(conn, chain:str=None) -> bool:
     """Whether `chain` actually resolves on this connection.
