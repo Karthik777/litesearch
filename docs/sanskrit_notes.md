@@ -1,9 +1,33 @@
 # Sanskrit: design notes
 
-Working notes on the two decisions in `litesearch.sanskrit` that are easy to get wrong, written
-after comparing this implementation against an independent one (branch
+Working notes on the decisions in `litesearch.sanskrit` that are easy to get wrong, written after
+comparing this implementation against an independent one (branch
 `claude/sanskrit-verse-chunking-graph-tuav90`) that solved the same problem differently. Both
 approaches work; they fail differently, and the differences are the useful part.
+
+## 0. Where the facets live, and why that is the whole integration story
+
+Everything this module computes about a chunk — its metre, its gaṇa signature, the cadence variant
+of its śloka — goes into the store's existing `metadata` column as JSON. Nothing gets a column of
+its own and no schema changes.
+
+That is not a shortcut, it is the integration. `get_store` indexes `metadata` for FTS *beside*
+`content`, so a facet written there is (a) matched by ordinary `db.search`, (b) filterable by any
+`where` clause, and (c) visible to every downstream caller without that caller learning anything
+about Sanskrit. [vishalakshi](https://github.com/vedicreader/vishalakshi) threads `where` straight
+through `find`, `sections` and `context` down to `doc_search`, so
+`v.find(q, where="metadata like '%mandākrāntā%'")` works today against a vault built with this
+module — no vishalakshi change, no new API, no migration.
+
+Two small choices make the facets behave as *search terms* rather than as a blob:
+
+- **Metre names are stored in Devanagari-friendly IAST** (`anuṣṭubh`, `śārdūlavikrīḍita`). The
+  folding tokenizer covers the metadata column too, so `anustubh` typed on an ASCII keyboard
+  reaches them — the same mechanism that makes the text itself scheme-agnostic.
+- **The gaṇa signature is joined with `_`**, not spaces or hyphens: `ma_bha_na_ta_ta_ga_ga`. The
+  tokenizer chain treats `_` as a word joiner (it is why `fts_search` survives as one token), so
+  the signature stays a single searchable term instead of seven meaningless ones. *Find every verse
+  shaped like this one* is then a query, not a scan.
 
 ## 1. Making FTS scheme-agnostic: index-time fold vs. stored fold
 
@@ -69,22 +93,37 @@ Two things about how this survived review are worth remembering:
   the indexed `dharmaksetre`. The bug is only visible on an exact, unwildcarded query — which is
   why the test now asserts on `"dharmaksetre"` in quotes.
 
-## 3. Scansion, if it is ever added here
+## 3. Scansion: the four things that decide whether a verse scans
 
-The other branch implements classical scansion — syllable weights, the eight gaṇas, 20 metres
-derived from their recipes — and uses metre as its verse/prose classifier. It is the most
-interesting thing in that branch and it mostly works: śārdūlavikrīḍita, mandākrāntā and anuṣṭubh
-are all identified correctly from either script. Two defects were found in it, and anyone
-implementing scansion here should expect both, because they are properties of the problem:
+Scansion is now implemented here — `syllables`, `scan`, `ganas`, `detect_meter`, and `verse_meta`,
+which puts metre and gaṇa signature into every chunk's `metadata`. The comparison branch got there
+first and its catalogue was right; four separate details decide whether a real verse actually
+scans, and each of them silently costs one syllable, which is enough to make the pāda the wrong
+length and the verse match nothing.
 
-- **Do not strip whitespace before syllabifying.** Matching vowels longest-first across a word
-  boundary fuses `a` + `i` into the diphthong `ai`: `jīva iti` scans as `jī-vai-ti`, three
-  syllables instead of four. One lost syllable makes the pāda the wrong length and the verse
-  fails to match any metre. Word boundaries have to survive into the syllabifier.
-- **A syllable count is not a metre.** Any 32-syllable unit was labelled `anuṣṭubh` with no check
-  on the cadence — 32 repetitions of the syllable `ka` classify as anuṣṭubh. Since the classifier
-  then feeds a verse/prose decision, unmetred prose of the right length is filed as verse. The
-  count is a necessary condition, not a sufficient one.
+- **Word boundaries must survive into the syllabifier.** Matching vowels longest-first over the
+  whitespace-stripped string fuses `a` + `i` into the diphthong `ai`: `jīva iti` scans as
+  `jī-vai-ti`, three syllables instead of four. Consonant clusters are the opposite case and *do*
+  cross a boundary — `tat sarvam` closes its first syllable on `t`+`s` — so the fence goes around
+  vowel matching only.
+- **A trailing consonant at the end of the text closes its syllable.** Two consonants are needed
+  mid-text because a single one is the onset of the next syllable; at the end there is no next
+  syllable, so one is enough. This is what makes `gam` guru — and it is how the gaṇa table checks
+  out against the `yamātārājabhānasalagam` mnemonic, which is the test that caught it here.
+- **A syllable count is not a metre.** Labelling any 32-syllable unit `anuṣṭubh` means 32
+  repetitions of `ka` are an anuṣṭubh, and so is prose of the right length. The even pādas carry
+  the strict cadence — 5 laghu, 6 guru, 7 laghu — and checking it is what makes the name mean
+  something. The odd pādas take pathyā or one of four licensed vipulā shapes, which is worth
+  reporting rather than collapsing.
+- **The citation does not scan.** `|| Manu_1.1 ||` contributes `ma` + `nu`, so every verse in a
+  GRETIL file comes out 34 syllables instead of 32 and matches nothing at all. On the Manu fixture
+  this was the difference between 0 verses identified and all of them. Glosses and headings go the
+  same way.
+
+One design choice worth stating: metre is **not** used as a verse/prose classifier here. The other
+branch does, and it is a tempting reuse, but the failure mode is that a passage of bhāṣya gets
+filed as śloka on the strength of its length. `detect_meter` returning `name=None` is a statement
+about the catalogue, not about whether the text is verse.
 
 ## 4. Format coverage is a separate axis from linguistic depth
 

@@ -233,7 +233,12 @@ class Profile:
     own implies. Getting Sanskrit right needed a reader that knows `<lg xml:id=…>` is a verse, a
     tree mode that knows a citation is a chapter boundary, *and* a chunker that cuts on daṇḍas —
     three different seams. A profile is the one object that names all three, so adding the next
-    format is a registration rather than another branch in `add_file`."""
+    format is a registration rather than another branch in `add_file`.
+
+    `meta` is the fourth: what a format knows about a chunk that no generic pipeline could compute.
+    Sanskrit fills it with metre and gaṇa signature, which land in the `metadata` column
+    `get_store` already indexes for FTS — so a facet nothing else in litesearch understands becomes
+    searchable and filterable with no schema change."""
     name:str
     exts:str = ''            # comma-separated extensions this profile claims
     parse:callable = None    # path -> (pages, meta)
@@ -241,6 +246,7 @@ class Profile:
     mode:str = None          # build_tree structural mode, bypassing detect_mode
     detect:callable = None   # (text) -> bool; disambiguates a shared extension like .xml or .txt
     kind:str = None          # doc kind recorded on the doc row, so it can be filtered on
+    meta:callable = None     # (chunk text) -> dict of facets, stored as the chunk's `metadata` JSON
     def claims(self, suffix:str) -> bool:
         return not self.exts or suffix.lower() in {f".{e.strip().lstrip('.')}".lower()
                                                    for e in self.exts.split(',') if e.strip()}

@@ -258,12 +258,18 @@ def get_tree(self:Database,
 # %% ../nbs/06_tree.ipynb #303b401c
 MIN_CHUNK = 40
 
-def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK):
+def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=None):
     """Chunk every node segment, tagging each chunk with its node, page and heading path.
 
     A chunk under `min_chunk` is *merged into its predecessor*, never dropped. Dropping is the
     tempting reading of a minimum size and it is wrong here: `read()` assembles a section out of
-    its chunks, so a discarded chunk is text that has silently left the corpus."""
+    its chunks, so a discarded chunk is text that has silently left the corpus.
+
+    `meta_fn(text) -> dict` annotates each chunk with facets only its format knows — a `Profile`
+    supplies it, and `litesearch.sanskrit` uses it for metre. It runs **after** the short chunks
+    have been merged, so a chunk's metadata always describes the text it actually ended up holding
+    rather than the fragment it started as; annotating first and merging after is the version of
+    this that quietly files a verse under the metre of its neighbour."""
     out = L()
     for nd in tree:
         head, nid = heading_path(tree, nd, title), f'{did}#{nd.seq}'
@@ -276,6 +282,11 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK):
                     continue
                 prev = dict(content=c, doc_id=did, node_id=nid, page=page, heading=head)
                 out.append(prev)
+    if meta_fn:
+        import json as _json
+        # written on every chunk, including as `{}` — heterogeneous keys across rows are what
+        # `insert_all` cannot take, and a prose chunk having no facets is not a reason to omit it
+        for c in out: c['metadata'] = _json.dumps(meta_fn(c['content']) or {}, ensure_ascii=False)
     return out
 
 @patch
@@ -292,7 +303,8 @@ def add_doc(self:Database,
             with_heading:bool=True, # embed each chunk together with its heading path
             meta:dict=None,         # arbitrary json metadata for the doc row
             force:bool=False,       # re-ingest a document already present
-            mode:str=None           # force a build_tree structural mode instead of detecting one
+            mode:str=None,          # force a build_tree structural mode instead of detecting one
+            meta_fn=None            # (chunk text) -> dict of facets stored as the chunk's `metadata`
 ) -> dict:
     '''Ingest one document: build its tree, chunk it per node, embed and store.
 
@@ -310,7 +322,7 @@ def add_doc(self:Database,
     g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
                        pages=(max(p for p, _ in pages)+1 if pages else 0),
                        meta=_json.dumps(meta or {})), replace=True)
-    chunks = _node_chunks(tree, title, did, chunker)
+    chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
     counts = {}
     for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
     g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
@@ -354,19 +366,26 @@ def add_file(self:Database,
              prefix:str=None,
              kind:str=None,        # overrides the kind inferred from the extension
              out_path=None,        # dir for extracted PDF images; defaults to `assets/<stem>` beside the db
+             profile:str=None,     # force a registered Profile by name instead of detecting one
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
     """Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.
 
     A registered `Profile` wins over the extension table: it is the only thing that can tell a TEI
-    edition from any other `.xml`, and it carries the chunker and tree mode that format needs."""
+    edition from any other `.xml`, and it carries the chunker, tree mode and per-chunk facets that
+    format needs.
+
+    `profile=` names one directly, which is the only way to reach a profile that cannot be
+    detected: `sanskrit_prose` shares every signal with `sanskrit_verse` and differs only in its
+    chunk budget, so nothing but the caller can tell them apart."""
     from litesearch.data import profile_for
     p = Path(path)
     ttl = title or p.stem.replace('_',' ').replace('-',' ').strip()
-    if (prof := profile_for(p)) is not None and prof.parse:
+    if (prof := profile_for(p, name=profile)) is not None and prof.parse:
         pages, pmeta = prof.parse(p)
         if prof.chunker: kw.setdefault('chunker', prof.chunker())
         if prof.mode: kw.setdefault('mode', prof.mode)
+        if prof.meta: kw.setdefault('meta_fn', prof.meta)
         return self.add_doc(pages, title or pmeta.get('title') or ttl, source=str(p),
                             kind=kind or prof.kind or prof.name, store=store, prefix=prefix,
                             meta=kw.pop('meta', None) or pmeta, **kw)
