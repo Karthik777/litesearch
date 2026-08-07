@@ -432,7 +432,7 @@ def search(self: Database,  # database connection
            quote:bool=True,  # quote FTS query to disable special chars (ignored when fts_pre=True)
            fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
-           parallel=True,
+           parallel:bool=False, # not used. kept for backward compatability. to be removed in later releases
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
            rerank_model:str=None  # flashrank model name (None -> fast default)
            ):
@@ -446,11 +446,10 @@ def search(self: Database,  # database connection
     use_ann = ann and not where
     fts_q, fts_quote = q, quote
     if fts_pre and (p := pre(q)): fts_q, fts_quote = p, False
-    exec_ls = [lambda: tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote),
-          lambda: tbl.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else tbl.vec_search(
-	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off)]
-    fn = lambda f: f()
-    fts, vec = fcp(fn, exec_ls, threadpool=True) if parallel else L(exec_ls).map(fn)
+    vec_leg = lambda t: (lambda: t.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else t.vec_search(
+	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off))
+    exec_ls = [lambda: tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote), vec_leg(tbl)]
+    fts, vec = L(exec_ls).map(lambda g: g())
     if rrf:
         hits = rrf_merge(fts, vec, rrf_k, lim, id_key)[ifnone(off, 0):]
         if reranking: hits = rerank_hits(q, hits, rerank_model, limit)

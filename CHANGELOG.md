@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.14
+remove parallel search in sqlite. increases performance
+
 ## 0.1.13
 pdf assets stored relative to the database and pdf
 
