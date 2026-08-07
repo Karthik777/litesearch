@@ -166,6 +166,24 @@ def _yake_terms(text, topk=12):
     try: return L(KeywordExtractor(n=3, top=topk).extract_keywords(text)).map(lambda kv: kv[0])
     except Exception: return L()
 
+def _wins_from_doc(doc, noun_chunks=True, keep=_KEEP_ENTS):
+    'Sentence windows from a spaCy doc; shared by single-text and batched paths.'
+    wins = []
+    for sent in doc.sents:
+        out, seen = L(), set()
+        def add(s, k):
+            n = _norm(s)
+            if n and n not in seen: seen.add(n)
+            out.append((s, k))
+        for e in sent.ents:
+            if e.label_ in keep: add(e.text, e.label_.lower())
+        if noun_chunks:
+            for nc in sent.noun_chunks:
+                if all(w.is_stop or w.is_punct or w.pos_ == 'PRON' for w in nc): continue
+                add(nc.text, 'term')
+        if out: wins.append(out)
+    return L(wins)
+
 def prose_windows(text,                 # chunk text
                   nlp=None,             # spaCy pipeline from spacy_pipe(); None -> yake fallback
                   noun_chunks=True,     # use doc.noun_chunks (the main recall driver on technical prose)
@@ -174,31 +192,14 @@ def prose_windows(text,                 # chunk text
     '''Entity surfaces grouped into co-occurrence windows — one per sentence when spaCy is available.
     Sentence windows are what make PMI meaningful: page-sized chunks turn every entity pair into a
     clique and no amount of pruning recovers from that.'''
-    if nlp is None:
-        # one yake pass for the chunk vocabulary, then place each phrase in the sentences it
-        # occurs in — so the no-spaCy path gets real windows instead of one per chunk
-        terms = _yake_terms(text, topk)
-        if not terms: return L()
-        wins = []
-        for s in _sentences(text):
-            sl = s.lower()
-            hit = L([(t, 'keyphrase') for t in terms if t.lower() in sl])
-            if hit: wins.append(hit)
-        return L(wins)
-    doc = nlp(text)
+    if nlp: return _wins_from_doc(nlp(text), noun_chunks=noun_chunks, keep=keep)
+    terms = _yake_terms(text, topk)
+    if not terms: return L()
     wins = []
-    for sent in doc.sents:
-        out, seen = L(), set()
-        def add(s, k):
-            n = _norm(s)
-            if n and n not in seen: seen.add(n); out.append((s, k))
-        for e in sent.ents:
-            if e.label_ in keep: add(e.text, e.label_.lower())
-        if noun_chunks:
-            for nc in sent.noun_chunks:
-                if all(w.is_stop or w.is_punct or w.pos_ == 'PRON' for w in nc): continue
-                add(nc.text, 'term')
-        if out: wins.append(out)
+    for s in _sentences(text):
+        sl = s.lower()
+        hit = L([(t, 'keyphrase') for t in terms if t.lower() in sl])
+        if hit: wins.append(hit)
     return L(wins)
 
 def text_entities(text, nlp=None, **kw):
@@ -264,7 +265,8 @@ def build_graph(db,                  # Database with a chunk store
                 min_n=2,             # min co-occurrence count
                 min_npmi=0.15,       # min normalized PMI
                 max_df=0.4,          # drop entities present in >max_df of windows
-                max_degree=48):      # max cooc edges kept per node
+                max_degree=48,       # max cooc edges kept per node
+                spacy_batch_size=64):# batch size for the batched spaCy pass over prose chunks
     'Extract entities + mentions + edges (exact for code, PMI co-occurrence for prose) from chunks.'
     g = db.get_graph(store, prefix)
     ents, mens, edges, wins = {}, {}, {}, []
@@ -285,6 +287,13 @@ def build_graph(db,                  # Database with a chunk store
         e = edges.setdefault((s, d, rel), dict(src=s, dst=d, rel=rel, weight=0.0, n=0))
         e['weight'] += w; e['n'] += 1
 
+    prose_q = []
+    def prose_wins():
+        'Windows per queued prose chunk — batched through nlp.pipe when a pipeline is given.'
+        if nlp is None: return ((cid, prose_windows(txt)) for cid, txt in prose_q)
+        docs = nlp.pipe(L(prose_q).itemgot(1), batch_size=spacy_batch_size)
+        return ((cid, _wins_from_doc(d)) for (cid, _), d in zip(prose_q, docs))
+
     for c in L(chunks):
         txt = c.get('content')
         if not (txt and txt.strip()): continue
@@ -299,13 +308,15 @@ def build_graph(db,                  # Database with a chunk store
             for nm in imps:
                 i = ent(nm, 'module'); men(cid, i, nm); edge(did, i, 'imports'); w.add(i)
             if len(w) > 1: wins.append(w - {None})
-        elif prose:
-            for win in prose_windows(txt, nlp):
-                w = set()
-                for surf, kind in win:
-                    i = ent(surf, kind)
-                    if i: men(cid, i, surf); w.add(i)
-                if len(w) > 1: wins.append(w)
+        elif prose: prose_q.append((cid, txt))
+
+    for cid, wl in prose_wins():
+        for win in wl:
+            w = set()
+            for surf, kind in win:
+                i = ent(surf, kind)
+                if i: men(cid, i, surf); w.add(i)
+            if len(w) > 1: wins.append(w)
 
     rows = list(ents.values())
     if cooc and wins:

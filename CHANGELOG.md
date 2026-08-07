@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.15
+spacy batching 25% speedup
+
 ## 0.1.14
 remove parallel search in sqlite. increases performance
 
