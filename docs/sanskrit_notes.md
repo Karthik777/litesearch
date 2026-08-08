@@ -125,6 +125,37 @@ branch does, and it is a tempting reuse, but the failure mode is that a passage 
 filed as śloka on the strength of its length. `detect_meter` returning `name=None` is a statement
 about the catalogue, not about whether the text is verse.
 
+## 3a. Mātrā metres are a different machine, not a longer table
+
+The āryā family counts **morae** — laghu 1, guru 2 — and fixes only how many, leaving the poet to
+fill them with whatever syllables they like. Four consecutive āryā verses of the Sāṃkhyakārikā run
+32, 35, 41 and 37 syllables, so nothing in the varṇa path can touch them: `per_pada` is meaningless
+and a syllable count identifies nothing.
+
+Three things this changed in the design:
+
+- **The half boundary has to be searched, not read.** The daṇḍa between the halves is not reliably
+  present, and the syllable closing each half is anceps. There are only as many candidate splits as
+  syllables and the gaṇa ladder pins everything else, so trying all of them is cheaper than any
+  cleverness.
+- **A gaṇa boundary must fall between syllables.** This is the constraint that makes it prosody
+  rather than arithmetic on a total — a gaṇa needing half of a guru is not a gaṇa.
+- **Counting is not enough, and it is testable that it is not.** With the two gaṇa constraints (no
+  ja-gaṇa in odd positions; the 6th is ja or four laghus), 5,000 random weight strings of *exactly*
+  57 morae produce **zero** false āryās. Without them a mora total would match a large fraction of
+  ordinary prose.
+
+The facet written to `metadata` differs accordingly. A varṇa metre's gaṇa signature is shared by
+every verse in that metre, so it is a join key worth indexing; a mātrā metre's gaṇa filling is the
+poet's own and close to unique per verse, so what goes in is the mora shape (`30+27`) — the thing
+two texts can actually be compared on.
+
+**Still uncovered:** the vaitālīya family (vaitālīya, aupacchandasika), which counts morae at the
+start of a pāda and syllables at the end. The mora counts are agreed (14/16 for vaitālīya), but the
+sources reachable from this environment disagree on the direction of the closing cadence, and a
+guessed cadence would be worse than a documented gap — it would produce confident wrong labels
+rather than none.
+
 ## 4. Format coverage is a separate axis from linguistic depth
 
 The other branch reads one input shape well — GRETIL plain text, where the citation is printed

@@ -2,11 +2,11 @@
 
 # %% auto #0
 __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'VERSE_TARGET', 'VERSE_MAX', 'GANAS', 'METERS',
-           'strip_vedic', 'deva2ascii', 'detect_script', 'fold_token', 'sanskrit_tokenizer', 'register_sanskrit',
-           'cite_parts', 'verse_spans', 'chunk_verses', 'VerseChunker', 'ProseChunker', 'deva2iast', 'syllables',
-           'scan', 'ganas', 'gana_pattern', 'metrical_text', 'detect_meter', 'verse_units', 'verse_meta',
-           'gretil_parse', 'tei_parse', 'vr_xml_parse', 'dcs_parse', 'is_sanskrit', 'sanskrit_parse',
-           'register_profiles']
+           'MATRA_METERS', 'CATURMATRA', 'strip_vedic', 'deva2ascii', 'detect_script', 'fold_token',
+           'sanskrit_tokenizer', 'register_sanskrit', 'cite_parts', 'verse_spans', 'chunk_verses', 'VerseChunker',
+           'ProseChunker', 'deva2iast', 'syllables', 'scan', 'ganas', 'gana_pattern', 'metrical_text', 'matras',
+           'detect_matra_meter', 'detect_meter', 'verse_units', 'verse_meta', 'gretil_parse', 'tei_parse',
+           'vr_xml_parse', 'dcs_parse', 'is_sanskrit', 'sanskrit_parse', 'register_profiles']
 
 # %% ../nbs/09_sanskrit.ipynb #c05
 import re, unicodedata
@@ -522,35 +522,135 @@ def metrical_text(s:str) -> str:
     GRETIL romanised verse stay."""
     return _NOSCAN.sub(' ', _BARENUM.sub(' ', CITE_RE.sub(' ', s or '')))
 
-def detect_meter(text:str):
-    """The metre of one verse — `AttrDict(name, variant, syllables, per_pada, ganas, scan)` — or None.
+# --- mātrā metres: the āryā family --------------------------------------------------------------
+# A second, older way to build a verse. `METERS` above counts *syllables* in a fixed order of
+# weights; the āryā family counts **morae** — a laghu is one mātrā, a guru is two — and fills a
+# fixed number of them with whatever syllables the poet likes. So a syllable count says nothing
+# here: the four verses of the Sāṃkhyakārikā tested below run 32, 35, 41 and 37 syllables and are
+# all the same metre.
+#
+# The unit is the *caturmātra* gaṇa, four morae, of which there are exactly five shapes. A half is
+# a fixed ladder of them:
+#
+# | half | structure | morae |
+# |---|---|---|
+# | pūrvārdha  | 7 caturmātra gaṇas + one guru          | 30 |
+# | uttarārdha | as above, but the 6th gaṇa is a single laghu | 27 |
+# | āryāgīti   | 8 caturmātra gaṇas                     | 32 |
+#
+# and the five metres of the family are the ways of pairing two halves. Two constraints do the
+# real discriminating work, and without them a mora count alone would match almost anything: the
+# **odd** gaṇas (1st, 3rd, 5th, 7th) may not be the ja-gaṇa `˘ ¯ ˘`, and the **6th** gaṇa must be
+# either that same ja-gaṇa or four laghus. Both are visible in the Sāṃkhyakārikā, where `lgl` turns
+# up constantly in even positions and never once in an odd one.
+_G, _S = 'gana', 'syl'
+_PURVA  = [(_G,4)]*7 + [(_S,0)]                     # 30 morae
+_UTTARA = [(_G,4)]*5 + [(_G,1), (_G,4), (_S,0)]     # 27 morae — the 6th gaṇa shrinks to one laghu
+_GITI8  = [(_G,4)]*8                                # 32 morae
 
-    `name` is `None` when the verse divides into four equal pādas but fits nothing in `METERS`.
-    That is a statement about the catalogue, **not** a claim that the text is or is not verse:
-    nothing here is a verse/prose classifier, which is why the anuṣṭubh branch insists on the
-    cadence instead of accepting any 32 syllables.
+MATRA_METERS = {
+    'āryā':     (_PURVA,  _UTTARA),   # 30 + 27
+    'gīti':     (_PURVA,  _PURVA),    # 30 + 30
+    'upagīti':  (_UTTARA, _UTTARA),   # 27 + 27
+    'udgīti':   (_UTTARA, _PURVA),    # 27 + 30 — the āryā halves the other way round
+    'āryāgīti': (_GITI8,  _GITI8),    # 32 + 32
+}
+CATURMATRA = ('gg', 'gll', 'llg', 'lgl', 'llll')    # the five four-mora gaṇas; `lgl` is the ja-gaṇa
+
+def matras(text:str) -> int:
+    'The morae of a string: one for a laghu, two for a guru.'
+    return sum(2 if h else 1 for _, h in syllables(text))
+
+def _fit_half(w, slots):
+    """Fill one half's ladder of gaṇas from a list of weights; the gaṇa patterns, or None.
+
+    Every boundary has to fall *between* syllables — a gaṇa that would need half of a guru is not a
+    gaṇa — which is what makes this a real constraint rather than arithmetic on a total. `w` arrives
+    with its last syllable already read as guru, since the syllable closing a half is anceps."""
+    i, pats = 0, []
+    for kind, want in slots:
+        if kind == _S:                              # the closing guru: one syllable, whatever it is
+            if i >= len(w): return None
+            pats.append('g'); i += 1; continue
+        s, j, pat = 0, i, ''
+        while j < len(w) and s < want:
+            s += 2 if w[j] else 1
+            pat += 'g' if w[j] else 'l'
+            j += 1
+        if s != want: return None                   # overshot: the boundary is mid-syllable
+        pats.append(pat); i = j
+    return pats if i == len(w) else None
+
+def _half_ok(pats, slots) -> bool:
+    'The two gaṇa constraints that separate an āryā from any other 57 morae.'
+    if any(pats[i] == 'lgl' for i in (0, 2, 4, 6) if i < len(pats)): return False
+    six = pats[5] if len(pats) > 5 else ''
+    return six == 'l' if slots[5][1] == 1 else six in ('lgl', 'llll')
+
+def detect_matra_meter(text:str, weights:list=None):
+    """The āryā-family metre of a verse — `AttrDict(name, halves, ganas, matras)` — or None.
+
+    The split between the halves is *searched* rather than read off the punctuation, because the
+    daṇḍa between them is not reliably present and a half boundary is anceps: the syllable closing
+    each half counts as guru however it is written. There are only as many candidate splits as
+    syllables, and the ladder pins everything else, so this stays cheap."""
+    w = weights if weights is not None else [h for _, h in syllables(metrical_text(text))]
+    for k in range(4, len(w)):
+        a, b = list(w[:k]), list(w[k:])
+        if not b: continue
+        a[-1] = b[-1] = True                        # each half closes on an anceps, read as guru
+        for nm, (s1, s2) in MATRA_METERS.items():
+            p1, p2 = _fit_half(a, s1), _fit_half(b, s2)
+            if p1 and p2 and _half_ok(p1, s1) and _half_ok(p2, s2):
+                m1 = sum(2 if h else 1 for h in a)
+                m2 = sum(2 if h else 1 for h in b)
+                return AttrDict(name=nm, halves=(m1, m2), matras=m1 + m2,
+                                ganas=' '.join(p1) + ' | ' + ' '.join(p2))
+    return None
+
+def detect_meter(text:str):
+    """The metre of one verse — `AttrDict(name, variant, syllables, per_pada, ganas, scan, matras)`.
+
+    Both systems are tried, syllable-counting first. A **varṇa** metre (`METERS`) fixes the weight
+    of every syllable in a pāda; a **mātrā** metre (`MATRA_METERS`, the āryā family) fixes only the
+    morae, so its verses vary in syllable count and `per_pada` is meaningless for them — the
+    Sāṃkhyakārikā runs 32, 35, 41 and 37 syllables in four consecutive āryās.
+
+    `name` is `None` when the verse divides into four equal pādas but fits neither catalogue. That
+    is a statement about the catalogue, **not** a claim that the text is or is not verse: nothing
+    here is a verse/prose classifier, which is why the anuṣṭubh branch insists on the cadence
+    instead of accepting any 32 syllables.
 
     `ganas` reports the signature of the **first pāda** with its final syllable read as guru, since
-    that syllable is anceps and two verses in one metre would otherwise fail to compare equal.
+    that syllable is anceps and two verses in one metre would otherwise fail to compare equal. For a
+    mātrā metre it reports the caturmātra decomposition of both halves instead, which is what there
+    is to compare there — the ladder is the same in every āryā, the filling is the poet's.
 
     The text is passed through `metrical_text` first, so a verse may be handed over exactly as it is
     stored — citation, gloss and all — and still scan as the verse it is."""
     w = [h for _, h in syllables(metrical_text(text))]
     n = len(w)
-    if n < 8 or n % 4: return None
-    q  = n // 4
-    sc = ''.join('g' if h else 'l' for h in w)
-    qs = [w[i*q:(i+1)*q] for i in range(4)]
-    sig = ' '.join(ganas(sc[:q][:-1] + 'g'))
-    mk = lambda nm, var=None: AttrDict(name=nm, variant=var, syllables=n, per_pada=q,
-                                       ganas=sig, scan=sc)
-    for nm, pat in _PAT.items():
-        if len(pat) == q and all(_pada_ok(x, pat) for x in qs): return mk(nm)
-    for nm, (a, b) in _MIXED.items():
-        pa, pb = _PAT[a], _PAT[b]
-        if len(pa) == q and all(_pada_ok(x, pa) or _pada_ok(x, pb) for x in qs): return mk(nm)
-    if q == 8 and (v := _anustubh(qs)) is not None: return mk('anuṣṭubh', v)
-    return mk(None)
+    if n < 8: return None
+    sc, mt = ''.join('g' if h else 'l' for h in w), sum(2 if h else 1 for h in w)
+    if not n % 4:
+        q  = n // 4
+        qs = [w[i*q:(i+1)*q] for i in range(4)]
+        sig = ' '.join(ganas(sc[:q][:-1] + 'g'))
+        mk = lambda nm, var=None: AttrDict(name=nm, variant=var, syllables=n, per_pada=q,
+                                           ganas=sig, scan=sc, matras=mt, halves=None)
+        for nm, pat in _PAT.items():
+            if len(pat) == q and all(_pada_ok(x, pat) for x in qs): return mk(nm)
+        for nm, (a, b) in _MIXED.items():
+            pa, pb = _PAT[a], _PAT[b]
+            if len(pa) == q and all(_pada_ok(x, pa) or _pada_ok(x, pb) for x in qs): return mk(nm)
+        if q == 8 and (v := _anustubh(qs)) is not None: return mk('anuṣṭubh', v)
+    # only now the mora-counting family, so a varṇa metre is never relabelled by it
+    if (a := detect_matra_meter(text, w)):
+        return AttrDict(name=a.name, variant=None, syllables=n, per_pada=None,
+                        ganas=a.ganas, scan=sc, matras=a.matras, halves=a.halves)
+    if n % 4: return None
+    return AttrDict(name=None, variant=None, syllables=n, per_pada=n//4,
+                    ganas=' '.join(ganas(sc[:n//4][:-1] + 'g')), scan=sc, matras=mt, halves=None)
 
 # --- metre as chunk metadata --------------------------------------------------------------------
 def verse_units(text:str) -> L:
@@ -578,8 +678,13 @@ def verse_meta(text:str) -> dict:
     if named:
         out['meter'] = ' '.join(dict.fromkeys(named.attrgot('name')))
         if (vs := [v for v in dict.fromkeys(named.attrgot('variant')) if v]): out['variant'] = ' '.join(vs)
-    if (gs := dict.fromkeys(m.ganas.replace(' ', '_') for m in ms if m.ganas)): out['gana'] = ' '.join(gs)
-    out['pada'] = ' '.join(dict.fromkeys(str(m.per_pada) for m in ms))
+    # A varṇa metre's signature is shared by every verse in it, so it is a join key worth an index.
+    # A mātrā metre's gaṇa filling is the poet's choice and is close to unique per verse, so what
+    # goes in is the mora shape (`30+27`) — the facet two texts can actually be compared on.
+    var, mat = ms.filter(lambda m: m.per_pada), ms.filter(lambda m: m.halves)
+    if (gs := dict.fromkeys(m.ganas.replace(' ', '_') for m in var if m.ganas)): out['gana'] = ' '.join(gs)
+    if (ps := dict.fromkeys(str(m.per_pada) for m in var)): out['pada'] = ' '.join(ps)
+    if (hs := dict.fromkeys('+'.join(map(str, m.halves)) for m in mat)): out['matra'] = ' '.join(hs)
     return out
 
 @patch
