@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fastcore.all import first
+from fastcore.all import L, first
 
 from litesearch.core import database, process_content
 from litesearch.graph import build_graph, hash_embed, resolve_entities, rrf_all
@@ -307,10 +307,179 @@ def bench_chunk(n=2000):
     print(f'  -> reusing one chunker: {a["wall"]/b["wall"]:.2f}x')
     return [a, b]
 
-def profile(fn, top=25):
-    'cProfile a callable and print the hottest cumulative frames.'
+def bench_shard_reads(n=1200, shards=(1,2,4,8,16), queries=60, reps=3, workdir=None, emb=None):
+    '''Read cost of sharding, fanned out to every shard against routed to one.
+
+    The two are opposite answers, which is why "does sharding cost reads" has no single one. A
+    fan-out pays K searches and a fusion, and K searches over N/K rows cost more than one over N
+    because HNSW is O(log N) — there is no size at which splitting the index makes the *total* work
+    smaller. Routing to the shard that holds the profile pays one search over N/K rows, which is
+    strictly less than one over N. So the question is never "how many shards" but "does the query
+    know which shard".'''
+    from concurrent.futures import ThreadPoolExecutor
+    emb = emb or hash_emb_fn()
+    docs = corpus_docs(n, pages_per_doc=3)
+    qs = ['transport of dangerous goods by vessel', 'value added tax on imported services',
+          'protection of workers from carcinogens', 'recovery and resilience facility funding',
+          'inland waterway safety certificate rules']
+    qvs = [np.asarray(hash_embed([q], ndim=256)).ravel().tobytes() for q in qs]
+    hit = lambda db, i: db.search(qs[i%len(qs)], qvs[i%len(qs)], columns=['id','content'], limit=20, ann=True) or []
+    def best(fn):
+        fn(0)                                                    # warm the page cache and the index
+        return min(min_run(fn, queries) for _ in range(reps))
+    def min_run(fn, q):
+        t = time.perf_counter()
+        for i in range(q): fn(i)
+        return (time.perf_counter()-t)/q*1000
+    print(f'\n== read cost of sharding ({n} docs, {queries} queries x{reps}, best-of-{reps}, ms/query) ==')
+    print(f"{'shards':>7} {'chunks/shard':>13} {'fanout':>9} {'fanout+threads':>15} {'routed':>8}")
+    rows = []
+    for k in shards:
+        root = Path(tempfile.mkdtemp(dir=workdir))
+        dbs, per = [], (n + k - 1) // k
+        for s in range(k):
+            db = database(str(root/f'shard{s}.db')); db.get_tree('store', ann=True)
+            for i, pages in enumerate(docs[s*per:(s+1)*per]):
+                db.add_doc(pages, title=f'doc {s*per+i}', source=f'doc{s*per+i}', emb_fn=emb, index=False)
+            db.t.store.rebuild_index(); dbs.append(db)
+        nper = first(dbs[0].q('select count(*) c from store'))['c']
+        ex = ThreadPoolExecutor(max_workers=min(k, 8))           # persistent: a per-query pool is its own cost
+        fan  = lambda i: rrf_all([hit(d, i) for d in dbs], limit=20)
+        fanp = lambda i: rrf_all(list(ex.map(lambda d: hit(d, i), dbs)), limit=20)
+        routed = lambda i: hit(dbs[i % k], i)                    # profile known: one shard, no fusion
+        a, b, c = best(fan), best(fanp), best(routed)
+        print(f'{k:>7} {nper:>13,} {a:>8.2f}ms {b:>14.2f}ms {c:>7.2f}ms')
+        rows.append(dict(shards=k, chunks_per_shard=nper, fanout=a, fanout_threads=b, routed=c))
+        ex.shutdown()
+        for d in dbs: d.conn.close()
+        shutil.rmtree(root, ignore_errors=True)
+    return rows
+
+# ---------------------------------------------------------------- equivalence checks
+# Three of the ingest fixes could in principle have changed results rather than just timings. Each is
+# pinned here against the implementation it replaced, so "identical" is a thing you can re-run.
+
+def _pyparse_pre_0116(p=None, code=None, imports=False, assigns=False):
+    'The `pyparse` that shipped up to 0.1.15, verbatim, as the reference for the rewrite.'
+    import ast
+    from ast import get_source_segment as gs
+    from fastcore.all import L, type2str
+    try: code = Path(p).read_text(encoding='utf-8') if not code else code
+    except UnicodeDecodeError: return L()
+    tree = ast.parse(code)
+    [setattr(c,'parent',n) for n in ast.walk(tree) for c in ast.iter_child_nodes(n)]
+    def meta(xtra=None): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime if p else None, **(xtra or {}))
+    def n2c(n):
+        return dict(content=gs(code, n).strip(), metadata=meta(dict(name=getattr(n,'name',None), lang='.py',
+            type=type2str(n.__class__), lineno=getattr(n,'lineno',None), end_lineno=getattr(n,'end_lineno',None))))
+    def is_mod(n): return isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    def is_assign(n): return assigns and isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value
+    def is_p_mod(n): return getattr(getattr(n,'parent',None),'__class__',None) == ast.Module
+    def ok(n): return is_p_mod(n) and (is_mod(n) or is_assign(n) or (imports and isinstance(n, ast.ImportFrom)))
+    return L(ast.walk(tree)).filter(ok).map(n2c)
+
+def verify_pyparse(dir='litesearch', flags=(dict(), dict(imports=True, assigns=True))):
+    'Chunk-for-chunk comparison of `pyparse` against the pre-0.1.16 implementation, with timings.'
+    from litesearch.data import dir2files, pyparse
+    files = [f for f in dir2files(dir) if f.suffix == '.py']
+    print(f'\n== pyparse equivalence over {len(files)} files in {dir} ==')
+    out = []
+    for kw in flags:
+        with Timer() as t: a = [_pyparse_pre_0116(f, **kw) for f in files]
+        with Timer() as u: b = [pyparse(f, **kw) for f in files]
+        na, nb = sum(map(len, a)), sum(map(len, b))
+        mism = sum(1 for x, y in zip(a, b) for cx, cy in zip(x, y) if cx != cy)
+        print(f'  {str(kw):<34} old {t.wall:7.2f}s  new {u.wall:5.2f}s  {t.wall/u.wall:5.1f}x   '
+              f'chunks {na} vs {nb}   mismatches {mism}')
+        out.append(dict(flags=kw, old=t.wall, new=u.wall, chunks_old=na, chunks_new=nb, mismatches=mism))
+    return out
+
+def _partition_hash(db):
+    '''Fingerprint of *which entities were merged together*, independent of which one won the name.
+
+    Not the id->canon map: `_uf_union` breaks rank ties by the order pairs arrive, and usearch's
+    HNSW probe is both approximate and threaded, so the representative of a group varies run to run
+    — before this change as much as after. The partition is the thing that has to be stable, and it
+    is what a caller actually depends on.'''
+    import hashlib
+    groups = {}
+    for x in db.t.entities(select='id, canon'): groups.setdefault(x['canon'] or x['id'], []).append(x['id'])
+    part = sorted(tuple(sorted(v)) for v in groups.values())
+    return hashlib.sha256(repr(part).encode()).hexdigest()[:12]
+
+def verify_ann_probe(n=2000, k=8, reps=3, workdir=None):
+    '''The batched probe against the per-entity loop it replaced, over one *fixed* index.
+
+    This is the check that actually settles it. `verify_resolve` rebuilds the index per run and so
+    cannot separate "the batching changed the candidates" from "usearch built a different graph":
+    HNSW construction is multithreaded and not reproducible, which moves `resolve_entities` by
+    ~0.1% between full rebuilds — before this change as much as after. Hold the index still and the
+    two probes have to agree exactly, and they do.'''
+    from litesearch.core import _rid
+    from litesearch.graph import _ann_pairs
+    root = Path(tempfile.mkdtemp(dir=workdir))
+    db = database(str(root/'g.db')); db.get_store('store', hash=True, ann=True)
+    st = build_graph(db, corpus_chunks(n, chars=800), emb_fn=hash_emb_fn())
+    ents = L(db.t.entities(select=f'{_rid()}, id, content, freq, embedding, kind'))
+    looped = lambda: {(r['id'], h['id']) for r in ents if r['embedding']
+                      for h in db.t.entities.ann_search(r['embedding'], columns=['id','content'], limit=k)}
+    batched = lambda: {(r['id'], h['id']) for r, h, d in _ann_pairs(db.t.entities, ents, k)}
+    ls, bs = [looped() for _ in range(reps)], [batched() for _ in range(reps)]
+    print(f'\n== ann probe equivalence ({st["entities"]} entities, fixed index, k={k}) ==')
+    print(f'  looped  x{reps}: {len(ls[0])} pairs, stable: {all(x == ls[0] for x in ls)}')
+    print(f'  batched x{reps}: {len(bs[0])} pairs, stable: {all(x == bs[0] for x in bs)}')
+    print(f'  identical: {ls[0] == bs[0]}   symmetric difference: {len(ls[0] ^ bs[0])}')
+    out = dict(entities=st['entities'], pairs=len(ls[0]), identical=ls[0] == bs[0],
+               symmetric_difference=len(ls[0] ^ bs[0]))
+    db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    return out
+
+def verify_resolve(sizes=(500, 1000, 2000), workdir=None, reps=1):
+    '''Merge outcome of `resolve_entities`, as counts plus a partition fingerprint.
+
+    The batched HNSW probe changed how candidates are fetched, not which ones, so both have to come
+    back what the per-entity loop produced. Pass `reps>1` to check stability run to run.'''
+    print('\n== resolve_entities outcome ==')
+    out = []
+    for n in sizes:
+        for rep in range(reps):
+            root = Path(tempfile.mkdtemp(dir=workdir))
+            db = database(str(root/'g.db')); db.get_store('store', hash=True, ann=True)
+            st = build_graph(db, corpus_chunks(n, chars=800), emb_fn=hash_emb_fn())
+            with Timer() as t: r = resolve_entities(db)
+            h = _partition_hash(db)
+            print(f'  n={n:5d} ents={st["entities"]:5d}  {t.wall:6.2f}s  merged={r["merged"]} '
+                  f'ann={r["by_ann"]} lex={r["by_lexical"]} canonical={r["canonical"]}  partition={h}')
+            out.append(dict(n=n, rep=rep, wall=t.wall, partition=h, **r))   # r already carries `entities`
+            db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    return out
+
+def verify_bulk_load(n=8000, workdir=None):
+    'Same rows, same FTS index, same hits — with the triggers live and with `bulk_load`.'
+    print('\n== bulk_load equivalence ==')
+    out = []
+    for defer in (False, True):
+        root = Path(tempfile.mkdtemp(dir=workdir))
+        db = database(str(root/'b.db')); st = db.get_store('store', hash=True)
+        rows = corpus_chunks(n, chars=600)
+        with Timer() as t:
+            if defer:
+                with st.bulk_load(): process_content(st, rows, embed=False)
+            else: process_content(st, rows, embed=False)
+        r = dict(bulk_load=defer, wall=t.wall,
+                 rows=first(db.q('select count(*) c from store'))['c'],
+                 fts_rows=first(db.q('select count(*) c from store_fts'))['c'],
+                 hits=len(st.fts_search('vessel', columns=['id'], limit=5000)))
+        print(f'  bulk_load={str(defer):<5} {r["wall"]:5.2f}s  rows={r["rows"]}  fts_rows={r["fts_rows"]}  '
+              f'hits(vessel)={r["hits"]}')
+        out.append(r)
+        db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    return out
+
+def profile(fn, top=25, sort='tottime'):
+    'cProfile a callable and print the hottest frames.'
     pr = cProfile.Profile(); pr.enable(); fn(); pr.disable()
-    s = io.StringIO(); pstats.Stats(pr, stream=s).sort_stats('cumulative').print_stats(top)
+    s = io.StringIO(); pstats.Stats(pr, stream=s).sort_stats(sort).print_stats(top)
     print(s.getvalue())
 
 # ---------------------------------------------------------------- cli
@@ -319,7 +488,8 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('bench', choices=['docs','defer','shards','store','code','pdf','graph','chunk','all'])
+    p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
+                                     'verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -336,6 +506,9 @@ def main(argv=None):
     if a.bench in ('docs','all'):  run(bench_docs, sizes=a.sizes or (25,50,100), emb=emb, ann=ann, workdir=a.workdir)
     if a.bench in ('defer','all'): run(bench_deferred_index, sizes=a.sizes or (50,100,200), emb=emb, workdir=a.workdir)
     if a.bench in ('shards','all'): run(bench_shards, n=(a.sizes or (400,))[0], emb=emb, workdir=a.workdir)
+    if a.bench in ('reads','all'):  run(bench_shard_reads, n=(a.sizes or (1200,))[0], emb=emb, workdir=a.workdir)
+    if a.bench == 'verify':
+        verify_bulk_load(workdir=a.workdir); verify_resolve(workdir=a.workdir); verify_pyparse(a.dir)
     if a.bench in ('store','all'): run(bench_store, sizes=a.sizes or (2000,8000,32000), emb=emb, workdir=a.workdir, ann=False)
     if a.bench in ('code','all'):  run(bench_code, dirs=(a.dir,), workdir=a.workdir, emb=emb)
     if a.bench in ('chunk','all'): run(bench_chunk, n=(a.sizes or (2000,))[0])

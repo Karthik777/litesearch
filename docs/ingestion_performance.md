@@ -40,9 +40,10 @@ size*; code ingestion is **26x** (190.4s → 7.3s over 2,169 files).
 
 Every fix is behaviour-preserving, and the ones that could plausibly have changed results were
 checked against the implementation they replaced rather than argued: `pyparse` is byte-identical
-across 32,720 chunks and all four flag combinations, `resolve_entities` produces the identical merge
-outcome (`merged=5896, by_ann=1813, by_lexical=4083, canonical=2591`), and `bulk_load` leaves the
-same FTS row count and the same hits.
+across 32,720 chunks and all four flag combinations, `bulk_load` leaves the same FTS row count and
+the same hits, and `resolve_entities`' batched probe returns *exactly* the candidate set the
+per-entity loop did over a fixed index (67,896 pairs, symmetric difference 0). `nbs/09_ingest_eval.ipynb`
+walks through all of it, and `python -m evals.ingest_bench verify` re-runs the checks.
 
 ## 1. `add_doc` rebuilds the entire ANN index once per document
 
@@ -257,8 +258,22 @@ n=2000        13.26s    5.65s     2.3x
 exponent        1.35     1.08
 ```
 
-The merge outcome is identical at every size — `merged=5896, by_ann=1813, by_lexical=4083,
-canonical=2591` at n=2000, matching the pre-change run exactly.
+Over a **fixed** index the batched probe returns exactly the candidate set the per-entity loop did,
+and both are deterministic:
+
+```
+== ann probe equivalence (8487 entities, fixed index, k=8) ==
+  looped  x3: 67896 pairs, stable: True
+  batched x3: 67896 pairs, stable: True
+  identical: True   symmetric difference: 0
+```
+
+That check is the one that settles it, because `resolve_entities` run end to end does *not* repeat
+itself: rebuilt from scratch at n=2000 it gives `merged=5896` on one run and `5891` on the next,
+about 0.1%. usearch builds its HNSW graph across threads, so two rebuilds of the same vectors are
+two slightly different graphs and an approximate probe over a different graph returns slightly
+different neighbours. This pre-dates the change — hold the index still and the drift disappears.
+Worth knowing if you ever diff two graph builds and expect them to match.
 
 Still open: `build_graph` holds at ~40 chunks/s (~7 hours per million chunks on one core) and
 accumulates `ents`, `mens`, `edges` and `wins` in memory for the whole call, so it cannot be handed
@@ -279,20 +294,34 @@ fixes:
 Unfixed, 8 shards buys 4.7x. Fixed, sharding buys ~12% and then flattens — and **the fix alone on a
 single database (19.76s) beats 8-way sharding without it (23.76s)**.
 
-Federated search pays for the shards on the read side, linearly:
+On the read side sharding has two opposite answers, and which one you get is the whole design
+decision. Over 1,200 documents, 60 queries x3, best-of-3:
 
 ```
-1 shard     3.8 ms/query
-2 shards    5.2 ms/query
-4 shards    8.4 ms/query
-8 shards   15.7 ms/query
+ shards  chunks/shard   fanout   fanout+threads   routed
+      1        25,041     8.04ms          8.00ms   8.25ms
+      2        12,391     9.28ms         11.51ms   5.34ms
+      4         6,216    13.20ms         14.68ms   3.22ms
+      8         3,099    20.28ms         30.44ms   2.34ms
+     16         1,608    34.85ms         52.56ms   2.06ms
 ```
 
-So the ordering mattered, and it has now been done in that order. With the rebuild fixed, shard for
-the reasons sharding is actually good — bounding the resident HNSW index (usearch holds vectors in
-memory, so ~1M x 512 dims of float16 is ~1 GB plus graph overhead per index), isolating tenants,
-allowing independent re-ingest, and enabling cross-process parallelism. Sharding for ingest
-*throughput* is paying query latency for a problem that had a cheaper fix.
+- **Fan-out to every shard is 4.3x more expensive at 16 shards.** K searches plus a fusion, and
+  because HNSW is O(log N), K searches over N/K rows cost strictly more than one over N. No shard
+  count makes the total work smaller.
+- **Routing to the shard that holds the profile is 4.0x cheaper at 16 shards**, and keeps improving:
+  one search over an index 1/K the size.
+- **Threading the fan-out does not rescue it** — 0.65x at 16 shards, measured with a persistent
+  pool rather than one per query. Per-query fixed cost multiplies by K faster than threads overlap.
+
+So the question is never how many shards, it is **whether the query knows which shard**.
+
+So: if a profile is a filter the caller already has at query time, shard freely — ingest is
+unaffected now and reads get *faster*. If queries have to search everything, every shard is a tax on
+every query, and the remaining reasons to shard are the ones that have nothing to do with speed:
+bounding the resident HNSW index (usearch keeps vectors in memory, so ~1M x 512 dims of float16 is
+~1 GB plus graph overhead per index), tenant isolation, independent re-ingest, and cross-process
+parallelism. What sharding is no longer is an ingest-throughput tool.
 
 ## What is still open at 10^6
 
