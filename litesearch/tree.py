@@ -158,7 +158,7 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         # `Mn_1.1` is both the verse's id and its address: everything but the last component names
         # the division it sits in, so the tree comes out of the citations with no markup at all.
         from litesearch.sanskrit import CITE_RE, cite_parts
-        last = []
+        last, head_lvl = [], 0
         for p, txt in pages:
             # A heading is the other way a Sanskrit source names its divisions: GRETIL addresses
             # verses by citation, but a stotra names sections (`## dhyanam`) and carries no
@@ -166,7 +166,8 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
             if (h := first(ln for ln, code in _md_lines(txt) if not code and _md_head.match(ln))):
                 m = _md_head.match(h)
                 flush(cur_page)
-                open_node(m.group(2), max(min_level, len(m.group(1))), p)
+                head_lvl = max(min_level, len(m.group(1)))
+                open_node(m.group(2), head_lvl, p)
                 cur_page, last = p, []
                 if (rest := txt.replace(h, '', 1).strip()): buf.append(rest)
                 flush(p); cur_page = p
@@ -178,7 +179,14 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
             for lvl in range(1, len(parts)+1):
                 if last[:lvl] != parts[:lvl]:
                     flush(cur_page)
-                    open_node(f"{sig} {'.'.join(parts[:lvl])}".strip(), lvl, p)
+                    # Citation depth is *relative to the heading it sits under*. The two signals
+                    # count from different origins — `#` depth starts wherever the markup starts,
+                    # a citation's hierarchy always starts at 1 — so sharing one level space makes
+                    # `open_node` pop the heading off the stack and reparent its verses to the
+                    # root. TEI is exactly this case (`<div type="adhyāya">` *and*
+                    # `<lg xml:id="Manu_1.1">`), and it came out with the adhyāya nodes empty and
+                    # the second one adopted by the first chapter's citation node.
+                    open_node(f"{sig} {'.'.join(parts[:lvl])}".strip(), head_lvl + lvl, p)
                     cur_page = p
             last = parts
             if txt.strip(): buf.append(txt)
@@ -215,6 +223,18 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
     root.page_end = max((n.page_end for n in nodes), default=root.page_end)
     return nodes
 
+def _dedent_path(parts) -> list:
+    """Drop a segment that only repeats the one before it.
+
+    A document whose first heading *is* its title — `# Field Manual` in `Field Manual.md`, and
+    every PDF whose H1 is its filename — otherwise reads `Field Manual › Field Manual › Chapter 1`
+    in every breadcrumb, on every hit, and in the text embedded with every chunk."""
+    out = []
+    for p in parts:
+        if p and (not out or _ws.sub(' ', p).strip().lower() != _ws.sub(' ', out[-1]).strip().lower()):
+            out.append(p)
+    return out
+
 def heading_path(tree,              # the node list from build_tree
                  nd,                # the TreeNode to describe
                  title:str,         # document title
@@ -229,7 +249,7 @@ def heading_path(tree,              # the node list from build_tree
     while cur is not None:
         if cur.level > 0: parts.append(cur.title)
         cur = tree[cur.parent] if cur.parent is not None else None
-    return sep.join([title] + parts[::-1])[:max_len]
+    return sep.join(_dedent_path([title] + parts[::-1]))[:max_len]
 
 # %% ../nbs/06_tree.ipynb #7026c892
 def doc_id(source, title='') -> str:
@@ -258,6 +278,28 @@ def get_tree(self:Database,
 # %% ../nbs/06_tree.ipynb #303b401c
 MIN_CHUNK = 40
 
+def _pack_target(chunker) -> int:
+    """The size a chunker wants to pack *across* segments to, or 0 for the usual one-call-per-segment.
+
+    A chunker only ever sees one segment at a time, because a segment is what carries a page number.
+    That is invisible until a reader hands the tree one segment per unit: GRETIL prints one verse
+    per line and `gretil_parse` makes each verse its own page, so `ProseChunker`'s 700-character
+    target was being applied to a 60-character verse and could never reach — the Īśopaniṣad came out
+    at 10 chunks through either chunker, and the larger budget was decorative. Opting in through an
+    attribute keeps the chunker interface as it was for everything that does not care."""
+    return int(getattr(chunker, 'target', 0) or 0) if getattr(chunker, 'pack_cited', False) else 0
+
+def _pack_segments(rows, target:int) -> L:
+    'Join consecutive chunks of one node up to `target` characters; the span keeps its first page.'
+    if not target or len(rows) < 2: return L(rows)
+    out = L()
+    for r in rows:
+        if out and len(out[-1]['content']) + len(r['content']) + 2 <= target:
+            out[-1]['content'] = f"{out[-1]['content']}\n\n{r['content']}"
+            continue
+        out.append(r)
+    return out
+
 def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=None):
     """Chunk every node segment, tagging each chunk with its node, page and heading path.
 
@@ -273,6 +315,7 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=No
     out = L()
     for nd in tree:
         head, nid = heading_path(tree, nd, title), f'{did}#{nd.seq}'
+        node_out = L()
         for page, seg in nd.segments:
             prev = None
             for c in chunk_markdown(seg, chunker):
@@ -281,7 +324,8 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=No
                     prev['content'] = f"{prev['content']}\n\n{c}"
                     continue
                 prev = dict(content=c, doc_id=did, node_id=nid, page=page, heading=head)
-                out.append(prev)
+                node_out.append(prev)
+        out += _pack_segments(node_out, _pack_target(chunker))
     if meta_fn:
         import json as _json
         # written on every chunk, including as `{}` — heterogeneous keys across rows are what
@@ -450,7 +494,7 @@ def breadcrumb(self:Database, node_id:str, store:str='store', prefix:str=None, s
         seen.add(cur['id'])
         parts.append(cur['title'])
         cur = first(g.nodes(where=f'id={cur["parent_id"]!r}')) if cur['parent_id'] else None
-    return sep.join(parts[::-1])
+    return sep.join(_dedent_path(parts[::-1]))
 
 @patch
 def read(self:Database,

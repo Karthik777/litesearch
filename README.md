@@ -442,9 +442,97 @@ Details that matter in practice:
   On code corpora prefer `graph_w=0` and use the graph for context assembly (pull callers/callees of
   a hit) rather than for reranking.
 
-spaCy is optional — `pip install litesearch[graph]` then
-`python -m spacy download en_core_web_sm`. Without it the extractor falls back to yake
-keyphrases, which are weaker node identities.
+spaCy and yake are core dependencies, so there is nothing extra to install. The *model* is not
+shippable — spaCy models are not on PyPI and PyPI rejects URL deps — so `spacy_pipe` downloads
+`en_core_web_sm` on first use; without a model the extractor falls back to yake keyphrases, which
+are weaker node identities.
+
+That difference is worth more than it sounds. yake emits overlapping sub-phrases of one span
+(`marie curie isolated`, `curie isolated polonium`, `isolated polonium`, `polonium`), and each
+adjacent pair is a legitimate containment merge, so entity resolution can walk the ladder from one
+end to the other. `resolve_entities` now keeps every merged group a **clique** under the lexical
+guard, which stops that; but a noun-chunk pass still gives you one entity where yake gives four.
+
+For a language spaCy has no model for, `stanza_pipe(lang)` covers stanza's 68:
+
+```python
+from litesearch import stanza_pipe
+build_graph(db, chunks, prose=True, nlp=stanza_pipe('sa'), emb_fn=emb)
+```
+
+`pip install litesearch[stanza]` (it pulls torch, which is why it is not a core dep). Note that
+stanza has no NER model for Sanskrit, and spaCy implements `noun_chunks` per language and not for
+`sa`, so extraction there runs on a POS-run approximation instead.
+
+## `litesearch.tree` — documents, sections and `read()`
+
+For books, reports, papers and doc sites — anything where "which chapter" is a better answer than
+"which 400 characters". Every document gets a node tree at ingest time, every chunk is linked to a
+node, and results roll up to sections.
+
+```python
+db = database('library.db')
+db.get_tree('store')                         # docs + nodes tables beside the chunk store
+db.add_file('books/report.pdf', emb_fn=emb)
+db.add_dir('books/', emb_fn=emb)             # pdf, md, txt, rst, ipynb, xml, tei, conllu
+
+db.doc_search(q, qv, limit=5)   # hybrid search; every hit carries a breadcrumb + node_id
+db.sections(q, qv, limit=3)     # ranked *sections*, each with snippets and a read() handle
+db.toc('report', max_depth=2)   # the tree — no embeddings computed at all
+db.read('a1b2c3d4#12')          # one whole section plus its children
+db.node_context('a1b2c3d4#12')  # its parent, siblings and children
+```
+
+Structure is detected per document, in order: verse citations (`|| Mn_1.1 ||`), markdown
+headings, chapter lines (`CHAPTER IV`, `ARTICLE 12`), then fixed page windows as a floor — so
+`toc()` always returns something. Nothing calls a language model; `summarize=` and `chunker=` are
+the seams where one would go.
+
+Two things to know:
+
+- `sections()` scores a node by its **best** hit (`score='max'`). Summing every hit's RRF mass
+  reads well and measures badly — it is a length prior in disguise, and cost 0.07–0.16 MRR on 150
+  known-item queries over 486 pages of legislation. `sum` is opt-in.
+- **The tree layer is a wash for ranking** (−0.05 to +0.01 across three genres). Use it for
+  `toc()`, `read()`, breadcrumbs and section-scoped answers, which is what it is for.
+
+Source code does not belong here: its tree is module › class › function and comes from the AST.
+
+## `litesearch.sanskrit` — verse-aware reading, chunking and metre
+
+Registered as two `Profile`s at import, so `add_file` needs no arguments — it picks the reader
+(GRETIL plain text, TEI, vedicreader XML, DCS), the `verse` tree mode, `VerseChunker`, and
+per-chunk metrical facets by itself.
+
+```python
+db.add_file('gretil/manu.htm', emb_fn=emb)                     # detected
+db.add_file('bhasya.htm', profile='sanskrit_prose', emb_fn=emb)  # by name only
+db.by_meter(meter='mandākrāntā')            # filter by metre
+db.by_meter(gana='ma bha na ta ta ga ga')   # every verse with that shape
+```
+
+**Cross-script search is on for every store**, not only Sanskrit ones. The `sanskrit` FTS5
+tokenizer emits an ASCII fold of each token as a *colocated* token, so `श्रीमाता`, `śrīmātā` and
+`srimata` all reach the same row while `content` is stored exactly as ingested. It is purely
+additive — `running`, `cat` and `fts_search` behave identically to the bare chain — which is why it
+is the default rather than something a Sanskrit corpus opts into: a store's tokenizer is fixed when
+its table is created, and the first document ingested should not decide it. One real cost: **a
+store built with this chain cannot be opened by a connection that has not registered the
+tokenizer**, plain `sqlite3` included.
+
+**Metre is computed, not annotated.** A verse is built from gaṇas — triples of heavy/light
+syllables — so metre is one of the few facets of a Sanskrit corpus that needs no model, no lexicon
+and no annotation. `verse_meta` writes `meter`, `variant`, `gana`, `pada` and `matra` into the
+chunk's existing `metadata` column, which `get_store` already indexes for FTS, so the facets are
+searchable and `where`-filterable with no schema change and no cooperation from any caller. Both
+the syllable-counting (varṇa) and mora-counting (āryā family) systems are covered.
+
+**Lemmas are opt-in.** Sandhi means the surface form is often not what a reader types.
+`register_profiles(nlp=stanza_pipe('sa'))` adds a `lemma` facet to the same `metadata`, queryable
+with `db.by_lemma('gam')`. It runs at **ingest** only — the FTS5 tokenizer stays deterministic and
+table-driven, because a store's tokenizer has to resolve on every connection that opens the file
+and be fast enough for the query path. Stanza does not split sandhi or decompose compounds (its
+Vedic treebank ships pre-segmented), so this covers inflection, not the harder half.
 
 ## `litesearch.utils`
 

@@ -5,8 +5,9 @@ __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'VE
            'MATRA_METERS', 'CATURMATRA', 'strip_vedic', 'deva2ascii', 'detect_script', 'fold_token',
            'sanskrit_tokenizer', 'register_sanskrit', 'cite_parts', 'verse_spans', 'chunk_verses', 'VerseChunker',
            'ProseChunker', 'deva2iast', 'syllables', 'scan', 'ganas', 'gana_pattern', 'metrical_text', 'matras',
-           'detect_matra_meter', 'detect_meter', 'verse_units', 'verse_meta', 'gretil_parse', 'tei_parse',
-           'vr_xml_parse', 'dcs_parse', 'is_sanskrit', 'sanskrit_parse', 'register_profiles']
+           'detect_matra_meter', 'detect_meter', 'verse_units', 'verse_meta', 'lemma_facets', 'sanskrit_meta',
+           'gretil_parse', 'tei_parse', 'vr_xml_parse', 'dcs_parse', 'is_sanskrit', 'sanskrit_parse',
+           'register_profiles']
 
 # %% ../nbs/09_sanskrit.ipynb #c05
 import re, unicodedata
@@ -245,14 +246,23 @@ def _width(parts) -> int:
 def chunk_verses(text:str,                 # source text
                  target:int=VERSE_TARGET,  # pack short units forward up to this many chars
                  max_chars:int=VERSE_MAX,  # split a unit longer than this at clause boundaries
+                 pack_cited:bool=False,    # let consecutive cited units share a chunk up to `target`
                  ) -> L:
     """Verse-aware chunks: cut on citation/daṇḍa, pack short units, split long prose.
 
     Two guards, and both are load-bearing. Packing exists because a namāvali line is 18 characters
-    and one line is not a retrievable chunk; it never packs *across* a citation, so a chunk still
+    and one line is not a retrievable chunk; it never packs *across* a heading, so a chunk still
     maps to a contiguous, citable range. Splitting exists because Sanskrit prose — the Upaniṣads
     run ten lines to one `|| ref ||` — would otherwise produce a chunk far larger than anything the
-    embedder can represent."""
+    embedder can represent.
+
+    `pack_cited` is what makes a larger `target` mean anything on a citation-dense text. By default
+    a citation closes the chunk immediately, so on GRETIL — where *every* unit ends in one — the
+    target is never consulted and `ProseChunker`'s larger budget was inert: measured 10 chunks for
+    the Īśopaniṣad either way. With it on, consecutive cited units pack forward to `target`, which
+    still yields one contiguous citable *range* (`IsUp_1–3`) rather than a single address. That is
+    the right trade for commentary, where the unit of meaning spans several verses, and the wrong
+    one for a verse index, which is why it is off unless `ProseChunker` asks for it."""
     units = verse_spans(text)
     if not units: return L([text.strip()]) if (text or '').strip() else L()
     out, buf, cited = L(), [], False
@@ -278,7 +288,7 @@ def chunk_verses(text:str,                 # source text
         buf.append(seg)
         if cite: cited = True
         # a citation closes the unit; otherwise pack forward until the target is reached
-        if cited or _width(buf) >= target: flush()
+        if (cited and not pack_cited) or _width(buf) >= target: flush()
     flush()
     return out.filter(lambda s: s.strip())
 
@@ -308,19 +318,25 @@ class VerseChunker:
 
     Drop-in for `add_doc(chunker=...)` and `chunk_markdown(text, chunker)`, which is the whole
     point: the tree, the store, the ANN index and `read()` are unchanged."""
-    def __init__(self, target:int=VERSE_TARGET, max_chars:int=VERSE_MAX):
+    def __init__(self, target:int=VERSE_TARGET, max_chars:int=VERSE_MAX, pack_cited:bool=False):
         self.target, self.max_chars, self.chunk_size = target, max_chars, max_chars
-    def chunk(self, text:str): return _mk_chunks(chunk_verses(text, self.target, self.max_chars), text or '')
+        self.pack_cited = pack_cited
+    def chunk(self, text:str):
+        return _mk_chunks(chunk_verses(text, self.target, self.max_chars, self.pack_cited), text or '')
     def __call__(self, text:str): return self.chunk(text)
-    def __repr__(self): return f'VerseChunker(target={self.target}, max_chars={self.max_chars})'
+    def __repr__(self):
+        return f'{type(self).__name__}(target={self.target}, max_chars={self.max_chars}, pack_cited={self.pack_cited})'
 
 
 class ProseChunker(VerseChunker):
     """`VerseChunker` tuned for Sanskrit prose — commentary, bhāṣya, the prose Upaniṣads.
 
     Same boundaries, different budget: prose has no metrical unit to preserve, so packing to a
-    larger target beats emitting one chunk per clause."""
-    def __init__(self, target:int=700, max_chars:int=1400): super().__init__(target, max_chars)
+    larger target beats emitting one chunk per clause. It sets `pack_cited=True`, without which
+    the larger target is unreachable on any text that cites every unit — which is most of GRETIL,
+    and was the whole corpus this chunker exists for."""
+    def __init__(self, target:int=700, max_chars:int=1400, pack_cited:bool=True):
+        super().__init__(target, max_chars, pack_cited)
 
 # %% ../nbs/09_sanskrit.ipynb #14c342ec
 from fastcore.all import AttrDict, patch
@@ -414,16 +430,22 @@ def syllables(text:str) -> L:
     follows the `a`. That is what makes the last syllable of `yamātārājabhānasalagam` the `ga` the
     mnemonic says it is, and it is the difference between the gaṇa table checking out and not."""
     ph = _phones(text)
-    out, onset = L(), ''
+    out, onset, coda_at = L(), '', -1
     for j, (k, u) in enumerate(ph):
-        if k == 'C': onset += u; continue
+        # a phone already spent as the previous syllable's coda is not also this one's onset —
+        # without the check `kaṃsa` reads back as `kaṃ`+`ṃsa` and `duḥkha` as `duḥ`+`ḥkha`
+        if k == 'C':
+            if j != coda_at: onset += u
+            continue
         run, closes = [], True
         for k2, u2 in ph[j+1:]:
             if k2 == 'V': closes = False; break
             run.append(u2)
         heavy = (u in _LONG or any(c in _CODA for c in run) or len(run) >= 2
                  or (closes and len(run) >= 1))
-        out.append((onset + u + ''.join(c for c in run[:1] if c in _CODA), heavy))
+        cod = ''.join(c for c in run[:1] if c in _CODA)
+        if cod: coda_at = j + 1
+        out.append((onset + u + cod, heavy))
         onset = ''
     return out
 
@@ -687,6 +709,68 @@ def verse_meta(text:str) -> dict:
     if (hs := dict.fromkeys('+'.join(map(str, m.halves)) for m in mat)): out['matra'] = ' '.join(hs)
     return out
 
+# --- lemmas: the one thing the deterministic fold cannot do -------------------------------------
+def lemma_facets(text:str,          # chunk text
+                 nlp,               # a `stanza_pipe('sa')` pipeline (or any spaCy-shaped one)
+                 max_terms:int=96   # cap, so one chunk's metadata cannot outgrow its content
+                 ) -> dict:
+    """`{'lemma': 'gam vac ...'}` for a chunk — the dictionary forms behind its inflected words.
+
+    **Why this is not in the tokenizer.** The `sanskrit` FTS5 tokenizer runs inside SQLite's index
+    path, on every token of every insert *and every query*, and a store's tokenizer is fixed when
+    its table is created — so whatever goes in there has to be present on every connection that
+    ever opens the database. A neural pipeline fails all three tests at once: it is orders of
+    magnitude too slow for the query path, it would make the file unreadable without torch and a
+    downloaded model, and its output changes with the model version, so an index built today would
+    not match a query tomorrow. The fold stays deterministic and table-driven; lemmatisation is
+    computed **once at ingest** and written to `metadata`, which `get_store` already indexes for
+    FTS beside `content`. Zero read-path cost, no schema change, no caller changes.
+
+    **Only lemmas that differ from the surface are kept.** The surface form is already in `content`
+    and already indexed; storing it twice buys nothing and doubles the column. What is worth
+    storing is exactly the difference — `gacchati` in the text, `gam` in the index — which is the
+    case where a reader who types the dictionary form currently gets nothing.
+
+    **What this does not solve.** Stanza does not split sandhi and does not decompose compounds:
+    the Vedic treebank it is trained on is distributed pre-segmented, so `dharmakṣetre` comes back
+    as one token. That is the harder half of Sanskrit retrieval and it stays open — this handles
+    inflection, which is the half a lemmatiser can honestly claim."""
+    if not (nlp and (text or '').strip()): return {}
+    try: doc = nlp(metrical_text(text))
+    except Exception: return {}
+    out = {}
+    for t in doc:
+        lem, surf = (getattr(t, 'lemma_', '') or '').strip(), (t.text or '').strip()
+        if not lem or getattr(t, 'is_punct', False) or getattr(t, 'is_digit', False): continue
+        if fold_token(lem) == fold_token(surf): continue     # nothing the surface index lacks
+        if len(lem) < 2: continue
+        out[lem] = None
+        if len(out) >= max_terms: break
+    return {'lemma': ' '.join(out)} if out else {}
+
+def sanskrit_meta(nlp=None):
+    """The `Profile.meta` callable: metre always, lemmas when a pipeline is supplied.
+
+    A factory rather than a flag because `Profile.meta` is called as `meta(chunk_text)` — the
+    pipeline has to be closed over, and closing over it here is also what keeps the model out of
+    the picture entirely for the default profiles."""
+    if nlp is None: return verse_meta
+    def meta(text:str) -> dict: return {**verse_meta(text), **lemma_facets(text, nlp)}
+    return meta
+
+@patch
+def by_lemma(self:Database,
+             lemma:str,           # a dictionary form, e.g. `gam`
+             store:str='store',
+             prefix:str=None,
+             columns:list=None,
+             limit:int=50) -> list:
+    'Chunks whose verses inflect `lemma`. Needs an index built with `register_profiles(nlp=...)`.'
+    cols = list(dict.fromkeys((columns or ['content']) + ['metadata', 'node_id', 'doc_id', 'page']))
+    return self.t[ifnone(prefix, '') + store](
+        select=', '.join(cols), where='metadata like :sa_l',
+        where_args={'sa_l': f'%"lemma": "%{lemma}%'}, limit=limit)
+
 @patch
 def by_meter(self:Database,
              meter:str=None,      # metre name, e.g. `mandākrāntā`
@@ -920,22 +1004,35 @@ def _sniff(text:str) -> bool:
     if re.search(r'^#\s*id\s*=', t, re.M): return True
     return is_sanskrit(t)
 
-def register_profiles():
+def register_profiles(nlp=None):
     """Register the Sanskrit profiles. Called on import; safe to call again.
 
     Two of them, because verse and prose want different budgets and nothing else about the pipeline
     differs. Prose is not auto-detected — a commentary and its root text share every other signal,
     so it is selected by name (`add_file(..., profile='sanskrit_prose')`).
 
-    Both carry `meta=verse_meta`, so every chunk ingested through either arrives with its metre and
-    gaṇa signature already in the column FTS indexes. Prose gets it too: a bhāṣya quotes the verse
-    it is glossing, and that quotation still scans."""
+    Both carry `meta=sanskrit_meta(nlp)`, so every chunk ingested through either arrives with its
+    metre and gaṇa signature already in the column FTS indexes. Prose gets it too: a bhāṣya quotes
+    the verse it is glossing, and that quotation still scans.
+
+    Pass `nlp=stanza_pipe('sa')` to add lemmas to that metadata as well — re-registering replaces
+    the profiles by name, so this is the whole opt-in:
+
+    ```python
+    from litesearch import stanza_pipe, register_profiles
+    register_profiles(nlp=stanza_pipe('sa'))    # once, before add_file/add_dir
+    ```
+
+    It is opt-in rather than automatic because it costs a torch install, a model download and a
+    real fraction of ingest time, and buys nothing at all for a corpus whose readers type the
+    inflected forms they are reading."""
     from litesearch.data import Profile, register_profile
+    meta = sanskrit_meta(nlp)
     register_profile(Profile(name='sanskrit_verse', exts='.xml,.tei,.htm,.html,.conllu,.txt',
                              parse=sanskrit_parse, chunker=VerseChunker, mode='verse',
-                             detect=_sniff, kind='sanskrit', meta=verse_meta))
+                             detect=_sniff, kind='sanskrit', meta=meta))
     register_profile(Profile(name='sanskrit_prose', exts='', parse=sanskrit_parse,
                              chunker=ProseChunker, mode='verse',
-                             detect=lambda _t: False, kind='sanskrit', meta=verse_meta))
+                             detect=lambda _t: False, kind='sanskrit', meta=meta))
 
 register_profiles()

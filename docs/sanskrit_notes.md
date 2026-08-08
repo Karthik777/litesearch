@@ -178,6 +178,40 @@ silently indexes the wrong columns for the ID-less tabular export DCS also publi
 features land in the `lemmas` field, and every verse gets the same citation, which collapses an
 entire text onto one graph node. A loader that assumes a format should assert the format.
 
+## 5. The lemma seam, and why it is not in the tokenizer
+
+Sandhi means the surface form is often not what anyone types, and indexing lemmas beside the
+surface matters more in Sanskrit than stemming does in English. `register_profiles(nlp=stanza_pipe('sa'))`
+turns it on; the lemmas land in `metadata`, beside the metre, and are reachable through ordinary
+`db.search`, a `where` clause, or `db.by_lemma`.
+
+The design question was *where* the lemmatiser goes, and there is only one defensible answer.
+Putting it in the FTS5 tokenizer — beside the fold — fails three separate tests:
+
+| | the deterministic fold | a neural lemmatiser |
+|---|---|---|
+| runs on | every token of every insert **and every query** | same, if it lived here |
+| speed | table lookup | one to two orders of magnitude slower |
+| availability | pure Python, always | needs torch + a downloaded model, **on every connection that opens the file** |
+| stability | fixed tables | changes with the model version, so today's index misses tomorrow's query |
+
+The third row is the one that settles it. A store's tokenizer is fixed when its table is created,
+so anything in that path becomes a permanent requirement for reading the database at all — the
+`no such tokenizer: sanskrit` failure in §1, but now with a model download attached to it. So the
+lemmatiser runs **once, at ingest**, and writes to the column FTS already indexes. Zero read-path
+cost, no schema change, no caller changes.
+
+Two limits worth stating plainly rather than discovering later:
+
+- **Stanza does not split sandhi and does not decompose compounds.** UD_Sanskrit-Vedic is
+  distributed pre-segmented, so `dharmakṣetre` comes back as one token with one lemma. This solves
+  inflection. The compound problem — the reason a reader searching for `kṣetra` misses every
+  occurrence inside a compound — stays open, and is the thing a `lemma_fn` from a real sandhi
+  splitter (sanskrit_parser, the Heritage segmenter) would actually address.
+- **Only lemmas that differ from the surface are stored.** The surface is already in `content` and
+  already indexed; storing it again doubles the column for nothing. What is worth keeping is
+  precisely the difference.
+
 ## Worth borrowing
 
 Not implemented here — recorded because they are good ideas that this branch does not have:
@@ -190,5 +224,6 @@ Not implemented here — recorded because they are good ideas that this branch d
 - **The verse as a graph entity**, so `parallel` / `quotes` / `follows` fit the existing
   entity-to-entity edges table with no schema change. A śloka is routinely not the property of the
   text you found it in, and "this verse is also in the Mahābhārata" is a finding, not an artefact.
-- **A `lemma_fn` seam.** Sandhi means the surface form is often not what anyone types. Indexing
-  validated lemmas beside the surface text matters more in Sanskrit than stemming does in English.
+- **A real sandhi splitter behind the `lemma_fn` seam.** §5 gives the seam and stanza gives
+  inflection; compound decomposition is the half that is still missing, and it is the half that
+  matters most for recall.
