@@ -14,7 +14,7 @@ Every figure below is reproducible:
 ```
 python -m evals.ingest_bench docs   --sizes 25,50,100,200
 python -m evals.ingest_bench defer  --sizes 50,100,200,400
-python -m evals.ingest_bench shards --sizes 400
+python -m evals.ingest_bench verify
 python -m evals.ingest_bench graph  --sizes 500,1000,2000
 python -m evals.ingest_bench all
 ```
@@ -279,49 +279,20 @@ Still open: `build_graph` holds at ~40 chunks/s (~7 hours per million chunks on 
 accumulates `ents`, `mens`, `edges` and `wins` in memory for the whole call, so it cannot be handed
 a million chunks in one go regardless of speed. Feed it in batches.
 
-## On sharding: one database per profile
+## Considered and set aside: sharding
 
-Sharding helped, but mostly because it divided the quadratic. 400 documents, measured *before* the
-fixes:
+One database per profile was measured and is not worth doing for performance. Before the fixes it
+bought 4.7x on ingest at 8 shards — but only because it divided the quadratic, and the fix alone on
+a single database (19.8s over 400 documents) beat 8-way sharding without it (23.8s). With ingest
+linear, sharding adds ~12% and then flattens.
 
-```
-                    per-doc rebuild    deferred rebuild
-1 shard                  111.82s            19.76s
-4 shards                  33.19s            17.43s
-8 shards                  23.76s            17.53s
-```
+On reads it is single-digit milliseconds either way at this corpus size, in both directions: fanning
+out to 16 shards costs 34.9ms against 8.0ms for one index, and routing to a known shard saves 6ms.
+Not a reason to restructure anything.
 
-Unfixed, 8 shards buys 4.7x. Fixed, sharding buys ~12% and then flattens — and **the fix alone on a
-single database (19.76s) beats 8-way sharding without it (23.76s)**.
-
-On the read side sharding has two opposite answers, and which one you get is the whole design
-decision. Over 1,200 documents, 60 queries x3, best-of-3:
-
-```
- shards  chunks/shard   fanout   fanout+threads   routed
-      1        25,041     8.04ms          8.00ms   8.25ms
-      2        12,391     9.28ms         11.51ms   5.34ms
-      4         6,216    13.20ms         14.68ms   3.22ms
-      8         3,099    20.28ms         30.44ms   2.34ms
-     16         1,608    34.85ms         52.56ms   2.06ms
-```
-
-- **Fan-out to every shard is 4.3x more expensive at 16 shards.** K searches plus a fusion, and
-  because HNSW is O(log N), K searches over N/K rows cost strictly more than one over N. No shard
-  count makes the total work smaller.
-- **Routing to the shard that holds the profile is 4.0x cheaper at 16 shards**, and keeps improving:
-  one search over an index 1/K the size.
-- **Threading the fan-out does not rescue it** — 0.65x at 16 shards, measured with a persistent
-  pool rather than one per query. Per-query fixed cost multiplies by K faster than threads overlap.
-
-So the question is never how many shards, it is **whether the query knows which shard**.
-
-So: if a profile is a filter the caller already has at query time, shard freely — ingest is
-unaffected now and reads get *faster*. If queries have to search everything, every shard is a tax on
-every query, and the remaining reasons to shard are the ones that have nothing to do with speed:
-bounding the resident HNSW index (usearch keeps vectors in memory, so ~1M x 512 dims of float16 is
-~1 GB plus graph overhead per index), tenant isolation, independent re-ingest, and cross-process
-parallelism. What sharding is no longer is an ingest-throughput tool.
+`bench_shards` and `bench_shard_reads` are still in `evals/ingest_bench.py` if the question comes
+back at a corpus size where the resident HNSW index no longer fits in memory — which is the one
+argument for sharding that survives, and it is about RAM, not speed.
 
 ## What is still open at 10^6
 
