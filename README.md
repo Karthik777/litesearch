@@ -11,6 +11,7 @@ litesearch stores and searches documents in a single SQLite database. It combine
 |----|----|
 | `litesearch` (core) | [`database()`](https://Karthik777.github.io/litesearch/core.html#database), `get_store()`, `db.search()`, [`rrf_merge()`](https://Karthik777.github.io/litesearch/core.html#rrf_merge), `vec_search()` `ann_search()` |
 | `litesearch.data` | PDF extraction, file parsing ([`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse)), code indexing ([`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks), [`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks)), FTS query preprocessing |
+| `litesearch.sanskrit` | Verse/prose readers, [`VerseChunker`](https://Karthik777.github.io/litesearch/sanskrit.html#versechunker), verse tree mode, script-folding FTS5 tokenizer, metre detection, and (via `[sanskrit]`) sandhi-splitting lemmas + Monier-Williams glosses |
 | `litesearch.utils` | ONNX text, image, and multimodal encoders ([`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage), [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal)) |
 
 ## Install
@@ -21,7 +22,10 @@ litesearch stores and searches documents in a single SQLite database. It combine
 !uv add litesearch
 ```
 
-    error: Requirement name `litesearch` matches project name `litesearch`, but self-dependencies are not permitted without the `--dev` or `--optional` flags. If your project name (`litesearch`) is shadowing that of a third-party dependency, consider renaming the project.
+    error: Requirement name `litesearch` matches project name `litesearch`, but
+           self-dependencies are not permitted without the `--dev` or `--optional`
+           flags. If your project name (`litesearch`) is shadowing that of a
+           third-party dependency, consider renaming the project.
 
 ## Quick Start
 
@@ -40,38 +44,24 @@ embs  = enc.encode(texts)   # float32, shape (3, 512)
 store.insert_all([dict(content=t, embedding=e.ravel().tobytes()) for t, e in zip(texts, embs)])
 
 q = "self-attention mechanism"
-db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32)
+db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, limit=2)
 ```
+
+    /Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+      from .autonotebook import tqdm as notebook_tqdm
 
     [{'rowid': 1,
       'id': 1,
       'content': 'attention mechanisms in neural networks',
-      '_dist': 0.5670621395111084,
-      '_rrf_score': 0.016666666666666666},
+      'rank': -2.232348948909978,
+      '_rrf_score': 0.03333333333333333},
      {'rowid': 3,
       'id': 3,
       'content': 'stochastic gradient descent and learning rate schedules',
       '_dist': 0.8964616060256958,
-      '_rrf_score': 0.01639344262295082},
-     {'rowid': 4,
-      'id': 4,
-      'content': 'positional encoding and token embeddings',
-      '_dist': 0.9507941007614136,
-      '_rrf_score': 0.016129032258064516},
-     {'rowid': 2,
-      'id': 2,
-      'content': 'transformer architecture for sequence modelling',
-      '_dist': 0.9885404109954834,
-      '_rrf_score': 0.015873015873015872},
-     {'rowid': 5,
-      'id': 5,
-      'content': 'dropout regularisation reduces overfitting',
-      '_dist': 1.0190094709396362,
-      '_rrf_score': 0.015625}]
+      '_rrf_score': 0.01639344262295082}]
 
-## Core API
-
-### [`database()`](https://Karthik777.github.io/litesearch/core.html#database) — SQLite + SIMD
+## [`database()`](https://Karthik777.github.io/litesearch/core.html#database) — SQLite + SIMD
 
 [`database()`](https://Karthik777.github.io/litesearch/core.html#database) returns a [fastlite](https://fastlite.answer.ai/) `Database` patched with usearch’s SIMD distance functions. Pass a file path for persistence; omit it for an in-memory store.
 
@@ -98,150 +88,363 @@ for fn in ['sqeuclidean', 'divergence', 'inner', 'cosine']: print(dist_q(fn))
 
 > Cosine distance between v1 (ones) and v3 (0.25s) is **0.0** — they point in the same direction. Both `inner` and `divergence` are also available for different retrieval trade-offs.
 
-### `get_store()` — FTS5 + Embedding Table
-
-`db.get_store()` creates (or opens) a table with a `content` TEXT column, an `embedding` BLOB column, a JSON `metadata` column, and an FTS5 full-text index that stays in sync automatically via triggers.
-
 ``` python
-store = db.get_store()   # idempotent — safe to call multiple times
-store.schema
+enc = static_retrieval_embedder()      # 512-dim static model — no GPU, no ONNX runtime
+# float16 because that is what a store holds by default. Handing it float32 is the one mistake
+# that fails *quietly*: every distance comes back 0 and the ranking is silently keyword-only.
+emb = lambda xs: np.asarray(enc.encode(list(xs)), dtype=np.float16)
 ```
 
-    'CREATE TABLE [store] (\n   [content] TEXT NOT NULL,\n   [embedding] BLOB,\n   [metadata] TEXT,\n   [uploaded_at] FLOAT DEFAULT CURRENT_TIMESTAMP,\n   [id] INTEGER PRIMARY KEY\n)'
+## `litesearch.tree` — documents, sections and `read()`
 
-Pass `hash=True` to use a **content-addressed id** (SHA-1 of the content). Useful for code search and deduplication — re-inserting the same content is a no-op:
-
-``` python
-code_store = db.get_store(name='code', hash=True)
-code_store.insert_all([{'content':v} for v in ('hello world', 'hi there', 'goodbye now')], upsert=True, hash_id='id')
-code_store(select='id,content')
-```
-
-    [{'id': '672a7555558b556be985cf2e48f650307a6f74d8', 'content': 'hello world'},
-     {'id': 'bb979740c5bc3904c4011ecaa5627c33080b119a', 'content': 'hi there'},
-     {'id': '2a432c1def89853eba5c30b06a5d5826f6af7ae1', 'content': 'goodbye now'}]
-
-#### Tokenisation — identifiers survive
-
-FTS5's stock `porter unicode61` splits on `_` and then stems the fragments, so `fts_search` is
-indexed as `ft` + `search` and searching for it matches almost anything:
+For books, reports, papers and doc sites — anything where “which chapter” is a better answer than
+“which 400 characters”. Every document gets a node tree at ingest time, every chunk is linked to a
+node, and results roll up to sections.
 
 ``` python
-porter unicode61                          →  ['ft', 'search', 'run']
-porter simplify casefold 1 unicodewords   →  ['fts_search', 'run']
+lib = database()                       # in-memory; pass a path to keep it
+lib.add_file('pdfs/attention_is_all_you_need.pdf', emb_fn=emb)
+
+q  = 'how does multi-head attention work'
+qv = emb([q])[0].tobytes()
+lib.sections(q, qv, limit=2)           # ranked *sections*, each with snippets and a node_id
 ```
 
-`database()` registers [apsw's FTS5 tokenizers](https://rogerbinns.github.io/apsw/textsearch.html)
-and `get_store` defaults to the second chain — apsw's UAX#29 segmentation treats `_` as a word
-joiner, so identifiers stay whole while porter still stems ordinary prose. Override per store with
-`get_store(tokenize=...)`; pass `tokenize='porter'` for the old behaviour.
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
 
-One consequence worth knowing: the tokenizer is resolved by name at query time, so **any** connection
-opening the database must register it. `database()` always does. A plain `sqlite3` shell will not —
-it raises `error in tokenizer constructor` on FTS queries against these tables.
-
-### `db.search()` — Hybrid FTS + Vector with RRF
-
-`db.search()` runs **both** an FTS5 keyword query and a vector similarity search, then merges the ranked lists with Reciprocal Rank Fusion. Documents that appear in *both* lists get a score boost — the best of both worlds. `rrf` is turned on by default; pass `rrf=False` to see the raw FTS and vector legs separately.
+    [{'node_id': '3d5cb9e53d8efa9e#2',
+      'title': 'Abstract',
+      'score': 0.03229166666666666,
+      'breadcrumb': 'attention is all you need › Abstract',
+      'summary': 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transform…',
+      'pages': (0, 10),
+      'nchunks': 75,
+      'snippets': ['Rdmodel i\n\ni\n\ni dmodel\n\nand WO Rhdv\n\nIn this work we employ h = 8 parallel attention layers, or heads. For each of these we use d d d /h = 64. Due to the reduced dimension of each head, the total computational cost\n\nk v model is similar to that of single-head attention with full dimensionality.\n\n**3.2.3** **Applications** **of** **Attention** **in** **our** **Model**\n\nThe Transformer uses multi-he',
+       'Scaled Dot-Product Attention\n\nMulti-Head Attention\n\nFigure 2: (left) Scaled Dot-Product Attention. (right) Multi-Head Attention consists of several attention layers running in parallel.\n\nof the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key.\n\n**3.2.1** **Scaled** **Dot-Product** **Attention**\n\nWe call our particular a',
+       'output values. These are concatenated and once again projected, resulting in the final values, as depicted in Figure 2.\n\nMulti-head attention allows the model to jointly attend to information from different representation subspaces at different positions. With a single attention head, averaging inhibits this.\n\nMultiHead(Q, K, V ) = Concat(head ..., head )WO 1\n\nh\n\nwhere head = Attention(QWQ KWK V W'],
+      'read': "read('3d5cb9e53d8efa9e#2')"},
+     {'node_id': '3d5cb9e53d8efa9e#4',
+      'title': 'Attention Visualizations',
+      'score': 0.03115942028985507,
+      'breadcrumb': 'attention is all you need › Attention Visualizations',
+      'summary': 'ficult voting <EOS> <pad> in this that majority governmentspassed since making or process <pad> is spirit a of Americanhave newlaws 2009 the more <pad> <pad> It registration dif <pad> It a is in of or the this that newlaws ficult spirit have 2009 more since voting <pad> <pad><pad> <pad><pad> dif mak…',
+      'pages': (14, 16),
+      'nchunks': 6,
+      'snippets': ['Figure 5: Many of the attention heads exhibit behaviour that seems related to the structure of the sentence. We give two such examples above, from two different heads from the encoder self-attention at layer 5 of 6. The heads clearly learned to perform different tasks.\n\n15\n\nopinion<EOS>\n\nmissing',
+       'Figure 3: An example of the attention mechanism following long-distance dependencies in the encoder self-attention in layer 5 of 6. Many of the attention heads attend to a distant dependency of the verb ‘making’, completing the phrase ‘making...more difficult’. Attentions here shown only for the word ‘making’. Different colors represent different heads. Best viewed in color.\n\n13',
+       'willnever perfectbut\n\nLaw be\n\nits\n\nThe\n\nits\n\nbe\n\nwill\n\nbut\n\nTheLaw never perfect\n\nwillnever perfectbut\n\nLaw be\n\nits\n\nThe\n\nits\n\nbe\n\nwill\n\nbut\n\nTheLaw never perfect\n\nFigure 4: Two attention heads, also in layer 5 of 6, apparently involved in anaphora resolution. Top: Full attentions for head 5. Bottom: Isolated attentions from just the word ‘its’ for attention heads 5 and 6. Note that the attentions'],
+      'read': "read('3d5cb9e53d8efa9e#4')"}]
 
 ``` python
-q='attention mechanism'
-db.search(q, enc.encode([q]).ravel().tobytes(), columns=['id','content'], dtype=np.float32, rrf=False)
+lib.toc()                              # the tree — no embeddings computed at all
 ```
 
-    {'fts': [{'id': 1,
-       'content': 'attention mechanisms in neural networks',
-       'rank': -2.232348948909978}],
-     'vec': [{'id': 1,
-       'content': 'attention mechanisms in neural networks',
-       '_dist': 0.49074459075927734},
-      {'id': 3,
-       'content': 'stochastic gradient descent and learning rate schedules',
-       '_dist': 0.9048988223075867},
-      {'id': 4,
-       'content': 'positional encoding and token embeddings',
-       '_dist': 0.9850721955299377},
-      {'id': 5,
-       'content': 'dropout regularisation reduces overfitting',
-       '_dist': 1.0058910846710205},
-      {'id': 2,
-       'content': 'transformer architecture for sequence modelling',
-       '_dist': 1.010542631149292}]}
-
-> **Tip — dtype matters.** Always pass the same `dtype` used when encoding. `model2vec` and most ONNX models return `float32`; pass `dtype=np.float32`. The default is `float16` (matches [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode)).
-
-> **Tip — custom schemas.** `get_store()` is a convenience. For custom schemas, call `db.t['my_table'].vec_search(emb, ...)` and `rrf_merge(fts_results, vec_results)` directly.
-
-### ANN store — HNSW for large corpora
-
-The default vector search is an exact brute-force scan (`distance_*` over every row) — great up to a few thousand rows. Past that, pass `ann=True` to `get_store()` to also maintain a [usearch](https://github.com/unum-cloud/usearch) **HNSW** index as a rebuildable sidecar file. The SQLite table stays the source of truth (content + embedding blob + FTS5); the index is a pure accelerator you can rebuild anytime with `store.rebuild_index()`.
-
-- `store.sync(content, key_col=..., emb_fn=...)` — smart hash-diff update: deletes stale rows, embeds + upserts changed ones, and mirrors both into the index.
-- `db.search(..., ann=True)` — uses the HNSW index for the vector leg instead of the brute-force scan.
-
-Below we index 8,000 code snippets with `static_code_embedder` (a fast `model2vec` static embedder) and compare the two vector legs.
+    [{'doc_id': '3d5cb9e53d8efa9e',
+      'title': 'attention is all you need',
+      'source': 'pdfs/attention_is_all_you_need.pdf',
+      'pages': 17,
+      'tree': {'id': '3d5cb9e53d8efa9e#0',
+       'title': 'attention is all you need',
+       'level': 0,
+       'nchunks': 1,
+       'pages': (0, 16),
+       'summary': 'Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.',
+       'children': [{'id': '3d5cb9e53d8efa9e#1',
+         'title': 'Attention Is All You Need',
+         'level': 2,
+         'nchunks': 2,
+         'pages': (0, 0),
+         'summary': '**Ashish** **Vaswani** **Noam** **Shazeer** **Niki** **Parmar** **Jakob** **Uszkoreit** Google Brain Google Brain Google Research Google Research [avaswani@google.com](mailto:avaswani@google.com) [noam@google.com](mailto:noam@google.com) [nikip@google.com](mailto:nikip@google.com) [usz@google.com](m…',
+         'children': [{'id': '3d5cb9e53d8efa9e#2',
+           'title': 'Abstract',
+           'level': 4,
+           'nchunks': 75,
+           'pages': (0, 10),
+           'summary': 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transform…'},
+          {'id': '3d5cb9e53d8efa9e#3',
+           'title': 'References',
+           'level': 4,
+           'nchunks': 18,
+           'pages': (11, 13),
+           'summary': '[1] Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint [arXiv:1607.06450](http://arxiv.org/abs/1607.06450)[, 2016.](http://arxiv.org/abs/1607.06450) [2] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align…'},
+          {'id': '3d5cb9e53d8efa9e#4',
+           'title': 'Attention Visualizations',
+           'level': 4,
+           'nchunks': 6,
+           'pages': (14, 16),
+           'summary': 'ficult voting <EOS> <pad> in this that majority governmentspassed since making or process <pad> is spirit a of Americanhave newlaws 2009 the more <pad> <pad> It registration dif <pad> It a is in of or the this that newlaws ficult spirit have 2009 more since voting <pad> <pad><pad> <pad><pad> dif mak…'}]}]}}]
 
 ``` python
-import time
-
-emb = static_code_embedder()                    # model2vec potion-code-16M — 256-dim float16
-de, qe = doc_encoder(emb), query_encoder(emb)   # -> emb_fn: list[str] -> vectors
-
-adb   = database()
-store = adb.get_store('code', hash=True, ann=True)   # dtype defaults to float16, matching the embedder
-
-# 8,000 code snippets; sync embeds, upserts, and builds the HNSW index in one call
-docs = [dict(content=f'def func_{i}(x, y={i}): "helper {i%97}"; return x*{i} + y - {i%13}') for i in range(8000)]
-t = time.perf_counter(); stats = store.sync(docs, emb_fn=de)
-print(f'sync {stats} in {time.perf_counter()-t:.2f}s — index size {adb.get_index("code").size}')
-# sync {'changed': 8000, 'same': 0, 'removed': 0} in 0.57s — index size 8000
+nid = lib.sections(q, qv, limit=1)[0]['node_id']
+lib.read(nid)                          # one whole section, reassembled from its chunks
 ```
 
-    sync {'changed': 8000, 'same': 0, 'removed': 0} in 0.64s — index size 8000
+    {'id': '3d5cb9e53d8efa9e#2',
+     'title': 'Abstract',
+     'breadcrumb': 'attention is all you need › Abstract',
+     'pages': (0, 10),
+     'summary': 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transform…',
+     'children': [],
+     'text': 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.\n\n Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.\n\n5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to\n\narXiv:1706.03762v7 [cs.CL] 2 Aug 2023 other tasks by applying it successfully to English constituency parsing both with large and limited training data.\n\nEqual contribution. Listing order is random. Jakob proposed replacing RNNs with self-attention and started the effort to evaluate this idea.\n\n Ashish, with Illia, designed and implemented the first Transformer models and has been crucially involved in every aspect of this work. Noam proposed scaled dot-product attention, multi-head attention and the parameter-free position representation and became the other person involved in nearly every detail. Niki designed, implemented, tuned and evaluated countless model variants in our original codebase and tensor2tensor.\n\n Llion also experimented with novel model variants, was responsible for our initial codebase, and efficient inference and visualizations. Lukasz and Aidan spent countless long days designing various parts of and implementing tensor2tensor, replacing our earlier codebase, greatly improving results and massively accelerating our research. Work performed while at Google Brain. Work performed while at Google Research.\n\n31st Conference on Neural Information Processing Systems (NIPS 2017), Long Beach, CA, USA.\n\n**1** **Introduction**\n\nRecurrent neural networks, long short-term memory [13] and gated recurrent [7] neural networks in particular, have been firmly established as state of the art approaches in sequence modeling and transduction problems such as language modeling and machine translation [35, 2, 5]. Numerous efforts have since continued to push the boundaries of recurrent language models and encoder-decoder architectures [38, 24, 15].\n\n\n\nRecurrent models typically factor computation along the symbol positions of the input and output sequences. Aligning the positions to steps in computation time, they generate a sequence of hidden states h , as a function of the previous hidden state h and the input for position t. This inherently\n\nt\n\nt 1 sequential nature precludes parallelization within training examples, which becomes critical at longer sequence lengths, as memory constraints limit batching across examples.\n\n Recent work has achieved significant improvements in computational efficiency through factorization tricks [21] and conditional computation [32], while also improving model performance in case of the latter. The fundamental constraint of sequential computation, however, remains.\n\n\n\nAttention mechanisms have become an integral part of compelling sequence modeling and transduc-tion models in various tasks, allowing modeling of dependencies without regard to their distance in the input or output sequences [2, 19]. In all but a few cases [27], however, such attention mechanisms are used in conjunction with a recurrent network.\n\n\n\nIn this work we propose the Transformer, a model architecture eschewing recurrence and instead relying entirely on an attention mechanism to draw global dependencies between input and output. The Transformer allows for significantly more parallelization and can reach a new state of the art in translation quality after being trained for as little as twelve hours on eight P100 GPUs.\n\n**2** **Background**\n\n\n\nThe goal of reducing sequential computation also forms the foundation of the Extended Neural GPU [16], ByteNet [18] and ConvS2S [9], all of which use convolutional neural networks as basic building block, computing hidden representations in parallel for all input and output positions. In these models, the number of operations required to relate signals from two arbitrary input or output positions grows in the distance between positions, linearly for ConvS2S and logarithmically for ByteNet.\n\n This makes it more difficult to learn dependencies between distant positions [12]. In the Transformer this is reduced to a constant number of operations, albeit at the cost of reduced effective resolution due to averaging attention-weighted positions, an effect we counteract with Multi-Head Attention as described in section 3.2.\n\nSelf-attention, sometimes called intra-attention is an attention mechanism relating different positions of a single sequence in order to compute a representation of the sequence.\n\n Self-attention has been used successfully in a variety of tasks including reading comprehension, abstractive summarization, textual entailment and learning task-independent sentence representations [4, 27, 28, 22].\n\nEnd-to-end memory networks are based on a recurrent attention mechanism instead of sequence-aligned recurrence and have been shown to perform well on simple-language question answering and language modeling tasks [34].\n\n\n\nTo the best of our knowledge, however, the Transformer is the first transduction model relying entirely on self-attention to compute representations of its input and output without using sequence-aligned RNNs or convolution. In the following sections, we will describe the Transformer, motivate self-attention and discuss its advantages over models such as [17, 18] and [9].\n\n**3** **Model** **Architecture**\n\nMost competitive neural sequence transduction models have an encoder-decoder structure [5, 2, 35].\n\n Here, the encoder maps an input sequence of symbol representations x , ..., x to a sequence\n\n1 n of continuous representations **z** = (z , ..., z . Given **z**, the decoder then generates an output\n\n1 n sequence y , ..., y of symbols one element at a time. At each step the model is auto-regressive\n\n1 m [10], consuming the previously generated symbols as additional input when generating the next.\n\n2\n\nFigure 1: The Transformer - model architecture.\n\nThe Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers for both the encoder and decoder, shown in the left and right halves of Figure 1, respectively.\n\n**3.1** **Encoder** **and** **Decoder** **Stacks**\n\n**Encoder:** The encoder is composed of a stack of N = 6 identical layers. Each layer has two sub-layers.\n\n The first is a multi-head self-attention mechanism, and the second is a simple, position-wise fully connected feed-forward network. We employ a residual connection [11] around each of the two sub-layers, followed by layer normalization [1]. That is, the output of each sub-layer is LayerNorm(x + Sublayer(x , where Sublayer(x is the function implemented by the sub-layer itself.\n\n To facilitate these residual connections, all sub-layers in the model, as well as the embedding layers, produce outputs of dimension d = 512\n\nmodel\n\n**Decoder:** The decoder is also composed of a stack of N = 6 identical layers. In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack.\n\n Similar to the encoder, we employ residual connections around each of the sub-layers, followed by layer normalization. We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions. This masking, combined with fact that the output embeddings are offset by one position, ensures that the predictions for position i can depend only on the known outputs at positions less than i\n\n**3.2** **Attention**\n\n\n\nAn attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is computed as a weighted sum 3\n\n![Image 1 from page 3](images/page3_1.png)\n\nScaled Dot-Product Attention\n\nMulti-Head Attention\n\nFigure 2: (left) Scaled Dot-Product Attention. (right) Multi-Head Attention consists of several attention layers running in parallel.\n\nof the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key.\n\n**3.2.1** **Scaled** **Dot-Product** **Attention**\n\nWe call our particular attention "Scaled Dot-Product Attention" (Figure 2).\n\n The input consists of queries and keys of dimension d , and values of dimension d . We compute the dot products of the\n\nk\n\nv query with all keys, divide each by d , and apply a softmax function to obtain the weights on thek values.\n\nIn practice, we compute the attention function on a set of queries simultaneously, packed together into a matrix Q. The keys and values are also packed together into matrices K and V . We compute the matrix of outputs as:\n\nQKT Attention(Q, K, V ) = softmax( V (1) dk\n\n\n\nThe two most commonly used attention functions are additive attention [2], and dot-product (multi-plicative) attention. Dot-product attention is identical to our algorithm, except for the scaling factor of 1 . Additive attention computes the compatibility function using a feed-forward network with dk a single hidden layer.\n\n While the two are similar in theoretical complexity, dot-product attention is much faster and more space-efficient in practice, since it can be implemented using highly optimized matrix multiplication code.\n\nWhile for small values of d the two mechanisms perform similarly, additive attention outperformsk dot product attention without scaling for larger values of d [3].\n\n We suspect that for large values ofk d , the dot products grow large in magnitude, pushing the softmax function into regions where it hask extremely small gradients 4. To counteract this effect, we scale the dot products by 1 dk\n\n**3.2.2** **Multi-Head** **Attention**\n\n\n\nInstead of performing a single attention function with d -dimensional keys, values and queries,model we found it beneficial to linearly project the queries, keys and values h times with different, learned linear projections to d d and d dimensions, respectively. On each of these projected versions of\n\nk k v queries, keys and values we then perform the attention function in parallel, yielding d -dimensionalv\n\n\n\n4To illustrate why the dot products get large, assume that the components of q and k are independent random Pdk\n\nvariables with mean 0 and variance 1. Then their dot product, q k\n\nqk , has mean 0 and variance d\n\ni i\n\nk\n\ni=1 4\n\n![Image 1 from page 4](images/page4_1.png)\n\n![Image 2 from page 4](images/page4_2.png)\n\noutput values. These are concatenated and once again projected, resulting in the final values, as depicted in Figure 2.\n\nMulti-head attention allows the model to jointly attend to information from different representation subspaces at different positions. With a single attention head, averaging inhibits this.\n\nMultiHead(Q, K, V ) = Concat(head ..., head )WO 1\n\nh\n\nwhere head = Attention(QWQ KWK V WV\n\ni\n\ni i\n\ni\n\nd\n\nd\n\nd\n\nv\n\nk\n\nk\n\nWhere the projections are parameter matrices WQ\n\nWK Rdmodel WV Rdmodel\n\n\n\nRdmodel i\n\ni\n\ni dmodel\n\nand WO Rhdv\n\nIn this work we employ h = 8 parallel attention layers, or heads. For each of these we use d d d /h = 64. Due to the reduced dimension of each head, the total computational cost\n\nk v model is similar to that of single-head attention with full dimensionality.\n\n**3.2.3** **Applications** **of** **Attention** **in** **our** **Model**\n\nThe Transformer uses multi-head attention in three different ways:\n\n\n\n- In "encoder-decoder attention" layers, the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder. This allows every position in the decoder to attend over all positions in the input sequence. This mimics the typical encoder-decoder attention mechanisms in sequence-to-sequence models such as [38, 2, 9].\n- The encoder contains self-attention layers.\n\n In a self-attention layer all of the keys, values and queries come from the same place, in this case, the output of the previous layer in the encoder. Each position in the encoder can attend to all positions in the previous layer of the encoder.\n- Similarly, self-attention layers in the decoder allow each position in the decoder to attend to all positions in the decoder up to and including that position. We need to prevent leftward information flow in the decoder to preserve the auto-regressive property.\n\n We implement this inside of scaled dot-product attention by masking out (setting to ) all values in the input of the softmax which correspond to illegal connections. See Figure 2.\n\n**3.3** **Position-wise** **Feed-Forward** **Networks**\n\nIn addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically. This consists of two linear transformations with a ReLU activation in between.\n\n\n\nFFN(x) = max(0 xW b W b (2)\n\n1 1 2 2\n\nWhile the linear transformations are the same across different positions, they use different parameters from layer to layer. Another way of describing this is as two convolutions with kernel size 1. The dimensionality of input and output is d = 512, and the inner-layer has dimensionality\n\nmodel d = 2048ff\n\n**3.4** **Embeddings** **and** **Softmax**\n\n\n\nSimilarly to other sequence transduction models, we use learned embeddings to convert the input tokens and output tokens to vectors of dimension d . We also use the usual learned linear transfor-model mation and softmax function to convert the decoder output to predicted next-token probabilities. In our model, we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation, similar to [30]. In the embedding layers, we multiply those weights by dmodel 5\n\nTable 1: Maximum path lengths, per-layer complexity and minimum number of sequential operations for different layer types. n is the sequence length, d is the representation dimension, k is the kernel size of convolutions and r the size of the neighborhood in restricted self-attention.\n\nLayer Type\n\nComplexity per Layer Sequential Maximum Path Length Operations Self-Attention\n\nO n2 d\n\nO(1)\n\nO(1) Recurrent\n\nO n d2\n\nO n\n\nO n Convolutional\n\nO k n d2\n\nO(1)\n\nO log nk Self-Attention (restricted)\n\nO r n d\n\nO(1)\n\n\n\nO n/r\n\n**3.5** **Positional** **Encoding**\n\nSince our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence. To this end, we add "positional encodings" to the input embeddings at the bottoms of the encoder and decoder stacks. The positional encodings have the same dimension dmodel as the embeddings, so that the two can be summed.\n\n There are many choices of positional encodings, learned and fixed [9].\n\nIn this work, we use sine and cosine functions of different frequencies:\n\nmodel\n\nP E\n\nsin pos/100002i/d\n\npos, 2i\n\nmodel\n\nP E\n\ncos pos/100002i/d\n\npos, 2i+1)\n\nwhere pos is the position and i is the dimension. That is, each dimension of the positional encoding corresponds to a sinusoid. The wavelengths form a geometric progression from 2π to 10000 2π.\n\n We chose this function because we hypothesized it would allow the model to easily learn to attend by relative positions, since for any fixed offset k P E can be represented as a linear function of\n\npos k P Epos We also experimented with using learned positional embeddings [9] instead, and found that the two versions produced nearly identical results (see Table 3 row (E)).\n\n We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.\n\n**4** **Why** **Self-Attention**\n\nIn this section we compare various aspects of self-attention layers to the recurrent and convolu-tional layers commonly used for mapping one variable-length sequence of symbol representations x , ..., x to another sequence of equal length z , ..., z , with x , z Rd, such as a hidden 1 n\n\n1 n\n\n\n\ni i layer in a typical sequence transduction encoder or decoder. Motivating our use of self-attention we consider three desiderata.\n\nOne is the total computational complexity per layer. Another is the amount of computation that can be parallelized, as measured by the minimum number of sequential operations required.\n\nThe third is the path length between long-range dependencies in the network. Learning long-range dependencies is a key challenge in many sequence transduction tasks.\n\n One key factor affecting the ability to learn such dependencies is the length of the paths forward and backward signals have to traverse in the network. The shorter these paths between any combination of positions in the input and output sequences, the easier it is to learn long-range dependencies [12]. Hence we also compare the maximum path length between any two input and output positions in networks composed of the different layer types.\n\n\n\nAs noted in Table 1, a self-attention layer connects all positions with a constant number of sequentially executed operations, whereas a recurrent layer requires O n sequential operations. In terms of computational complexity, self-attention layers are faster than recurrent layers when the sequence 6\n\nlength n is smaller than the representation dimensionality d, which is most often the case with sentence representations used by state-of-the-art models in machine translations, such as word-piece [38] and byte-pair [31] representations. To improve computational performance for tasks involving very long sequences, self-attention could be restricted to considering only a neighborhood of size r in the input sequence centered around the respective output position.\n\n This would increase the maximum path length to O n/r . We plan to investigate this approach further in future work.\n\nA single convolutional layer with kernel width k < n does not connect all pairs of input and output positions. Doing so requires a stack of O n/k convolutional layers in the case of contiguous kernels, or O log n in the case of dilated convolutions [18], increasing the length of the longest paths\n\nk between any two positions in the network.\n\n Convolutional layers are generally more expensive than recurrent layers, by a factor of k. Separable convolutions [6], however, decrease the complexity considerably, to O k n d n d2 . Even with k n, however, the complexity of a separable convolution is equal to the combination of a self-attention layer and a point-wise feed-forward layer, the approach we take in our model.\n\nAs side benefit, self-attention could yield more interpretable models.\n\n We inspect attention distributions from our models and present and discuss examples in the appendix. Not only do individual attention heads clearly learn to perform different tasks, many appear to exhibit behavior related to the syntactic and semantic structure of the sentences.\n\n**5** **Training**\n\nThis section describes the training regime for our models.\n\n**5.1** **Training** **Data** **and** **Batching**\n\nWe trained on the standard WMT 2014 English-German dataset consisting of about 4.\n\n5 million sentence pairs. Sentences were encoded using byte-pair encoding [3], which has a shared source-target vocabulary of about 37000 token'}
+
+Structure is detected per document, in order: verse citations (`|| Mn_1.1 ||`), markdown
+headings, chapter lines (`CHAPTER IV`, `ARTICLE 12`), then fixed page windows as a floor — so
+`toc()` always returns something. Nothing calls a language model; `summarize=` and `chunker=` are
+the seams where one would go.
+
+Two things to know:
+
+- `sections()` scores a node by its **best** hit (`score='max'`). Summing every hit’s RRF mass
+  reads well and measures badly — it is a length prior in disguise, and cost 0.07–0.16 MRR on 150
+  known-item queries over 486 pages of legislation. `sum` is opt-in.
+- **The tree layer is a wash for ranking** (−0.05 to +0.01 across three genres). Use it for
+  `toc()`, `read()`, breadcrumbs and section-scoped answers, which is what it is for.
+
+Source code does not belong here: its tree is module › class › function and comes from the AST.
+
+## Code & file ingestion — packages, trees and any file type
+
+[`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse) splits a Python file or string into top-level code chunks (functions, classes, assignments) with source location metadata — ready to insert into a store:
 
 ``` python
-q  = 'function that multiplies its input by a constant and adds an offset'
-qv = qe([q])[0].tobytes()
-
-def bench(fn, reps=20):
-    t = time.perf_counter()
-    for _ in range(reps): fn()
-    return (time.perf_counter()-t)/reps*1000   # ms per call
-
-bf = bench(lambda: store.vec_search(qv, columns=['content'], limit=10))   # exact brute-force scan
-an = bench(lambda: store.ann_search(qv, columns=['content'], limit=10))   # HNSW
-print(f'brute-force {bf:.3f} ms   ann {an:.3f} ms   speedup {bf/an:.1f}x')
-# brute-force 1.787 ms   ann 0.100 ms   speedup 17.8x
-
-# HNSW is approximate but recall is high — top-10 matches the exact scan here
-exact = {r['content'] for r in store.vec_search(qv, columns=['content'], limit=10)}
-approx = {r['content'] for r in store.ann_search(qv, columns=['content'], limit=10)}
-print(f'recall@10: {len(exact & approx)}/10')
-# recall@10: 10/10
+txt = """
+from fastcore.all import *
+a=1
+class SomeClass:
+    def __init__(self,x): store_attr()
+    def method(self): return self.x + a
+"""
+pyparse(code=txt)
 ```
 
-    brute-force 1.802 ms   ann 0.123 ms   speedup 14.6x
-    recall@10: 9/10
+    [{'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': 'SomeClass', 'lang': '.py', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]
+
+[`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) indexes an **entire installed package** in one call — great for building a semantic code-search store over your dependencies:
 
 ``` python
-# use it end-to-end via db.search — ann=True swaps in the HNSW index for the vector leg
-adb.search(q, qv, columns=['content'], table_name='code', ann=True, limit=3)
+chunks = pkg2chunks('fastlite')
+print(f'{len(chunks)} chunks from fastlite')
+chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
 ```
 
-    [{'content': 'def func_3601(x, y=3601): "helper 12"; return x*3601 + y - 0',
-      'rowid': 3602,
-      '_dist': 0.7722985148429871,
-      '_rrf_score': 0.016666666666666666},
-     {'content': 'def func_3605(x, y=3605): "helper 16"; return x*3605 + y - 4',
-      'rowid': 3606,
-      '_dist': 0.7867892384529114,
-      '_rrf_score': 0.01639344262295082},
-     {'content': 'def func_3608(x, y=3608): "helper 19"; return x*3608 + y - 7',
-      'rowid': 3609,
-      '_dist': 0.7960468530654907,
-      '_rrf_score': 0.016129032258064516}]
+    47 chunks from fastlite
 
-### PDF Extraction
+    {'content': 'def t(self:Database): return _TablesGetter(self)',
+     'metadata': {'path': '/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py',
+      'uploaded_at': 1773452878.5692947,
+      'name': 't',
+      'lang': '.py',
+      'type': 'FunctionDef',
+      'lineno': 44,
+      'end_lineno': 44,
+      'package': 'fastlite',
+      'version': '0.2.4'}}
+
+[`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse) is the single entry point for any file type — Python, Jupyter notebooks, PDF, Markdown, plain text, and compiled-language source files (JS/TS, Go, Java, Rust…). All return the same `{content, metadata}` dicts:
+
+``` python
+# Python → AST-parsed functions and classes
+py=file_parse(repo_root()/'litesearch/core.py')[:2]
+
+# Jupyter notebook → one dict per cell
+nb=file_parse(repo_root()/'nbs/01_core.ipynb')[:2]
+
+# PDF → markdown-chunked text (via pdf_chunks)
+pdf=file_parse(Path('pdfs/attention_is_all_you_need.pdf'))[:2]
+print('code: ', py[0]['content'], '\n ipynb: ', nb[0]['content'], '\npdf: ', pdf[0]['content'][:400])
+```
+
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+
+    code:  def _dtype_suffix(dtype=np.float16): return _dtype_suffixes.get(dtype, 'f32') 
+     ipynb:  ---
+    description: Building blocks for litesearch
+    output-file: core.html
+    title: core
+
+    ---
+
+     
+    pdf:  Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.
+
+    ## Attention Is All You Need
+
+    **Ashish** **Vaswani**
+
+    **Noam** **Shazeer**
+
+    **Niki** **Parmar**
+
+    **Jakob** **Uszkoreit** Google Brain
+
+    Google Brain
+
+    Google Research Google Research [avaswani@google.com](mailto:avaswani@google
+
+[`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks) indexes every file in a directory tree — analogous to [`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) but for arbitrary directories rather than installed packages:
+
+``` python
+# Index all Python source files in a directory
+chunks = dir2chunks(repo_root()/'litesearch', types='py')
+print(f'{len(chunks)} chunks from litesearch/')
+
+# Mix formats: notebooks, markdown, PDFs
+chunks = dir2chunks(repo_root()/'nbs', types='ipynb,md,pdf')
+print(f'{len(chunks)} chunks from nbs/')
+```
+
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+    Dictionary used where Stream expected, treating as empty stream
+
+    224 chunks from litesearch/
+
+    [liteparse] extract: 20.8ms (28 pages)
+    [liteparse] ocr render: 1241.3ms (28 pages)
+
+    22246 chunks from nbs/
+
+    [liteparse] ocr: 11696.7ms
+    [liteparse] project: 27.7ms
+    [liteparse] total: 12986.6ms
+
+## `litesearch.sanskrit` — verse-aware reading, chunking and metre
+
+Registered as two [`Profile`](https://Karthik777.github.io/litesearch/data.html#profile)s at import, so `add_file` needs no arguments — it picks the reader
+(GRETIL plain text, TEI, vedicreader XML, DCS), the `verse` tree mode, [`VerseChunker`](https://Karthik777.github.io/litesearch/sanskrit.html#versechunker), and
+per-chunk metrical facets by itself.
+
+``` python
+skt = database()
+skt.add_file('sanskrit/manu_tei_excerpt.xml', emb_fn=emb)    # TEI, detected by content
+skt.add_file('sanskrit/lalita_excerpt.xml',  emb_fn=emb)     # vedicreader XML
+
+skt.by_meter(meter='anuṣṭubh', columns=['content'], limit=2)
+```
+
+**Cross-script search is on for every store**, not only Sanskrit ones. The `sanskrit` FTS5
+tokenizer emits an ASCII fold of each token as a *colocated* token, so `श्रीमाता`, `śrīmātā` and
+`srimata` all reach the same row while `content` is stored exactly as ingested. It is purely
+additive — `running`, `cat` and `fts_search` behave identically to the bare chain — which is why it
+is the default rather than something a Sanskrit corpus opts into: a store’s tokenizer is fixed when
+its table is created, and the first document ingested should not decide it. One real cost: **a
+store built with this chain cannot be opened by a connection that has not registered the
+tokenizer**, plain `sqlite3` included.
+
+**Metre is computed, not annotated.** A verse is built from gaṇas — triples of heavy/light
+syllables — so metre is one of the few facets of a Sanskrit corpus that needs no model, no lexicon
+and no annotation. [`verse_meta`](https://Karthik777.github.io/litesearch/sanskrit.html#verse_meta) writes `meter`, `variant`, `gana`, `pada` and `matra` into the
+chunk’s existing `metadata` column, which `get_store` already indexes for FTS, so the facets are
+searchable and `where`-filterable with no schema change and no cooperation from any caller. Both
+the syllable-counting (varṇa) and mora-counting (āryā family) systems are covered.
+
+**Lemmas and glosses are opt-in.** Sandhi means the surface form is often not what a reader
+types, and the text is Sanskrit while the question usually is not.
+
+``` python
+from litesearch import vidyut_pipe, mw_lexicon, register_profiles
+register_profiles(nlp=vidyut_pipe(), mw=mw_lexicon())   # once, before add_file/add_dir
+```
+
+[`vidyut_pipe()`](https://Karthik777.github.io/litesearch/sanskrit.html#vidyut_pipe) adds a `lemma` facet (queryable with `db.by_lemma('gam')`) and [`mw_lexicon()`](https://Karthik777.github.io/litesearch/sanskrit.html#mw_lexicon) a
+`gloss` facet carrying the English behind each word. `pip install litesearch[sanskrit]` — a 2.3 MB
+Rust wheel (vidyut, MIT) with no Python dependencies; `lipi` transliteration works immediately and
+the 81 MB kosha and ~2 MB Monier-Williams reduction are fetched on first use.
+
+`vidyut_pipe(split=True)` (the default) undoes sandhi on any token the lexicon does not hold, and
+every piece must itself be in the kosha with the whole word covered — validating a generative rule
+table against 30M real forms is what stops it inventing readings. Measured: token coverage 52% →
+86%, and lemma-query retrieval 0.744 → 0.866 MRR. It recovers most compound members too, since a
+samāsa seam is usually a sandhi seam: `yogaścittavṛttinirodhaḥ` yields `yoga`, `cittavṛtti`, `rodha`.
+
+[`sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is a `terms_fn` for [`build_graph`](https://Karthik777.github.io/litesearch/graph.html#build_graph), replacing yake where yake cannot read the
+script — it keeps a word only if the kosha gives it a *subanta* (nominal) reading and no *tinanta*
+(verbal) one. And [`detect_meter`](https://Karthik777.github.io/litesearch/sanskrit.html#detect_meter) now knows 100 patterns rather than 20, the extra 80 vendored as
+data from vidyut’s `chandas` catalogue so naming a metre still costs no dependency.
+
+Both facets run at **ingest** only — the FTS5 tokenizer stays deterministic and table-driven,
+because a store’s tokenizer has to resolve on every connection that opens the file and be fast
+enough for the query path.
+
+## `litesearch.graph` — knowledge graph, no LLM
+
+Builds an entity graph beside the chunk store and fuses it into search as a third RRF leg.
+Nothing here calls a language model.
+
+The split that makes it work: **code is parsed, prose is tagged.** For Python the AST already
+knows every symbol and every call, so [`code_entities`](https://Karthik777.github.io/litesearch/graph.html#code_entities) returns exact `defines`/`calls`/`imports`
+edges. For prose, spaCy’s `noun_chunks` (not its OntoNotes NER, which misses lowercase technical
+terms like `usearch`) supply the nodes, and edges come from normalized-PMI co-occurrence.
+
+``` python
+kg = database()
+kg.get_store(hash=True, ann=True)
+chunks = [dict(content=t, metadata='{}') for _,_,t in doc.pdf_chunks()][:60]
+
+build_graph(kg, chunks, prose=True, nlp=spacy_pipe(), emb_fn=emb)
+```
+
+``` python
+resolve_entities(kg)                   # merge surface variants of the same entity
+[t['content'] for t in graph_stats(kg)['top_degree'][:8]]
+```
+
+`graph_search` seeds a personalized-PageRank walk from the top hybrid hits, then fuses
+FTS + vector + graph with [`rrf_all`](https://Karthik777.github.io/litesearch/graph.html#rrf_all). The graph leg reaches documents that share no terms with
+the query — only an entity path.
+
+| Function | Description |
+|----|----|
+| `db.get_graph(store)` | Create `entities` / `mentions` / `edges` tables |
+| `build_graph(db, chunks, ...)` | Extract entities, mentions and edges from chunks |
+| `code_entities(chunk)` | Exact `(defined, called, imported)` symbols from a Python AST |
+| `text_entities(text, nlp)` | Entity surfaces from prose (spaCy, or yake fallback) |
+| `resolve_entities(db)` | Merge duplicate entities via ANN + a lexical guard |
+| `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
+| `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
+| `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
+
+Details that matter in practice:
+
+- **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
+  chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
+  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
+  come from spaCy, or from `apsw.unicode.sentence_iter` on the no-spaCy path.
+- **Resolution must not touch exact identifiers.** [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) leaves `symbol`/`module`/
+  `topic` kinds alone, and [`_toks`](https://Karthik777.github.io/litesearch/graph.html#_toks) uses UAX#29 segmentation so `fts_search` never decomposes into
+  `{fts, search}` and collapses into `search`.
+- **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
+  clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
+  IDF is what makes labels distinguish clusters from each other.
+- **The graph leg is weighted low (`graph_w=0.5`) on purpose.** It pays when the answer shares no
+  vocabulary with the query and is reachable only along an entity path — common in prose, rare in
+  code, where call edges connect different levels of abstraction rather than substitutable answers.
+  On code corpora prefer `graph_w=0` and use the graph for context assembly (pull callers/callees of
+  a hit) rather than for reranking.
+
+spaCy and yake are core dependencies, so there is nothing extra to install. The *model* is not
+shippable — spaCy models are not on PyPI and PyPI rejects URL deps — so [`spacy_pipe`](https://Karthik777.github.io/litesearch/graph.html#spacy_pipe) downloads
+`en_core_web_sm` on first use; without a model the extractor falls back to yake keyphrases, which
+are weaker node identities.
+
+That difference is worth more than it sounds. yake emits overlapping sub-phrases of one span
+(`marie curie isolated`, `curie isolated polonium`, `isolated polonium`, `polonium`), and each
+adjacent pair is a legitimate containment merge, so entity resolution can walk the ladder from one
+end to the other. [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) now keeps every merged group a **clique** under the lexical
+guard, which stops that; but a noun-chunk pass still gives you one entity where yake gives four.
+
+`build_graph(..., nlp=...)` takes any spaCy-shaped pipeline, so a language spaCy has no model for
+can be served by supplying one. Note that spaCy implements `noun_chunks` per language, so where it
+is missing extraction falls back to a POS-run approximation instead.
+
+## PDF extraction
 
 `litesearch.data` patches `pdf_oxide.PdfDocument` with bulk page-extraction methods. All methods take optional `st` / `end` page indices and return a fastcore `L` list:
 
@@ -294,245 +497,6 @@ print(f'page {pg}, chunk {ci}: {text[:80]}...')
 
     16 chunks from 15 pages
     page 0, chunk 0: Provided proper attribution is provided, Google hereby grants permission to repr...
-
-### Code & File Ingestion
-
-[`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse) splits a Python file or string into top-level code chunks (functions, classes, assignments) with source location metadata — ready to insert into a store:
-
-``` python
-txt = """
-from fastcore.all import *
-a=1
-class SomeClass:
-    def __init__(self,x): store_attr()
-    def method(self): return self.x + a
-"""
-pyparse(code=txt)
-```
-
-    [{'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': 'SomeClass', 'lang': '.py', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]
-
-[`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) indexes an **entire installed package** in one call — great for building a semantic code-search store over your dependencies:
-
-``` python
-chunks = pkg2chunks('fastlite')
-print(f'{len(chunks)} chunks from fastlite')
-chunks.filter(lambda d: d['metadata']['type'] == 'FunctionDef')[0]
-```
-
-    47 chunks from fastlite
-
-    {'content': 'def t(self:Database): return _TablesGetter(self)',
-     'metadata': {'path': '/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py',
-      'uploaded_at': 1773452878.5692947,
-      'name': 't',
-      'lang': '.py',
-      'type': 'FunctionDef',
-      'lineno': 44,
-      'end_lineno': 44,
-      'package': 'fastlite',
-      'version': '0.2.4'}}
-
-[`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse) is the single entry point for any file type — Python, Jupyter notebooks, PDF, Markdown, plain text, and compiled-language source files (JS/TS, Go, Java, Rust…). All return the same `{content, metadata}` dicts:
-
-``` python
-# Python → AST-parsed functions and classes
-py=file_parse(repo_root()/'litesearch/core.py')[:2]
-
-# Jupyter notebook → one dict per cell
-nb=file_parse(repo_root()/'nbs/01_core.ipynb')[:2]
-
-# PDF → markdown-chunked text (via pdf_chunks)
-pdf=file_parse(Path('pdfs/attention_is_all_you_need.pdf'))[:2]
-print(py[0], '\n------------\n', nb[0], '\n---------------\n', pdf[0][:400])
-```
-
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-
-    {'content': "def _dtype_suffix(dtype=np.float16): return _dtype_suffixes.get(dtype, 'f32')", 'metadata': {'path': '/Users/71293/code/litesearch/litesearch/core.py', 'uploaded_at': 1784347629.5078557, 'name': '_dtype_suffix', 'lang': '.py', 'type': 'FunctionDef', 'lineno': 15, 'end_lineno': 15}} 
-    ------------
-     {'content': '---\ndescription: Building blocks for litesearch\noutput-file: core.html\ntitle: core\n\n---\n\n', 'metadata': {'path': '/Users/71293/code/litesearch/nbs/01_core.ipynb', 'uploaded_at': 1784345054.1480775, 'lang': '.ipynb', 'type': 'raw'}} 
-    ---------------
-     {'content': 'Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.\n\n## Attention Is All You Need\n\n**Ashish** **Vaswani**\n\n**Noam** **Shazeer**\n\n**Niki** **Parmar**\n\n**Jakob** **Uszkoreit** Google Brain\n\nGoogle Brain\n\nGoogle Research Google Research [avaswani@google.com](mailto:avaswani@google.com) [noam@google.com](mailto:noam@google.com) [nikip@google.com](mailto:nikip@google.com) [usz@google.com](mailto:usz@google.com)\n\n**Llion** **Jones**\n\n**Aidan** **N.** **Gomez**∗ †\n\n**Łukasz** **Kaiser** Google Research\n\nUniversity of Toronto\n\nGoogle Brain [lukaszkaiser@google.com](mailto:lukaszkaiser@google.com)\n\n[llion@google.com](mailto:llion@google.com) [aidan@cs.toronto.edu](mailto:aidan@cs.toronto.edu)\n\n**Illia** **Polosukhin**∗ ‡ [illia.polosukhin@gmail.com](mailto:illia.polosukhin@gmail.com)\n\n#### Abstract\n\nThe dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to\n\narXiv:1706.03762v7 [cs.CL] 2 Aug 2023  other tasks by applying it successfully to English constituency parsing both with large and limited training data.\n\nEqual contribution. Listing order is random. Jakob proposed replacing RNNs with self-attention and started the effort to evaluate this idea. Ashish, with Illia, designed and implemented the first Transformer models and has been crucially involved in every aspect of this work. Noam proposed scaled dot-product attention, multi-head attention and the parameter-free position representation and became the other person involved in nearly every detail. Niki designed, implemented, tuned and evaluated countless model variants in our original codebase and tensor2tensor. Llion also experimented with novel model variants, was responsible for our initial codebase, and efficient inference and visualizations. Lukasz and Aidan spent countless long days designing various parts of and implementing tensor2tensor, replacing our earlier codebase, greatly improving results and massively accelerating our research. Work performed while at Google Brain. Work performed while at Google Research.\n\n31st Conference on Neural Information Processing Systems (NIPS 2017), Long Beach, CA, USA.\n', 'metadata': {'path': Path('pdfs/attention_is_all_you_need.pdf'), 'uploaded_at': 1773199216.9632287, 'lang': '.pdf'}}
-
-[`dir2chunks`](https://Karthik777.github.io/litesearch/data.html#dir2chunks) indexes every file in a directory tree — analogous to [`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) but for arbitrary directories rather than installed packages:
-
-``` python
-# Index all Python source files in a directory
-chunks = dir2chunks(repo_root()/'litesearch', types='py')
-print(f'{len(chunks)} chunks from litesearch/')
-
-# Mix formats: notebooks, markdown, PDFs
-chunks = dir2chunks(repo_root()/'nbs', types='ipynb,md,pdf')
-print(f'{len(chunks)} chunks from nbs/')
-```
-
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-    Dictionary used where Stream expected, treating as empty stream
-
-    63 chunks from litesearch/
-    2910 chunks from nbs/
-
-## `litesearch.graph` — knowledge graph, no LLM
-
-Builds an entity graph beside the chunk store and fuses it into search as a third RRF leg.
-Nothing here calls a language model.
-
-The split that makes it work: **code is parsed, prose is tagged.** For Python the AST already
-knows every symbol and every call, so `code_entities` returns exact `defines`/`calls`/`imports`
-edges. For prose, spaCy's `noun_chunks` (not its OntoNotes NER, which misses lowercase technical
-terms like `usearch`) supply the nodes, and edges come from normalized-PMI co-occurrence.
-
-```python
-from litesearch import database, build_graph, resolve_entities, topic_nodes, spacy_pipe
-from litesearch.data import dir2chunks
-from litesearch.utils import FastEncode, doc_encoder
-
-enc    = FastEncode()
-emb_fn = doc_encoder(enc)
-chunks = dir2chunks('litesearch', file_glob='*.py')
-
-db = database('.claude/kg.db')
-store = db.get_store(hash=True, ann=True)     # index chunks as usual, then:
-
-build_graph(db, chunks, prose=False, emb_fn=emb_fn)
-# {'entities': 296, 'mentions': 568, 'edges': 753, 'windows': 96}
-
-resolve_entities(db)        # merges surface variants; skips exact AST symbols
-topic_nodes(db)             # clusters the HNSW index into yake-labelled topic nodes
-
-hits = db.graph_search(q, enc.encode_query([q])[0].tobytes(), columns=['content'], limit=10)
-```
-
-`graph_search` seeds a personalized-PageRank walk from the top hybrid hits, then fuses
-FTS + vector + graph with `rrf_all`. The graph leg reaches documents that share no terms with
-the query — only an entity path.
-
-| Function | Description |
-|---|---|
-| `db.get_graph(store)` | Create `entities` / `mentions` / `edges` tables |
-| `build_graph(db, chunks, ...)` | Extract entities, mentions and edges from chunks |
-| `code_entities(chunk)` | Exact `(defined, called, imported)` symbols from a Python AST |
-| `text_entities(text, nlp)` | Entity surfaces from prose (spaCy, or yake fallback) |
-| `resolve_entities(db)` | Merge duplicate entities via ANN + a lexical guard |
-| `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
-| `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
-| `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
-
-Details that matter in practice:
-
-- **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
-  chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
-  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
-  come from spaCy, or from `apsw.unicode.sentence_iter` on the no-spaCy path.
-- **Resolution must not touch exact identifiers.** `resolve_entities` leaves `symbol`/`module`/
-  `topic` kinds alone, and `_toks` uses UAX#29 segmentation so `fts_search` never decomposes into
-  `{fts, search}` and collapses into `search`.
-- **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
-  clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
-  IDF is what makes labels distinguish clusters from each other.
-- **The graph leg is weighted low (`graph_w=0.5`) on purpose.** It pays when the answer shares no
-  vocabulary with the query and is reachable only along an entity path — common in prose, rare in
-  code, where call edges connect different levels of abstraction rather than substitutable answers.
-  On code corpora prefer `graph_w=0` and use the graph for context assembly (pull callers/callees of
-  a hit) rather than for reranking.
-
-spaCy and yake are core dependencies, so there is nothing extra to install. The *model* is not
-shippable — spaCy models are not on PyPI and PyPI rejects URL deps — so `spacy_pipe` downloads
-`en_core_web_sm` on first use; without a model the extractor falls back to yake keyphrases, which
-are weaker node identities.
-
-That difference is worth more than it sounds. yake emits overlapping sub-phrases of one span
-(`marie curie isolated`, `curie isolated polonium`, `isolated polonium`, `polonium`), and each
-adjacent pair is a legitimate containment merge, so entity resolution can walk the ladder from one
-end to the other. `resolve_entities` now keeps every merged group a **clique** under the lexical
-guard, which stops that; but a noun-chunk pass still gives you one entity where yake gives four.
-
-For a language spaCy has no model for, `stanza_pipe(lang)` covers stanza's 68:
-
-```python
-from litesearch import stanza_pipe
-build_graph(db, chunks, prose=True, nlp=stanza_pipe('sa'), emb_fn=emb)
-```
-
-`pip install litesearch[stanza]` (it pulls torch, which is why it is not a core dep). Note that
-stanza has no NER model for Sanskrit, and spaCy implements `noun_chunks` per language and not for
-`sa`, so extraction there runs on a POS-run approximation instead.
-
-## `litesearch.tree` — documents, sections and `read()`
-
-For books, reports, papers and doc sites — anything where "which chapter" is a better answer than
-"which 400 characters". Every document gets a node tree at ingest time, every chunk is linked to a
-node, and results roll up to sections.
-
-```python
-db = database('library.db')
-db.get_tree('store')                         # docs + nodes tables beside the chunk store
-db.add_file('books/report.pdf', emb_fn=emb)
-db.add_dir('books/', emb_fn=emb)             # pdf, md, txt, rst, ipynb, xml, tei, conllu
-
-db.doc_search(q, qv, limit=5)   # hybrid search; every hit carries a breadcrumb + node_id
-db.sections(q, qv, limit=3)     # ranked *sections*, each with snippets and a read() handle
-db.toc('report', max_depth=2)   # the tree — no embeddings computed at all
-db.read('a1b2c3d4#12')          # one whole section plus its children
-db.node_context('a1b2c3d4#12')  # its parent, siblings and children
-```
-
-Structure is detected per document, in order: verse citations (`|| Mn_1.1 ||`), markdown
-headings, chapter lines (`CHAPTER IV`, `ARTICLE 12`), then fixed page windows as a floor — so
-`toc()` always returns something. Nothing calls a language model; `summarize=` and `chunker=` are
-the seams where one would go.
-
-Two things to know:
-
-- `sections()` scores a node by its **best** hit (`score='max'`). Summing every hit's RRF mass
-  reads well and measures badly — it is a length prior in disguise, and cost 0.07–0.16 MRR on 150
-  known-item queries over 486 pages of legislation. `sum` is opt-in.
-- **The tree layer is a wash for ranking** (−0.05 to +0.01 across three genres). Use it for
-  `toc()`, `read()`, breadcrumbs and section-scoped answers, which is what it is for.
-
-Source code does not belong here: its tree is module › class › function and comes from the AST.
-
-## `litesearch.sanskrit` — verse-aware reading, chunking and metre
-
-Registered as two `Profile`s at import, so `add_file` needs no arguments — it picks the reader
-(GRETIL plain text, TEI, vedicreader XML, DCS), the `verse` tree mode, `VerseChunker`, and
-per-chunk metrical facets by itself.
-
-```python
-db.add_file('gretil/manu.htm', emb_fn=emb)                     # detected
-db.add_file('bhasya.htm', profile='sanskrit_prose', emb_fn=emb)  # by name only
-db.by_meter(meter='mandākrāntā')            # filter by metre
-db.by_meter(gana='ma bha na ta ta ga ga')   # every verse with that shape
-```
-
-**Cross-script search is on for every store**, not only Sanskrit ones. The `sanskrit` FTS5
-tokenizer emits an ASCII fold of each token as a *colocated* token, so `श्रीमाता`, `śrīmātā` and
-`srimata` all reach the same row while `content` is stored exactly as ingested. It is purely
-additive — `running`, `cat` and `fts_search` behave identically to the bare chain — which is why it
-is the default rather than something a Sanskrit corpus opts into: a store's tokenizer is fixed when
-its table is created, and the first document ingested should not decide it. One real cost: **a
-store built with this chain cannot be opened by a connection that has not registered the
-tokenizer**, plain `sqlite3` included.
-
-**Metre is computed, not annotated.** A verse is built from gaṇas — triples of heavy/light
-syllables — so metre is one of the few facets of a Sanskrit corpus that needs no model, no lexicon
-and no annotation. `verse_meta` writes `meter`, `variant`, `gana`, `pada` and `matra` into the
-chunk's existing `metadata` column, which `get_store` already indexes for FTS, so the facets are
-searchable and `where`-filterable with no schema change and no cooperation from any caller. Both
-the syllable-counting (varṇa) and mora-counting (āryā family) systems are covered.
-
-**Lemmas are opt-in.** Sandhi means the surface form is often not what a reader types.
-`register_profiles(nlp=stanza_pipe('sa'))` adds a `lemma` facet to the same `metadata`, queryable
-with `db.by_lemma('gam')`. It runs at **ingest** only — the FTS5 tokenizer stays deterministic and
-table-driven, because a store's tokenizer has to resolve on every connection that opens the file
-and be fast enough for the query path. Stanza does not split sandhi or decompose compounds (its
-Vedic treebank ships pre-segmented), so this covers inflection, not the harder half.
 
 ## `litesearch.utils`
 
@@ -686,17 +650,17 @@ for r in rrf_merge(txt_r, img_r)[:6]:
     rrf=0.0167  Table 1: Maximum path lengths, per-layer complexity and minimum number
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-26-output-3.png)
+![](index_files/figure-commonmark/cell-28-output-3.png)
 
     rrf=0.0164  Table 4: The Transformer generalizes well to English constituency pars
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-26-output-5.png)
+![](index_files/figure-commonmark/cell-28-output-5.png)
 
     rrf=0.0161  Table 3: Variations on the Transformer architecture. Unlisted values a
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-26-output-7.png)
+![](index_files/figure-commonmark/cell-28-output-7.png)
 
 **Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same 768-dim space; use [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) and [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) separately:
 
@@ -725,32 +689,32 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-27-output-2.png)
+![](index_files/figure-commonmark/cell-29-output-2.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-27-output-4.png)
+![](index_files/figure-commonmark/cell-29-output-4.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-27-output-6.png)
+![](index_files/figure-commonmark/cell-29-output-6.png)
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-27-output-8.png)
+![](index_files/figure-commonmark/cell-29-output-8.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-27-output-10.png)
+![](index_files/figure-commonmark/cell-29-output-10.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-27-output-12.png)
+![](index_files/figure-commonmark/cell-29-output-12.png)
 
 ## Next Steps
 

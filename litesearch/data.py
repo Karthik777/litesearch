@@ -110,12 +110,7 @@ def _char_start(b:bytes, i:int) -> int:
     return i
 
 class SafeFastChunker(FastChunker):
-    """`FastChunker` whose cuts land on character boundaries.
-    chonkie-core returns *byte* offsets and `FastChunker.chunk` decodes each slice on its own, so a
-    size cut that falls inside a multi-byte character raises `UnicodeDecodeError` — which any long
-    unbroken paragraph containing an em dash or a curly quote will do, i.e. most scraped web pages.
-    Both sides of a cut are moved back to the start of the character it split, so the text is
-    repartitioned by up to three bytes and never lost."""
+    '`FastChunker` whose cuts land on character boundaries.'
     def chunk(self, text:str) -> list:
         if not text: return []
         kw = dict(size=self.chunk_size, prefix=self.prefix, consecutive=self.consecutive,
@@ -128,6 +123,7 @@ class SafeFastChunker(FastChunker):
             out.append(Chunk(text=t, start_index=pos, end_index=pos+len(t), token_count=0))
             pos += len(t)
         return out
+
 
 # %% ../nbs/02_data.ipynb #4ddbb058066ad269
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
@@ -227,18 +223,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Profile:
-    """How one *kind* of document should be read: parser, structure, chunker.
-
-    A chunker alone is not enough to describe a format, which is what `add_doc(chunker=...)` on its
-    own implies. Getting Sanskrit right needed a reader that knows `<lg xml:id=…>` is a verse, a
-    tree mode that knows a citation is a chapter boundary, *and* a chunker that cuts on daṇḍas —
-    three different seams. A profile is the one object that names all three, so adding the next
-    format is a registration rather than another branch in `add_file`.
-
-    `meta` is the fourth: what a format knows about a chunk that no generic pipeline could compute.
-    Sanskrit fills it with metre and gaṇa signature, which land in the `metadata` column
-    `get_store` already indexes for FTS — so a facet nothing else in litesearch understands becomes
-    searchable and filterable with no schema change."""
+    'How one *kind* of document should be read: parser, structure, chunker.'
     name:str
     exts:str = ''            # comma-separated extensions this profile claims
     parse:callable = None    # path -> (pages, meta)
@@ -262,11 +247,7 @@ def profile_for(path=None,      # file whose extension (and first bytes) select 
                 text:str=None,  # already-read text, when there is no file
                 name:str=None   # ask for one by name, skipping detection
                 ) -> Profile|None:
-    """The profile that claims this document, or None for the default pipeline.
-
-    Extension is a filter, never the decision: `.xml` is TEI, vedicreader and a hundred unrelated
-    schemas, and `.txt` is anything at all. A profile that shares an extension must sniff the
-    content, and one that cannot is only reached by `name`."""
+    'The profile that claims this document, or None for the default pipeline.'
     if name: return PROFILES.get(name)
     sfx = Path(path).suffix if path else ''
     if text is None and path is not None:
@@ -292,6 +273,7 @@ def file_parse(p:Path=None,  # path to a code file
     if p.suffix  == '.md': return chunk_markdown(p.read_text(encoding='utf-8')).map(fn)
     if p.suffix == '.txt': return chunk_texts(p.read_text(encoding='utf-8')).map(fn)
     return L()
+
 
 # %% ../nbs/02_data.ipynb #a8efe72ac0b7468a
 @delegates(globtastic)
@@ -369,8 +351,7 @@ def installed_packages(nms:list=None,    # list of package names
 def clean(q:str,  # query to be passed for fts search
           pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
           ):
-    '''Clean the query by removing * and returning None for empty queries.
-    `_` is deliberately kept.'''
+    'Clean the query by removing * and returning None for empty queries.'
     import re
     return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
@@ -378,8 +359,7 @@ _BARE = re.compile(r'^[A-Za-z0-9_]+$')
 
 def add_wc(q:str  # query to be passed for fts search
            ):
-    '''Add wild card * to each word in the query.`kw` uses UAX#29 segmentation, which keeps
-    the apostrophe inside `pathfinder's`, '''
+    'Add wild card * to each word in the query.`kw` uses UAX#29 segmentation, which keeps'
     esc = lambda w: w if _BARE.match(w) else '"%s"' % w.replace('"', '""')
     return ' '.join(esc(w) + '*' for w in q.split(' ') if w)
 
@@ -416,6 +396,7 @@ def pre(q:str,          # query to be passed for fts search
     if wc: q = add_wc(q)
     if wide: q = mk_wider(q)
     return q
+
 
 # %% ../nbs/02_data.ipynb #jv0r083q7b
 def img2png(img) -> bytes:

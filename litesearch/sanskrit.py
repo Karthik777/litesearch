@@ -2,21 +2,18 @@
 
 # %% auto #0
 __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'VERSE_TARGET', 'VERSE_MAX', 'GANAS', 'METERS',
-           'MATRA_METERS', 'CATURMATRA', 'strip_vedic', 'deva2ascii', 'detect_script', 'fold_token',
-           'sanskrit_tokenizer', 'register_sanskrit', 'cite_parts', 'verse_spans', 'chunk_verses', 'VerseChunker',
-           'ProseChunker', 'deva2iast', 'syllables', 'scan', 'ganas', 'gana_pattern', 'metrical_text', 'matras',
-           'detect_matra_meter', 'detect_meter', 'verse_units', 'verse_meta', 'lemma_facets', 'sanskrit_meta',
-           'gretil_parse', 'tei_parse', 'vr_xml_parse', 'dcs_parse', 'is_sanskrit', 'sanskrit_parse',
-           'register_profiles']
+           'VRTTA_EXTRA', 'MATRA_METERS', 'CATURMATRA', 'PADA_RANGE', 'MW_URL', 'GLOSS_STOP', 'strip_vedic',
+           'deva2ascii', 'detect_script', 'fold_token', 'sanskrit_tokenizer', 'register_sanskrit', 'cite_parts',
+           'verse_spans', 'chunk_verses', 'VerseChunker', 'ProseChunker', 'deva2iast', 'syllables', 'scan', 'ganas',
+           'gana_pattern', 'metrical_text', 'matras', 'detect_matra_meter', 'detect_meter', 'verse_units', 'verse_meta',
+           'lemma_facets', 'sanskrit_meta', 'gretil_parse', 'tei_parse', 'vr_xml_parse', 'dcs_parse', 'is_sanskrit',
+           'sanskrit_parse', 'register_profiles', 'sanskrit_home', 'vidyut_data', 'to_slp1', 'from_slp1', 'vidyut_pipe',
+           'sanskrit_terms', 'mw_lexicon', 'gloss_facets']
 
 # %% ../nbs/09_sanskrit.ipynb #c05
 import re, unicodedata
 from fastcore.all import L, Path, ifnone
 
-# Vedic svara/tone marks. `porter simplify casefold` folds Latin diacritics but leaves these, so
-# an unaccented query finds nothing in an accented text — measured 0 hits for `देवी` against `दे॒वी`.
-# Latin combining marks are deliberately *not* here: this normalises Devanagari, and folding IAST
-# is `_latn_fold`'s job. Nor are the candrabindu signs, which carry a nasal and become `m`.
 VEDIC_MARKS = re.compile('['
     '॑-॔'      # udatta, anudatta, devanagari grave/acute
     '᳐-᳹'      # vedic extensions: tone marks, nasalisations
@@ -25,9 +22,6 @@ VEDIC_MARKS = re.compile('['
 
 DANDA, DDANDA = '।', '॥'          # । ॥
 
-# Devanagari -> ASCII. Deliberately lossy and deliberately *matched to what `simplify casefold`
-# does to IAST*: `ś`->`s`, `ī`->`i`, so `श्रीमाता` and `śrīmātā` both fold to `srimata` and meet in
-# the middle. That is what makes cross-script search work without transliterating at query time.
 _INDEP = {'अ':'a','आ':'a','इ':'i','ई':'i','उ':'u','ऊ':'u','ऋ':'r','ॠ':'r','ऌ':'l','ॡ':'l',
           'ए':'e','ऐ':'ai','ओ':'o','औ':'au','ऍ':'e','ऎ':'e','ऑ':'o','ऒ':'o'}
 _CONS  = {'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'n','च':'c','छ':'ch','ज':'j','झ':'jh','ञ':'n',
@@ -49,10 +43,7 @@ def strip_vedic(s:str) -> str:
     return unicodedata.normalize('NFC', VEDIC_MARKS.sub('', unicodedata.normalize('NFD', s)))
 
 def deva2ascii(s:str) -> str:
-    """Devanagari to a bare ASCII key, applying the implicit `a` of an unmarked consonant.
-
-    Not a transliteration scheme anyone should read — it is an *index key*, chosen so that the
-    Devanagari and the IAST spelling of a word collide."""
+    'Devanagari to a bare ASCII key, applying the implicit `a` of an unmarked consonant.'
     out, i, n = [], 0, len(s)
     while i < n:
         ch = s[i]
@@ -91,28 +82,12 @@ def fold_token(s:str) -> str:
     s = strip_vedic(s)
     return _latn_fold(deva2ascii(s) if _DEVA.search(s) else s)
 
+
 # %% ../nbs/09_sanskrit.ipynb #c08
 SANSKRIT_TOKENIZE = 'sanskrit'
 
 def sanskrit_tokenizer(con, args):
-    """A *wrapping* FTS5 tokenizer that folds Sanskrit so a query matches regardless of script.
-
-    Emits the ASCII fold of each token as a **colocated** token — FTS5's synonym mechanism — so
-    `content` is stored exactly as ingested while `देवी`, `दे॒वी`, `devī` and `devi` all reach the
-    same row. Nothing transliterates at query time: both scripts fold to ASCII through fixed
-    tables, which is what keeps this cheap enough to sit in the index path.
-
-    It wraps rather than replaces so it can sit *inside* the existing chain —
-    `porter simplify casefold 1 sanskrit unicodewords` still stems English and still keeps
-    identifiers whole, and only adds tokens on top. Being purely additive is what makes it safe as
-    a default for every store rather than something a Sanskrit corpus has to opt into.
-
-    **Inside, not outside, and the difference is a silent loss of hits.** Wrapping the whole chain
-    computes the fold on porter's output, and porter never touches Devanagari: `धर्मक्षेत्रे` is
-    then indexed under the unstemmed `dharmaksetre` while the ASCII query for the same word is
-    stemmed to `dharmaksetr`, and the two never meet. Emitted from inside, the fold is just another
-    token porter goes on to stem, so both sides land on the same string. Sanskrit case endings make
-    this routine rather than rare — the locative `-e` alone accounts for most of it."""
+    'A *wrapping* FTS5 tokenizer that folds Sanskrit so a query matches regardless of script.'
     import apsw.fts5
     rest = [a for a in args if '=' not in a]
     opts = dict(a.split('=', 1) for a in args if '=' in a)
@@ -134,24 +109,14 @@ def register_sanskrit(db):
     except Exception: pass
     return db
 
+
 # %% ../nbs/09_sanskrit.ipynb #c11
-# `// Mn_1.1 //`, `|| IsUp_4 ||`, `|| BrhUp_1,1.2 ||` — GRETIL's citation marker, which is also the
-# verse boundary and the verse's stable id.
-# The bracketed tail matters: GRETIL marks a verse that is numbered differently in another edition
-# as `// Mn_3.67[57M] //`. Without it those citations go unrecognised and every verse between two
-# *recognised* ones packs into a single unit — measured one 25,974-character chunk in Manusmṛti.
-# The separator is `_` in GRETIL (`Mn_1.1`) and `.` in DCS (`R.1.1.1`); the siglum is letters only,
-# which keeps the number from being swallowed into it by backtracking.
 CITE_RE = re.compile(r'(?:\|\||//)\s*([A-Za-zĀ-ſ]+)[_\s.]([\d,.\-]+[a-z]?(?:\[[^\]\n]{0,16}\])?)\s*(?:\|\||//)')
 # A Devanagari verse number: `॥ १॥` or `॥ 12 ॥`
 _DEVNUM = re.compile(r'॥\s*([\d०-९]+)\s*॥')
 
 def cite_parts(c:str) -> tuple:
-    """`'BrhUp_1,1.2'` -> `('BrhUp', ['1','1','2'])` — the siglum and its hierarchy.
-
-    Handles both separators in the wild: GRETIL writes `Mn_1.1`, DCS writes `R.1.1.1`. The
-    hierarchy is what `build_tree` turns into adhyāya/chapter nodes, so a corpus with no markup at
-    all still gets a navigable tree."""
+    "`'BrhUp_1,1.2'` -> `('BrhUp', ['1','1','2'])` — the siglum and its hierarchy."
     c = re.sub(r'\[[^\]]*\]', '', (c or '')).strip()   # drop a `[57M]` alternate-edition number
     m = re.match(r'([^\s_]+)[_\s]([\d,.\-]+[a-z]?)$', c) or re.match(r'([A-Za-zĀ-ſ]+)[.]([\d,.\-]+[a-z]?)$', c)
     if not m: return (c, [])
@@ -161,37 +126,20 @@ _GLOSS = re.compile(r'(?:[ \t]*\n)?[ \t]*>[^\n]*')
 _HEAD  = re.compile(r'^[ \t]*#{1,6}[ \t]+\S', re.M)
 
 def _with_gloss(text:str, end:int) -> int:
-    """Extend a cut past the gloss lines that trail it.
-
-    A translation printed under a verse sits *after* its daṇḍa, so a naive cut files it against the
-    following verse — the meaning of verse 1 retrieved as if it explained verse 2. Everything a
-    `>` line says belongs to the verse above it."""
+    'Extend a cut past the gloss lines that trail it.'
     while (m := _GLOSS.match(text, end)) and m.end() > end: end = m.end()
     return end
 
 def verse_spans(text:str) -> L:
-    """Split `text` into verse units, returning `(start, end, text, citation)`.
-
-    Boundaries are tried in order — citation marker, then a numbered `॥ १॥`, then a bare `॥` —
-    because that is the order of reliability in real sources. A unit always *ends with* its marker,
-    so a chunk is never a fragment whose citation lives in the next chunk."""
+    'Split `text` into verse units, returning `(start, end, text, citation)`.'
     if not (text or '').strip(): return L()
     cuts = []
     for m in CITE_RE.finditer(text): cuts.append((_with_gloss(text, m.end()), f'{m.group(1)}_{m.group(2)}'))
     if not cuts:
         for m in _DEVNUM.finditer(text): cuts.append((_with_gloss(text, m.end()), m.group(1)))
     if not cuts:
-        # Only a double daṇḍa that *closes* a line. Devanagari brackets a title or a section as
-        # `॥ text ॥`, so cutting after every `॥` splits the opening bracket off as a chunk of one
-        # character. Both conventions are here: a Devanagari edition prints `॥`, and an IAST one
-        # prints `||` or `//`. Without the ASCII pair, a romanised text that carries no citations —
-        # which is most of a stotra collection — got no verse boundaries at all, and the whole
-        # section arrived as a single unit whose metre scans as one 31-syllable nothing.
         for m in re.finditer(r'(?:॥|\|\||//)[ \t]*(?=\n|$)', text):
             cuts.append((_with_gloss(text, m.end()), None))
-    # A heading always opens a new unit. Without this a stotra whose sections are separated by
-    # headings rather than by numbering packs the whole text into a handful of chunks — measured
-    # 48 chunks for a 318-section namāvali before this line, 318 after.
     cuts += [(m.start(), None) for m in _HEAD.finditer(text) if m.start() > 0]
     cuts.sort()
     out, prev = L(), 0
@@ -205,10 +153,7 @@ def verse_spans(text:str) -> L:
 _CLAUSE = re.compile(r'(?:॥|।|//|/|\|)[ \t]*')
 
 def _clause_spans(seg:str) -> L:
-    """Split an over-long unit at its clause daṇḍas, never mid-clause.
-
-    Both daṇḍa conventions are here because GRETIL writes IAST verse with ASCII `/` and `//` while
-    Devanagari sources use `।` and `॥`."""
+    'Split an over-long unit at its clause daṇḍas, never mid-clause.'
     parts, prev = L(), 0
     for m in _CLAUSE.finditer(seg):
         if (s := seg[prev:m.end()]).strip(): parts.append(s.strip())
@@ -217,14 +162,7 @@ def _clause_spans(seg:str) -> L:
     return parts or L([seg.strip()])
 
 def _atoms(seg:str, max_chars:int) -> L:
-    """The smallest pieces an over-long unit may be cut into, each with its gloss attached.
-
-    Three passes, because one is not enough on real text. Daṇḍa first; then line breaks for
-    anything still oversized, since accented Vedic recitation carries no daṇḍa inside a section and
-    a daṇḍa split alone left a 2,282-character piece in Rudram; then gloss lines are folded back
-    into the piece above them, which is what makes an atom safe to pack without ever separating a
-    translation from its verse. An atom longer than `max_chars` is emitted whole — a clause with no
-    interior boundary is not something to cut blind."""
+    'The smallest pieces an over-long unit may be cut into, each with its gloss attached.'
     out = L()
     for p in _clause_spans(seg):
         if len(p) <= max_chars: out.append(p); continue
@@ -235,6 +173,7 @@ def _atoms(seg:str, max_chars:int) -> L:
         if p.lstrip().startswith('>') and atoms: atoms[-1] += '\n' + p
         else: atoms.append(p)
     return atoms
+
 
 # %% ../nbs/09_sanskrit.ipynb #c14
 VERSE_TARGET, VERSE_MAX = 300, 900
@@ -248,21 +187,7 @@ def chunk_verses(text:str,                 # source text
                  max_chars:int=VERSE_MAX,  # split a unit longer than this at clause boundaries
                  pack_cited:bool=False,    # let consecutive cited units share a chunk up to `target`
                  ) -> L:
-    """Verse-aware chunks: cut on citation/daṇḍa, pack short units, split long prose.
-
-    Two guards, and both are load-bearing. Packing exists because a namāvali line is 18 characters
-    and one line is not a retrievable chunk; it never packs *across* a heading, so a chunk still
-    maps to a contiguous, citable range. Splitting exists because Sanskrit prose — the Upaniṣads
-    run ten lines to one `|| ref ||` — would otherwise produce a chunk far larger than anything the
-    embedder can represent.
-
-    `pack_cited` is what makes a larger `target` mean anything on a citation-dense text. By default
-    a citation closes the chunk immediately, so on GRETIL — where *every* unit ends in one — the
-    target is never consulted and `ProseChunker`'s larger budget was inert: measured 10 chunks for
-    the Īśopaniṣad either way. With it on, consecutive cited units pack forward to `target`, which
-    still yields one contiguous citable *range* (`IsUp_1–3`) rather than a single address. That is
-    the right trade for commentary, where the unit of meaning spans several verses, and the wrong
-    one for a verse index, which is why it is off unless `ProseChunker` asks for it."""
+    'Verse-aware chunks: cut on citation/daṇḍa, pack short units, split long prose.'
     units = verse_spans(text)
     if not units: return L([text.strip()]) if (text or '').strip() else L()
     out, buf, cited = L(), [], False
@@ -292,13 +217,11 @@ def chunk_verses(text:str,                 # source text
     flush()
     return out.filter(lambda s: s.strip())
 
-
 class _Chunk:
     'Minimal chonkie-compatible chunk (chonkie.types.Chunk is imported lazily to keep this light).'
     def __init__(self, text, start_index, end_index, token_count=0):
         self.text, self.start_index, self.end_index, self.token_count = text, start_index, end_index, token_count
     def __repr__(self): return f'_Chunk({self.text[:40]!r}…)'
-
 
 def _mk_chunks(texts, src):
     'Wrap chunk strings as chonkie chunks, carrying real offsets into `src` where they can be found.'
@@ -312,12 +235,8 @@ def _mk_chunks(texts, src):
         pos = st + len(t)
     return out
 
-
 class VerseChunker:
-    """A chonkie-shaped chunker whose cuts land on verse boundaries.
-
-    Drop-in for `add_doc(chunker=...)` and `chunk_markdown(text, chunker)`, which is the whole
-    point: the tree, the store, the ANN index and `read()` are unchanged."""
+    'A chonkie-shaped chunker whose cuts land on verse boundaries.'
     def __init__(self, target:int=VERSE_TARGET, max_chars:int=VERSE_MAX, pack_cited:bool=False):
         self.target, self.max_chars, self.chunk_size = target, max_chars, max_chars
         self.pack_cited = pack_cited
@@ -327,27 +246,16 @@ class VerseChunker:
     def __repr__(self):
         return f'{type(self).__name__}(target={self.target}, max_chars={self.max_chars}, pack_cited={self.pack_cited})'
 
-
 class ProseChunker(VerseChunker):
-    """`VerseChunker` tuned for Sanskrit prose — commentary, bhāṣya, the prose Upaniṣads.
-
-    Same boundaries, different budget: prose has no metrical unit to preserve, so packing to a
-    larger target beats emitting one chunk per clause. It sets `pack_cited=True`, without which
-    the larger target is unreachable on any text that cites every unit — which is most of GRETIL,
-    and was the whole corpus this chunker exists for."""
+    '`VerseChunker` tuned for Sanskrit prose — commentary, bhāṣya, the prose Upaniṣads.'
     def __init__(self, target:int=700, max_chars:int=1400, pack_cited:bool=True):
         super().__init__(target, max_chars, pack_cited)
 
-# %% ../nbs/09_sanskrit.ipynb #14c342ec
+
+# %% ../nbs/09_sanskrit.ipynb #c_translit
 from fastcore.all import AttrDict, patch
 from fastlite import Database
 
-# --- Devanagari -> IAST, with vowel length kept -------------------------------------------------
-# `deva2ascii` deliberately destroys vowel length: that is exactly what makes `श्रीमाता` and
-# `srimata` collide in the index. Scansion needs precisely what the fold throws away, since a
-# syllable is heavy *because* its vowel is long — reuse the fold here and every syllable comes back
-# light and no verse scans at all. So metre gets its own transliteration and the two never share a
-# table.
 _IV = {'अ':'a','आ':'ā','इ':'i','ई':'ī','उ':'u','ऊ':'ū','ऋ':'ṛ','ॠ':'ṝ','ऌ':'ḷ','ॡ':'ḹ',
        'ए':'e','ऐ':'ai','ओ':'o','औ':'au','ऍ':'e','ऎ':'e','ऑ':'o','ऒ':'o'}
 _MV = {'ा':'ā','ि':'i','ी':'ī','ु':'u','ू':'ū','ृ':'ṛ','ॄ':'ṝ','ॢ':'ḷ','ॣ':'ḹ',
@@ -357,9 +265,6 @@ _CI = {'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ṅ','च':'c','छ':'ch
        'प':'p','फ':'ph','ब':'b','भ':'bh','म':'m','य':'y','र':'r','ल':'l','व':'v',
        'श':'ś','ष':'ṣ','स':'s','ह':'h','ळ':'ḻ','ऴ':'ḻ','ऱ':'r','ऩ':'n',
        'क़':'k','ख़':'kh','ग़':'g','ज़':'j','ड़':'ḍ','ढ़':'ḍh','फ़':'ph','य़':'y'}
-# Anusvāra and visarga are codas — they close a syllable and make it heavy — so they must survive
-# here even though the fold turns them into `m` and `h`. The avagraha marks a vowel that was
-# *elided*: it is not pronounced and does not scan, so it goes.
 _SI = {'ं':'ṃ','ः':'ḥ','ँ':'ṃ','ऽ':'','़':'','ॐ':'oṃ'}
 
 def deva2iast(s:str) -> str:
@@ -382,9 +287,8 @@ def deva2iast(s:str) -> str:
         out.append(ch); i += 1
     return ''.join(out)
 
-# --- syllables and their weights ----------------------------------------------------------------
-# `ai` and `au` are one vowel each, and the aspirates are one *consonant* each — `atha` is
-# light-light where `artha` is heavy-light. Both tables are therefore matched longest-first.
+
+# %% ../nbs/09_sanskrit.ipynb #c_syll
 _VOW2 = ('ai', 'au')
 _VOW1 = frozenset('aāiīuūṛṝḷḹeo')
 _LONG = frozenset(('ā','ī','ū','ṝ','ḹ','e','o','ai','au'))    # `e` and `o` are always long
@@ -394,17 +298,7 @@ _CODA = frozenset('ṃṁḥ')
 _WORDS = re.compile(r'[^\W\d_]+')
 
 def _phones(text:str) -> list:
-    """`[('V'|'C', unit)]` for a Sanskrit string, matched **word by word**.
-
-    The word boundary is load-bearing, and it is the thing a naive scanner gets wrong. Matching
-    vowels longest-first across the whole string fuses `a` and `i` over a gap: `jīva iti` comes out
-    as `jī-vai-ti`, three syllables where there are four, and one missing syllable is enough to make
-    the pāda the wrong length and the verse match no metre at all.
-
-    Consonant clusters are the opposite case and *do* count across a boundary — `tat sarvam` closes
-    its first syllable on `t`+`s` — so the per-word units are concatenated back into one stream and
-    only the vowel matching is fenced. Hyphens fence too: GRETIL writes compounds with them, and
-    they are orthography rather than phonology."""
+    "`[('V'|'C', unit)]` for a Sanskrit string, matched word by word so a vowel never fuses across a gap."
     s = deva2iast(text) if _DEVA.search(text or '') else (text or '')
     out = []
     for w in _WORDS.findall(s.lower()):
@@ -412,28 +306,20 @@ def _phones(text:str) -> list:
         while i < n:
             if w[i:i+2] in _VOW2: out.append(('V', w[i:i+2])); i += 2; continue
             if w[i:i+2] in _ASP:  out.append(('C', w[i:i+2])); i += 2; continue
+            # `ḷ` before a vowel is the retroflex lateral, not vocalic l
+            if w[i] == 'ḷ' and i+1 < n and (w[i+1:i+3] in _VOW2 or w[i+1] in _VOW1):
+                out.append(('C', w[i])); i += 1; continue
             if w[i] in _VOW1:     out.append(('V', w[i]));     i += 1; continue
             if w[i] in _CON1 or w[i] in _CODA: out.append(('C', w[i])); i += 1; continue
             i += 1                                          # not a phoneme; skip it
     return out
 
 def syllables(text:str) -> L:
-    """The syllables of a Sanskrit string as `(syllable, guru)` pairs.
-
-    A syllable is heavy (*guru*) when its vowel is long, when it is closed by anusvāra or visarga,
-    or when **two or more** consonants follow before the next vowel. Two is the threshold because a
-    single consonant between two vowels is the *onset* of the following syllable, not a coda on the
-    preceding one — `atha` is light-light, `artha` is heavy-light.
-
-    The exception is the end of the text, where a trailing consonant has no following vowel to be
-    the onset of and therefore does close its syllable: `gam` is guru even though only one consonant
-    follows the `a`. That is what makes the last syllable of `yamātārājabhānasalagam` the `ga` the
-    mnemonic says it is, and it is the difference between the gaṇa table checking out and not."""
+    'The syllables of a Sanskrit string as `(syllable, guru)` pairs.'
     ph = _phones(text)
     out, onset, coda_at = L(), '', -1
     for j, (k, u) in enumerate(ph):
-        # a phone already spent as the previous syllable's coda is not also this one's onset —
-        # without the check `kaṃsa` reads back as `kaṃ`+`ṃsa` and `duḥkha` as `duḥ`+`ḥkha`
+        # a phone spent as the previous coda is not also this onset (`kaṃsa`, `duḥkha`)
         if k == 'C':
             if j != coda_at: onset += u
             continue
@@ -443,7 +329,8 @@ def syllables(text:str) -> L:
             run.append(u2)
         heavy = (u in _LONG or any(c in _CODA for c in run) or len(run) >= 2
                  or (closes and len(run) >= 1))
-        cod = ''.join(c for c in run[:1] if c in _CODA)
+        # at the end of the text the whole run closes the syllable: `gam`, `varam`
+        cod = ''.join(run) if closes else ''.join(c for c in run[:1] if c in _CODA)
         if cod: coda_at = j + 1
         out.append((onset + u + cod, heavy))
         onset = ''
@@ -453,19 +340,15 @@ def scan(text:str) -> str:
     'The guru/laghu skeleton of a string as `g`/`l` — what every metre is matched against.'
     return ''.join('g' if h else 'l' for _, h in syllables(text))
 
-# --- the gaṇas ----------------------------------------------------------------------------------
-# The eight gaṇas, plus the two single-syllable fillers a recipe uses to make up an odd length.
-# Checked against the `yamātārājabhānasalagam` mnemonic in the tests rather than trusted.
+
+# %% ../nbs/09_sanskrit.ipynb #c_gana
 GANAS = {'ya':'lgg', 'ma':'ggg', 'ta':'ggl', 'ra':'glg',
          'ja':'lgl', 'bha':'gll', 'na':'lll', 'sa':'llg',
          'ga':'g',   'la':'l'}
 _OF_GANA = {v: k for k, v in GANAS.items() if len(v) == 3}
 
 def ganas(pattern:str) -> L:
-    """The gaṇa names of a `g`/`l` pattern, three syllables at a time.
-
-    A trailing one or two syllables are named `ga`/`la`, which is how a handbook writes a recipe:
-    indravajrā is `ta ta ja ga ga` — eleven syllables as 3+3+3+1+1."""
+    'The gaṇa names of a `g`/`l` pattern, three at a time; a trailing one or two become `ga`/`la`.'
     s, out = pattern or '', L()
     cut = len(s) - len(s) % 3
     out += L(_OF_GANA[s[i:i+3]] for i in range(0, cut, 3))
@@ -475,9 +358,6 @@ def gana_pattern(recipe:str) -> str:
     'The `g`/`l` pattern a gaṇa recipe spells out: `ta ta ja ga ga` -> `gglgglglgg`.'
     return ''.join(GANAS[x] for x in (recipe or '').split())
 
-# The common samavṛtta metres, written as gaṇa *recipes* rather than as weight patterns: a recipe
-# is what a handbook prints and what can be checked by eye, and the pattern is derived from it. A
-# hand-copied 21-syllable bit pattern is a silent bug waiting to happen.
 METERS = {
     'śālinī':           'ma ta ta ga ga',
     'indravajrā':       'ta ta ja ga ga',
@@ -500,7 +380,32 @@ METERS = {
     'śārdūlavikrīḍita': 'ma sa ja sa ta ta ga',
     'sragdharā':        'ma ra bha na ya ya ya',
 }
+VRTTA_EXTRA = """
+    paṅkti:gllgg tanumadhyā:ggllgg vasumatī:gglllg śaśivadanā:llllgg haṃsamālā:llgglgg kumāralalitā:lglllgg
+    madalekhā:gggllgg madhumatī:llllllg citrapadā:gllgllgg haṃsaruta:ggglllgg māṇavaka:gllggllg
+    nārācaka:gglglglg pramāṇikā:lglglglg samānikā:glglglgl vidyunmālā:gggggggg bhujagaśiśubhṛtā:llllllggg
+    halamukhī:glglllllg campakamālā:gllgggllgg manoramā:lllglglglg mattā:ggggllllgg mayūrasāriṇī:glglglglgg
+    paṇava:gggllllggg upasthitā:ggllgllglg śuddhavirāṭ:gggllglglg bhadrikā:llllllglglg
+    bhramaravilasitaṃ:ggggllllllg dodhaka:gllgllgllgg mauktikamālā:gllgllggllg sumukhī:llllgllgllg
+    sāndrapada:gllggllllgg upasthita:lglllggglgg vātormī:ggggllgglgg vṛntā:llllllllggg śyenikā:glglglglglg
+    candravartma:glglllgllllg jaladharamālā:ggggllllgggg jaloddhatagati:lglllglglllg
+    kusumavicitrā:llllggllllgg lalitā:gglglllglglg mauktidadāma:lgllgllgllgl maṇimālā:ggllggggllgg
+    mālatī:llllgllglglg navamālinī:llllglglllgg pañcacāmara:lglglglglglg pramitākṣarā:llglglllgllg
+    pramuditavadanā:llllllglgglg priyaṃvadā:lllglllglglg puṭa:llllllggglgg sragviṇī:glgglgglgglg
+    tāmarasa:llllgllgllgg ujjvalā:llllllgllglg vaiśvadevī:gggggglgglgg candrikā:llllllgglglgg
+    kṣamā:llllllgglgglg mattamayūra:gggggllggllgg mañjubhāṣiṇī:llglglllglglg nandinī:llglglllgllgg
+    alolā:gggllgggggllgg aparājitā:llllllglgllglg asambādhā:gggggllllllggg induvadanā:glllglllglllgg
+    praharaṇakalikā:llllllgllllllg candralekhā:gggglgggglgglgg elā:llglgllllllllgg prabhadraka:llllglglllglglg
+    śaśikalā:llllllllllllllg vāṇinī:llllglglllglglgg ṛṣabhagajavilasita:gllglglllllllllg
+    narkuṭaka:llllglglllgllgllg vaṃśapatrapatitam:gllglglllgllllllg kusumitalatāvellitā:ggggglllllgglgglgg
+    meghavisphurjita:lggggglllllgglgglgg suvadanā:gggglggllllllggglllg vṛtta:glglglglglglglglglgl
+    madraka:gllglglllglglllglglllg aśvalalita:llllglglllglglllglglllg mattākrīḍa:ggggggggllllllllllllllg
+    tanvī:gllggllllllggllgllllllgg krauñcapadā:gllgggllggllllllllllllllg apavāha:gggllllllllllllllllllllggg
+    bhujaṅgavijṛmbhita:ggggggggllllllllllglgllglg
+"""
+
 _PAT = {k: gana_pattern(v) for k, v in METERS.items()}
+_PAT.update({n: q for n, q in (e.split(':') for e in VRTTA_EXTRA.split()) if len(set(q)) > 1})
 # upajāti is not a metre but a licence: any mix of these two across the four pādas of one verse.
 _MIXED = {'upajāti': ('indravajrā', 'upendravajrā')}
 
@@ -508,11 +413,6 @@ def _pada_ok(w, pat) -> bool:
     'Does one pāda of weights fit a pattern? The last syllable of a pāda is anceps, always.'
     return len(w) == len(pat) and all(x == (c == 'g') for x, c in zip(w[:-1], pat[:-1]))
 
-# The śloka is a syllable *count* plus a cadence, not a fixed pattern. The even pādas carry the
-# strict rule — 5 laghu, 6 guru, 7 laghu — while the odd ones may take `pathyā` or one of four
-# licensed `vipulā` shapes. Checking that cadence is what separates a śloka from any other 32
-# syllables: without it, thirty-two repetitions of `ka` are an anuṣṭubh, and so is most prose of
-# the right length.
 _PATHYA = 'lgg'
 _VIPULA = {'lll':'na-vipulā', 'gll':'bha-vipulā', 'ggg':'ma-vipulā', 'glg':'ra-vipulā'}
 
@@ -527,44 +427,18 @@ def _anustubh(qs):
         else: return None
     return ' '.join(sorted(var))
 
-# What is printed *with* a verse but is not part of it. The citation is the trap and it is
-# unmissable once seen: `|| Manu_1.1 ||` contributes `ma`+`nu` to the scan, so every verse in a
-# GRETIL file comes out 34 syllables instead of 32 and matches no metre whatsoever. A `>` gloss is
-# a translation — often English — and a heading is not spoken at all.
 _BARENUM = re.compile(r'(?:\|\||//|॥)\s*[\d०-९]+\s*(?:\|\||//|॥)')
 _NOSCAN  = re.compile(r'^[ \t]*>[^\n]*'          # a gloss or translation line
                       r'|^[ \t]*#{1,6}[^\n]*'    # a heading
                       r'|\[[^\]\n]*\]', re.M)    # [h: ... :h], [page 3], the [57M] variant number
 
 def metrical_text(s:str) -> str:
-    """A verse with everything removed that is printed beside it but does not scan.
-
-    `CITE_RE` does the citation rather than a looser pattern on purpose: it insists on a siglum and
-    a number between the daṇḍa pairs, so `// Mn_1.1 //` goes and the `/ pāda /` separators of a
-    GRETIL romanised verse stay."""
+    'A verse with everything removed that is printed beside it but does not scan.'
     return _NOSCAN.sub(' ', _BARENUM.sub(' ', CITE_RE.sub(' ', s or '')))
 
-# --- mātrā metres: the āryā family --------------------------------------------------------------
-# A second, older way to build a verse. `METERS` above counts *syllables* in a fixed order of
-# weights; the āryā family counts **morae** — a laghu is one mātrā, a guru is two — and fills a
-# fixed number of them with whatever syllables the poet likes. So a syllable count says nothing
-# here: the four verses of the Sāṃkhyakārikā tested below run 32, 35, 41 and 37 syllables and are
-# all the same metre.
-#
-# The unit is the *caturmātra* gaṇa, four morae, of which there are exactly five shapes. A half is
-# a fixed ladder of them:
-#
-# | half | structure | morae |
-# |---|---|---|
-# | pūrvārdha  | 7 caturmātra gaṇas + one guru          | 30 |
-# | uttarārdha | as above, but the 6th gaṇa is a single laghu | 27 |
-# | āryāgīti   | 8 caturmātra gaṇas                     | 32 |
-#
-# and the five metres of the family are the ways of pairing two halves. Two constraints do the
-# real discriminating work, and without them a mora count alone would match almost anything: the
-# **odd** gaṇas (1st, 3rd, 5th, 7th) may not be the ja-gaṇa `˘ ¯ ˘`, and the **6th** gaṇa must be
-# either that same ja-gaṇa or four laghus. Both are visible in the Sāṃkhyakārikā, where `lgl` turns
-# up constantly in even positions and never once in an odd one.
+
+
+# %% ../nbs/09_sanskrit.ipynb #c_matra
 _G, _S = 'gana', 'syl'
 _PURVA  = [(_G,4)]*7 + [(_S,0)]                     # 30 morae
 _UTTARA = [(_G,4)]*5 + [(_G,1), (_G,4), (_S,0)]     # 27 morae — the 6th gaṇa shrinks to one laghu
@@ -584,11 +458,7 @@ def matras(text:str) -> int:
     return sum(2 if h else 1 for _, h in syllables(text))
 
 def _fit_half(w, slots):
-    """Fill one half's ladder of gaṇas from a list of weights; the gaṇa patterns, or None.
-
-    Every boundary has to fall *between* syllables — a gaṇa that would need half of a guru is not a
-    gaṇa — which is what makes this a real constraint rather than arithmetic on a total. `w` arrives
-    with its last syllable already read as guru, since the syllable closing a half is anceps."""
+    "Fill one half's ladder of gaṇas from a list of weights; the gaṇa patterns, or None."
     i, pats = 0, []
     for kind, want in slots:
         if kind == _S:                              # the closing guru: one syllable, whatever it is
@@ -610,12 +480,7 @@ def _half_ok(pats, slots) -> bool:
     return six == 'l' if slots[5][1] == 1 else six in ('lgl', 'llll')
 
 def detect_matra_meter(text:str, weights:list=None):
-    """The āryā-family metre of a verse — `AttrDict(name, halves, ganas, matras)` — or None.
-
-    The split between the halves is *searched* rather than read off the punctuation, because the
-    daṇḍa between them is not reliably present and a half boundary is anceps: the syllable closing
-    each half counts as guru however it is written. There are only as many candidate splits as
-    syllables, and the ladder pins everything else, so this stays cheap."""
+    'The āryā-family metre of a verse — `AttrDict(name, halves, ganas, matras)` — or None.'
     w = weights if weights is not None else [h for _, h in syllables(metrical_text(text))]
     for k in range(4, len(w)):
         a, b = list(w[:k]), list(w[k:])
@@ -631,25 +496,7 @@ def detect_matra_meter(text:str, weights:list=None):
     return None
 
 def detect_meter(text:str):
-    """The metre of one verse — `AttrDict(name, variant, syllables, per_pada, ganas, scan, matras)`.
-
-    Both systems are tried, syllable-counting first. A **varṇa** metre (`METERS`) fixes the weight
-    of every syllable in a pāda; a **mātrā** metre (`MATRA_METERS`, the āryā family) fixes only the
-    morae, so its verses vary in syllable count and `per_pada` is meaningless for them — the
-    Sāṃkhyakārikā runs 32, 35, 41 and 37 syllables in four consecutive āryās.
-
-    `name` is `None` when the verse divides into four equal pādas but fits neither catalogue. That
-    is a statement about the catalogue, **not** a claim that the text is or is not verse: nothing
-    here is a verse/prose classifier, which is why the anuṣṭubh branch insists on the cadence
-    instead of accepting any 32 syllables.
-
-    `ganas` reports the signature of the **first pāda** with its final syllable read as guru, since
-    that syllable is anceps and two verses in one metre would otherwise fail to compare equal. For a
-    mātrā metre it reports the caturmātra decomposition of both halves instead, which is what there
-    is to compare there — the ladder is the same in every āryā, the filling is the poet's.
-
-    The text is passed through `metrical_text` first, so a verse may be handed over exactly as it is
-    stored — citation, gloss and all — and still scan as the verse it is."""
+    'The metre of one verse as `AttrDict(name, variant, syllables, per_pada, ganas, scan, matras)`, or None.'
     w = [h for _, h in syllables(metrical_text(text))]
     n = len(w)
     if n < 8: return None
@@ -674,67 +521,38 @@ def detect_meter(text:str):
     return AttrDict(name=None, variant=None, syllables=n, per_pada=n//4,
                     ganas=' '.join(ganas(sc[:n//4][:-1] + 'g')), scan=sc, matras=mt, halves=None)
 
-# --- metre as chunk metadata --------------------------------------------------------------------
+
+
+# %% ../nbs/09_sanskrit.ipynb #c_facet
+PADA_RANGE = (4, 26)
+
 def verse_units(text:str) -> L:
     'The individual verses inside one chunk — a chunk may pack several, and metre is per verse.'
     return L(t for _, _, t, _ in verse_spans(text)) or L([(text or '').strip()])
 
 def verse_meta(text:str) -> dict:
-    """The metrical facets of one chunk, as the dict that becomes its `metadata` JSON.
-
-    `get_store` already indexes `metadata` for FTS beside `content`, so writing metre *here* rather
-    than into a column of its own is what makes `db.search('mandākrāntā')` and a `where` on the same
-    field work with no schema change and no cooperation from any caller — including
-    [vishalakshi](https://github.com/vedicreader/vishalakshi), which threads `where` straight down
-    to `doc_search`.
-
-    The gaṇa signature is joined with `_` on purpose. The tokenizer chain treats `_` as a word
-    joiner (it is why `fts_search` survives as one token), so `ma_bha_na_ta_ta_ga_ga` stays a single
-    searchable term instead of becoming seven meaningless ones. That is what makes *find every verse
-    shaped like this one* a query rather than a scan.
-
-    Keys are omitted rather than written empty, so a chunk of prose costs `{}` and nothing else."""
+    'The metrical facets of one chunk, as the dict that becomes its `metadata` JSON.'
     ms = L(verse_units(text)).map(detect_meter).filter(lambda m: m is not None)
     if not ms: return {}
     out, named = {}, ms.filter(lambda m: m.name)
     if named:
         out['meter'] = ' '.join(dict.fromkeys(named.attrgot('name')))
         if (vs := [v for v in dict.fromkeys(named.attrgot('variant')) if v]): out['variant'] = ' '.join(vs)
-    # A varṇa metre's signature is shared by every verse in it, so it is a join key worth an index.
-    # A mātrā metre's gaṇa filling is the poet's choice and is close to unique per verse, so what
-    # goes in is the mora shape (`30+27`) — the facet two texts can actually be compared on.
-    var, mat = ms.filter(lambda m: m.per_pada), ms.filter(lambda m: m.halves)
+    ok = lambda m: bool(m.name) or PADA_RANGE[0] <= (m.per_pada or 0) <= PADA_RANGE[1]
+    var, mat = ms.filter(lambda m: m.per_pada and ok(m)), ms.filter(lambda m: m.halves)
     if (gs := dict.fromkeys(m.ganas.replace(' ', '_') for m in var if m.ganas)): out['gana'] = ' '.join(gs)
     if (ps := dict.fromkeys(str(m.per_pada) for m in var)): out['pada'] = ' '.join(ps)
     if (hs := dict.fromkeys('+'.join(map(str, m.halves)) for m in mat)): out['matra'] = ' '.join(hs)
     return out
 
-# --- lemmas: the one thing the deterministic fold cannot do -------------------------------------
+
+
+# %% ../nbs/09_sanskrit.ipynb #c_lemma
 def lemma_facets(text:str,          # chunk text
-                 nlp,               # a `stanza_pipe('sa')` pipeline (or any spaCy-shaped one)
+                 nlp,               # a `vidyut_pipe()` (or any spaCy-shaped pipeline)
                  max_terms:int=96   # cap, so one chunk's metadata cannot outgrow its content
                  ) -> dict:
-    """`{'lemma': 'gam vac ...'}` for a chunk — the dictionary forms behind its inflected words.
-
-    **Why this is not in the tokenizer.** The `sanskrit` FTS5 tokenizer runs inside SQLite's index
-    path, on every token of every insert *and every query*, and a store's tokenizer is fixed when
-    its table is created — so whatever goes in there has to be present on every connection that
-    ever opens the database. A neural pipeline fails all three tests at once: it is orders of
-    magnitude too slow for the query path, it would make the file unreadable without torch and a
-    downloaded model, and its output changes with the model version, so an index built today would
-    not match a query tomorrow. The fold stays deterministic and table-driven; lemmatisation is
-    computed **once at ingest** and written to `metadata`, which `get_store` already indexes for
-    FTS beside `content`. Zero read-path cost, no schema change, no caller changes.
-
-    **Only lemmas that differ from the surface are kept.** The surface form is already in `content`
-    and already indexed; storing it twice buys nothing and doubles the column. What is worth
-    storing is exactly the difference — `gacchati` in the text, `gam` in the index — which is the
-    case where a reader who types the dictionary form currently gets nothing.
-
-    **What this does not solve.** Stanza does not split sandhi and does not decompose compounds:
-    the Vedic treebank it is trained on is distributed pre-segmented, so `dharmakṣetre` comes back
-    as one token. That is the harder half of Sanskrit retrieval and it stays open — this handles
-    inflection, which is the half a lemmatiser can honestly claim."""
+    "`{'lemma': 'gam vac ...'}` for a chunk — the dictionary forms behind its inflected words."
     if not (nlp and (text or '').strip()): return {}
     try: doc = nlp(metrical_text(text))
     except Exception: return {}
@@ -748,14 +566,14 @@ def lemma_facets(text:str,          # chunk text
         if len(out) >= max_terms: break
     return {'lemma': ' '.join(out)} if out else {}
 
-def sanskrit_meta(nlp=None):
-    """The `Profile.meta` callable: metre always, lemmas when a pipeline is supplied.
-
-    A factory rather than a flag because `Profile.meta` is called as `meta(chunk_text)` — the
-    pipeline has to be closed over, and closing over it here is also what keeps the model out of
-    the picture entirely for the default profiles."""
+def sanskrit_meta(nlp=None, mw:dict=None):
+    'The `Profile.meta` callable: metre always, lemmas and glosses when their sources are supplied.'
     if nlp is None: return verse_meta
-    def meta(text:str) -> dict: return {**verse_meta(text), **lemma_facets(text, nlp)}
+    if mw is None:
+        def meta(text:str) -> dict: return {**verse_meta(text), **lemma_facets(text, nlp)}
+    else:
+        def meta(text:str) -> dict:
+            return {**verse_meta(text), **lemma_facets(text, nlp), **gloss_facets(text, nlp, mw)}
     return meta
 
 @patch
@@ -779,11 +597,7 @@ def by_meter(self:Database,
              prefix:str=None,
              columns:list=None,
              limit:int=50) -> list:
-    """Chunks whose verses are in a metre, or share a gaṇa signature. A filter, not a ranking.
-
-    Comparing how two texts use a metre is a question about *all* the verses in it, so this is a
-    `LIKE` over the facets `verse_meta` wrote rather than a search that returns the best few. Pair
-    it with a `kind` or `doc_id` filter to put two works side by side."""
+    'Chunks whose verses are in a metre, or share a gaṇa signature. A filter, not a ranking.'
     wh, wa = [], {}
     if meter: wh.append('metadata like :sa_m'); wa['sa_m'] = f'%"meter": "%{meter}%'
     if gana:  wh.append('metadata like :sa_g'); wa['sa_g'] = f'%{gana.strip().replace(" ", "_")}%'
@@ -802,12 +616,7 @@ def _detag(t:str) -> str:
     return html.unescape(re.sub(r'<[^>]+>', '', t))
 
 def gretil_parse(src) -> tuple:
-    """GRETIL plain-text (`*_u.htm`) to `(pages, meta)`.
-
-    The ~45-line GRETIL header — provenance, the editions collated, and a full Unicode diacritics
-    table — is boilerplate repeated across every one of the 5,000 files. Indexed, it is the single
-    biggest source of false matches in the corpus, so it is cut at the licence banner and kept in
-    `meta` rather than thrown away."""
+    'GRETIL plain-text (`*_u.htm`) to `(pages, meta)`.'
     txt = _detag(Path(src).read_text(encoding='utf-8', errors='replace') if _isfile(src) else str(src))
     head, body = '', txt
     if (m := _GRETIL_END.search(txt)):
@@ -816,30 +625,17 @@ def gretil_parse(src) -> tuple:
         if (d := list(re.finditer(r'^\s*\w[\w\s]*\s{2,}[^\x00-\x7f]\s*$', body, re.M))):
             head, body = head + body[:d[-1].end()], body[d[-1].end():]
     body = re.sub(r'\n{3,}', '\n\n', body).strip()
-    # Editorial notes survive past the licence banner ("accents have been dropped in order to
-    # facilitate word search", mirror URLs). They are pure ASCII with no daṇḍa and no citation, so
-    # leading blocks that carry no Sanskrit signal at all are moved into `meta`, not indexed.
     blocks = [b for b in re.split(r'\n\s*\n', body) if b.strip()]
     while blocks and not _has_sanskrit(blocks[0]):
         head += '\n\n' + blocks.pop(0)
     body = '\n\n'.join(blocks)
-    # One page per *verse*, not per blank-line block. GRETIL runs verses on consecutive lines with
-    # no blank line between them, so a whole adhyāya arrives as one block; `build_tree` reads the
-    # first citation of a page to place it, and would file every verse of Manu's chapter 5 under
-    # chapter 4 — the chapter node simply never appears.
     spans = verse_spans(body)
     pages = [(i, s) for i, (_, _, s, _) in enumerate(spans)] if len(spans) > 1 else list(enumerate(blocks))
     ttl = _first_line(head) or (Path(src).stem if _isfile(src) else 'gretil')
     return pages or [(0, body)], dict(fmt='gretil', title=ttl, header=head.strip()[:2000])
 
 def tei_parse(src) -> tuple:
-    """GRETIL `corpustei` / SARIT TEI to `(pages, meta)`.
-
-    `<lg xml:id="Manu_1.1">` is the verse and carries its own citation, `<div type="adhyāya">` is
-    the section, and `<seg type="pāda">` is below the unit anyone retrieves. Two things are
-    deliberately *not* indexed as primary text: `<app>/<rdg>` variant readings, which would put
-    several spellings of the same line into the store as if they were different verses, and
-    `<note type="analysis">`, GRETIL's sandhi-split duplicate of the verse it follows."""
+    'GRETIL `corpustei` / SARIT TEI to `(pages, meta)`.'
     from xml.etree import ElementTree as ET
     raw = Path(src).read_text(encoding='utf-8', errors='replace') if _isfile(src) else str(src)
     root = ET.fromstring(raw)
@@ -878,13 +674,7 @@ def tei_parse(src) -> tuple:
     return _merge_pages(pages), dict(fmt='tei', title=ttl or (Path(src).stem if _isfile(src) else 'tei'))
 
 def vr_xml_parse(src) -> tuple:
-    """vedicreader `<lyrics>` XML to `(pages, meta)`.
-
-    `<section>` is already the retrieval unit and `<line>` the pāda, so this parser mostly gets out
-    of the way. The one judgement call: `meaning`/`etymology` glosses are emitted beside the verse
-    rather than dropped, because a corpus where the Sanskrit and its gloss are searched together is
-    the reason to have the gloss at all — and `ignore`/`exclude_from_display` lines (filler music
-    cues, playback markers) are dropped, since they are audio-sync artefacts, not text."""
+    'vedicreader `<lyrics>` XML to `(pages, meta)`.'
     from xml.etree import ElementTree as ET
     raw = Path(src).read_text(encoding='utf-8', errors='replace') if _isfile(src) else str(src)
     root = ET.fromstring(raw)
@@ -896,10 +686,6 @@ def vr_xml_parse(src) -> tuple:
         if nm == 'title' and lines and not ttl: ttl = (lines[0].text or '').strip()
         if not lines: continue
         pages.append((len(pages), f'## {nm}'))
-        # Each gloss goes directly under the pāda it glosses rather than being concatenated at the
-        # end of the section. Pooled, a long section's glosses form a single block bigger than the
-        # verse itself, and the split that then has to happen cuts the translation loose from the
-        # Sanskrit — a chunk of pure English that matches any paraphrase of it.
         buf = []
         for l in lines:
             buf.append((l.text or '').strip())
@@ -913,11 +699,7 @@ def vr_xml_parse(src) -> tuple:
     return _merge_pages(pages), dict(fmt='vedicreader', title=ttl, category=cat, tags=tags)
 
 def dcs_parse(src) -> tuple:
-    """DCS / ambuda analysed text to `(pages, meta)`.
-
-    Each verse is a `# id = R.1.1.1` block of `surface⇥lemma⇥features` lines. The surface forms
-    rebuild the readable verse; the lemmas are kept beside it because they are a sandhi-split
-    index of exactly the words a compound hides — the one thing FTS on raw Sanskrit cannot see."""
+    'DCS / ambuda analysed text to `(pages, meta)`.'
     raw = Path(src).read_text(encoding='utf-8', errors='replace') if _isfile(src) else str(src)
     pages, cur, lem, cid = [], [], [], None
     def flush():
@@ -961,19 +743,18 @@ def _has_sanskrit(block:str) -> bool:
 
 _SANSKRIT_EXTS = '.xml,.tei,.htm,.html,.conllu,.txt'
 
-def is_sanskrit(text:str, thresh:float=0.15) -> bool:
-    """Whether `text` reads as Sanskrit — by script, by transliteration, or by structure.
+_DANDA_EOL = re.compile(r'(?:[।॥]|//|/|\|\||\|)[ \t]*$', re.M)
 
-    Latin-script Sanskrit is the hard case, since IAST is ordinary Unicode letters. Two signals
-    answer it. Retroflex and long-vowel diacritics (`ṛ ṇ ṭ ḍ ś ṣ ṃ ḥ ā ī ū`) essentially do not
-    occur in English, so even a low density of them is decisive; and citation markers and daṇḍas
-    give a structural signal for text that has had its diacritics stripped."""
+def is_sanskrit(text:str, thresh:float=0.15) -> bool:
+    'Whether `text` reads as Sanskrit — by script, by transliteration, or by structure.'
     s = (text or '')[:20000]
     if not s.strip(): return False
     if len(_DEVA.findall(s)) / max(len(s), 1) > thresh: return True
-    if len(_IAST_DIAC.findall(s)) / max(len(s), 1) > 0.01: return True
-    n = len(CITE_RE.findall(s)) + s.count(DDANDA)
-    return n >= 3 and n / max(len(s.splitlines()), 1) > 0.05
+    lines = max(len(s.splitlines()), 1)
+    strict = len(CITE_RE.findall(s)) + s.count(DDANDA)
+    if strict >= 3 and strict / lines > 0.05: return True
+    loose = strict + len(_DANDA_EOL.findall(s))
+    return (len(_IAST_DIAC.findall(s)) / max(len(s), 1) > 0.01) and loose >= 3 and loose / lines > 0.02
 
 def sanskrit_parse(src) -> tuple:
     'Parse any supported Sanskrit source to `(pages, meta)`, picking the reader by shape.'
@@ -988,13 +769,10 @@ def sanskrit_parse(src) -> tuple:
         return vr_xml_parse(src) if '<lyrics' in raw else tei_parse(src)
     return gretil_parse(src)
 
+
 # %% ../nbs/09_sanskrit.ipynb #c20
 def _sniff(text:str) -> bool:
-    """Whether a shared extension (`.xml`, `.txt`, `.htm`) holds Sanskrit this module can read.
-
-    Tags are stripped before the test and the window is wide, because a GRETIL `.htm` opens with a
-    `<!DOCTYPE>`, a stylesheet and a 45-line provenance header — several kilobytes of ASCII before
-    the first syllable of Sanskrit. Sniffing the head of the raw file finds nothing."""
+    'Whether a shared extension (`.xml`, `.txt`, `.htm`) holds Sanskrit this module can read.'
     raw = (text or '')[:60000]
     if '<lyrics' in raw[:4000]: return True
     # TEI states its language, which beats sniffing: a 16 KB edition can be almost entirely header,
@@ -1004,30 +782,10 @@ def _sniff(text:str) -> bool:
     if re.search(r'^#\s*id\s*=', t, re.M): return True
     return is_sanskrit(t)
 
-def register_profiles(nlp=None):
-    """Register the Sanskrit profiles. Called on import; safe to call again.
-
-    Two of them, because verse and prose want different budgets and nothing else about the pipeline
-    differs. Prose is not auto-detected — a commentary and its root text share every other signal,
-    so it is selected by name (`add_file(..., profile='sanskrit_prose')`).
-
-    Both carry `meta=sanskrit_meta(nlp)`, so every chunk ingested through either arrives with its
-    metre and gaṇa signature already in the column FTS indexes. Prose gets it too: a bhāṣya quotes
-    the verse it is glossing, and that quotation still scans.
-
-    Pass `nlp=stanza_pipe('sa')` to add lemmas to that metadata as well — re-registering replaces
-    the profiles by name, so this is the whole opt-in:
-
-    ```python
-    from litesearch import stanza_pipe, register_profiles
-    register_profiles(nlp=stanza_pipe('sa'))    # once, before add_file/add_dir
-    ```
-
-    It is opt-in rather than automatic because it costs a torch install, a model download and a
-    real fraction of ingest time, and buys nothing at all for a corpus whose readers type the
-    inflected forms they are reading."""
+def register_profiles(nlp=None, mw:dict=None):
+    'Register the Sanskrit profiles. Called on import; safe to call again.'
     from litesearch.data import Profile, register_profile
-    meta = sanskrit_meta(nlp)
+    meta = sanskrit_meta(nlp, mw)
     register_profile(Profile(name='sanskrit_verse', exts='.xml,.tei,.htm,.html,.conllu,.txt',
                              parse=sanskrit_parse, chunker=VerseChunker, mode='verse',
                              detect=_sniff, kind='sanskrit', meta=meta))
@@ -1036,3 +794,204 @@ def register_profiles(nlp=None):
                              detect=lambda _t: False, kind='sanskrit', meta=meta))
 
 register_profiles()
+
+
+# %% ../nbs/09_sanskrit.ipynb #vidyut_mw
+_VIDYUT_URL_NOTE = 'https://github.com/ambuda-org/vidyut'   # MIT
+MW_URL = 'https://raw.githubusercontent.com/sanskrit-lexicon/csl-orig/master/v02/mw/mw.txt'
+
+def sanskrit_home(name:str=None) -> Path:
+    'Where the downloaded Sanskrit data lives: `$LITESEARCH_HOME`, else the XDG cache.'
+    import os
+    d = Path(os.environ.get('LITESEARCH_HOME')
+             or Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'litesearch')/'sanskrit'
+    d.mkdir(parents=True, exist_ok=True)
+    return d/name if name else d
+
+def vidyut_data(path=None, force:bool=False) -> Path:
+    "vidyut's linguistic data, downloaded on first use (~81 MB) and cached thereafter."
+    d = Path(path) if path else sanskrit_home('vidyut')
+    if force or not (d/'kosha').exists():
+        try: import vidyut
+        except ImportError: raise ImportError("vidyut is not installed — `pip install litesearch[sanskrit]`") from None
+        d.mkdir(parents=True, exist_ok=True)
+        vidyut.download_data(str(d))
+    return d
+
+def to_slp1(text:str) -> str:
+    'Any supported script to SLP1, which is what the kosha is keyed on. Needs no downloaded data.'
+    from vidyut.lipi import transliterate, Scheme
+    return transliterate(text, Scheme.Devanagari if _DEVA.search(text or '') else Scheme.Iast, Scheme.Slp1)
+
+def from_slp1(text:str, iast:bool=True) -> str:
+    'SLP1 back to something readable — IAST by default, Devanagari otherwise.'
+    from vidyut.lipi import transliterate, Scheme
+    return transliterate(text or '', Scheme.Slp1, Scheme.Iast if iast else Scheme.Devanagari)
+
+class _VTok:
+    'A spaCy-shaped token, so `lemma_facets` needs no knowledge of where the lemma came from.'
+    is_punct = is_digit = False
+    def __init__(self, text, lemma, slp=''): self.text, self.lemma_, self.lemma_slp = text, lemma, slp
+    def __repr__(self): return f'_VTok({self.text!r}→{self.lemma_!r})'
+
+_TOKEN = re.compile(r'[^\s।॥|/,;:()\[\]]+')
+
+def _pausa_keys(slp:str) -> L:
+    'The forms to try in the kosha for one written word, best first.'
+    ks = L(slp)
+    if slp.endswith('H'): ks += [slp[:-1]+'s', slp[:-1]+'r']
+    if slp.endswith('M'): ks.append(slp[:-1]+'m')
+    return ks
+
+def _splitter(path=None):
+    'vidyut\'s sandhi rule table, as a splitter. Cached by the caller.'
+    from vidyut.sandhi import Splitter
+    return Splitter.from_csv(str(vidyut_data(path)/'sandhi'/'rules.csv'))
+
+def _cover(w:str, sp, known, depth:int=0, max_depth:int=3, min_piece:int=2) -> tuple:
+    'Split an SLP1 string into pieces the kosha recognises, or `()` if it cannot be covered.'
+    if known(w): return (w,)
+    # SLP1 is an ASCII scheme, and vidyut's splitter indexes by *byte*. A character `to_slp1` could
+    # not map survives into the string, and `split_at` then panics from Rust — not an exception
+    # Python can catch. Real editions carry them: a nukta in `पितṛ़न` (Gītā 1.34) is enough.
+    if not w.isascii(): return ()
+    if depth >= max_depth or len(w) < 2*min_piece: return ()
+    for i in range(len(w)-min_piece, min_piece-1, -1):
+        for s in sp.split_at(w, i):
+            if not s.is_valid or len(s.first) < min_piece or not known(s.first): continue
+            if (rest := _cover(s.second, sp, known, depth+1, max_depth, min_piece)): return (s.first,)+rest
+    return ()
+
+def vidyut_pipe(path=None, split:bool=True):
+    "A spaCy-shaped lemmatiser backed by vidyut's kosha — the deterministic answer to inflection."
+    from vidyut.kosha import Kosha
+    ko = Kosha(str(vidyut_data(path)/'kosha'))
+    sp = _splitter(path) if split else None
+    def lem(k):
+        try: return dict.fromkeys(e.lemma for e in ko.get(k) if e.lemma)
+        except Exception: return {}
+    known = lambda s: bool(s) and any(ko.get(k) for k in _pausa_keys(s))
+    def pipe(text:str):
+        out = []
+        for w in _TOKEN.findall(text or ''):
+            w = w.strip("'’॒॑")
+            if not w or not (_DEVA.search(w) or _IAST_DIAC.search(w) or w.isalpha()): continue
+            slps, slp = (), to_slp1(w)
+            for k in _pausa_keys(slp):
+                if (slps := lem(k)): break
+            # nothing in the lexicon: the token is probably two words fused by sandhi
+            if not slps and sp is not None and len(slp) >= 5:
+                for piece in _cover(slp, sp, known):
+                    for k in _pausa_keys(piece):
+                        if (pl := lem(k)): slps = {**slps, **pl}; break
+            out += [_VTok(w, from_slp1(s), s) for s in slps]
+        return out
+    return pipe
+
+def sanskrit_terms(path=None,        # vidyut data dir; None -> `sanskrit_home()`
+                   topk:int=12,      # most frequent nominals kept per chunk
+                   min_len:int=3,    # skip particles and one-syllable words
+                   split:bool=True   # undo sandhi on tokens the kosha does not know
+                   ):
+    'A `terms_fn` for `build_graph`: the nominal words of a Sanskrit chunk, via the kosha.'
+    from vidyut.kosha import Kosha, PadaEntry
+    ko = Kosha(str(vidyut_data(path)/'kosha'))
+    sp = _splitter(path) if split else None
+    known = lambda s: bool(s) and any(ko.get(k) for k in _pausa_keys(s))
+    def entries(slp):
+        for k in _pausa_keys(slp):
+            if (es := ko.get(k)): return es
+        return []
+    def nominal(w) -> bool:
+        es = entries(to_slp1(w))
+        if not es and sp is not None and len(w) >= 4:
+            # a fused token counts as nominal only if every piece of it is
+            parts = _cover(to_slp1(w), sp, known)
+            if not parts: return False
+            return all(nominal_slp(p) for p in parts)
+        return bool(es) and not any(isinstance(e, PadaEntry.Tinanta) for e in es)
+    def nominal_slp(slp) -> bool:
+        es = entries(slp)
+        return bool(es) and not any(isinstance(e, PadaEntry.Tinanta) for e in es)
+    def terms(text:str, topk:int=topk) -> L:
+        seen = {}
+        for w in _TOKEN.findall(metrical_text(text) or ''):
+            w = w.strip("'’॒॑")
+            if len(w) < min_len or not (_DEVA.search(w) or _IAST_DIAC.search(w) or w.isalpha()): continue
+            if w in seen: seen[w] += 1; continue
+            if nominal(w): seen[w] = 1
+        return L(sorted(seen, key=lambda k: -seen[k])[:topk])
+    return terms
+
+_MW_DROP = re.compile(r'<(s|s1|ls|lex|ab|hom|info|srs|etym|gk|lang|bot|pb|div)[^>]*>.*?</\1>'
+                      r'|<(info|srs|pb|div|s1)[^>]*/?>', re.S)
+_MW_TAG, _MW_K1 = re.compile(r'<[^>]+>'), re.compile(r'<k1>([^<]*)')
+_MW_WORD = re.compile(r'[A-Za-z][A-Za-z-]{2,}')
+
+def _mw_clean(body:str) -> str:
+    t = body.split('¦', 1)[-1] if '¦' in body else body
+    t = _MW_TAG.sub(' ', _MW_DROP.sub(' ', t)).replace('&c.', '').replace('√', ' ')
+    t = re.sub(r'\([^)]*\)', ' ', t)                 # parentheticals are citations or grammar
+    t = re.sub(r'[\[\]‘’"]', ' ', t)
+    # A root entry opens with its conjugation table, which is all `<s>`/`<ab>` and strips to bare
+    # punctuation — `gam` came out as `1. ; 2. ( ; 3. ,` before this line.
+    if not _MW_WORD.search(t.split(',')[0] or ''): t = re.sub(r'(?:\s*[\d.,;:—-]+\s*)+', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip(' ,;.:—-')
+    if (m := re.search(r'[A-Za-z]', t)): t = t[m.start():]
+    return re.sub(r'\s+', ' ', t).strip(' ,;.:—-')
+
+def _mw_ok(g:str) -> bool:
+    'Real English, not the debris a conjugation table leaves behind.'
+    return len(_MW_WORD.findall(g)) >= 2 and len(re.sub(r'[^A-Za-z]', '', g))/max(len(g), 1) > 0.55
+
+def _clip(s:str, n:int) -> str:
+    'Truncate on a word boundary — a half word like `ema` is an index term that matches nothing.'
+    return s if len(s) <= n else s[:n].rsplit(' ', 1)[0].rstrip(' ,;')
+
+def mw_lexicon(path=None, force:bool=False, maxlen:int=110) -> dict:
+    'Monier-Williams as `{SLP1 headword: short English gloss}`, downloaded and reduced on first use.'
+    tsv = (Path(path) if path else sanskrit_home())/'mw.tsv'
+    if force or not tsv.exists():
+        import urllib.request
+        raw = tsv.with_suffix('.src')
+        if force or not raw.exists():
+            req = urllib.request.Request(MW_URL, headers={'User-Agent': 'litesearch'})
+            with urllib.request.urlopen(req, timeout=300) as r, open(raw, 'wb') as f:
+                while (b := r.read(1 << 20)): f.write(b)
+        out, k, buf = {}, None, []
+        with open(raw, encoding='utf-8', errors='replace') as f:
+            for ln in f:
+                if ln.startswith('<L>'): m = _MW_K1.search(ln); k, buf = (m.group(1) if m else None), []
+                elif ln.startswith('<LEND>'):
+                    if k and buf and _mw_ok(g := _mw_clean(' '.join(buf))):
+                        prev = out.get(k)
+                        out[k] = _clip(g, maxlen) if not prev else (
+                            _clip(prev+'; '+g, maxlen) if len(prev) < 60 else prev)
+                    k, buf = None, []
+                elif k is not None: buf.append(ln.rstrip('\n'))
+        tsv.write_text(''.join(f'{a}\t{b}\n' for a, b in out.items()), encoding='utf-8')
+        raw.unlink(missing_ok=True)
+    return dict(ln.split('\t', 1) for ln in tsv.read_text(encoding='utf-8').splitlines() if '\t' in ln)
+
+GLOSS_STOP = frozenset('''the and for with that this from any all not are was has had its his her
+their they which who whom what when where how such into out off over under also more most other
+some one two being been have does did must may might can could would should shall will upon than
+then them these those there here about above after before between during through against among
+substitution used said say saying called esp cf viz ibid etc set out come towards'''.split())
+
+def gloss_facets(text:str,          # chunk text
+                 nlp,               # a `vidyut_pipe()`; tokens must carry `.lemma_slp`
+                 mw:dict,           # a `mw_lexicon()`
+                 max_terms:int=24   # cap, so the gloss cannot outgrow the verse
+                 ) -> dict:
+    "`{'gloss': 'law duty; land soil; ...'}` — the English behind a chunk's Sanskrit words."
+    if not (nlp and mw and (text or '').strip()): return {}
+    out = {}
+    for t in nlp(metrical_text(text)):
+        if (g := mw.get(getattr(t, 'lemma_slp', ''))):
+            for w in g.replace(';', ' ').replace(',', ' ').split():
+                w = w.lower()
+                if len(w) > 2 and w.isalpha() and w not in GLOSS_STOP: out[w] = None
+        if len(out) >= max_terms: break
+    return {'gloss': ' '.join(list(out)[:max_terms])} if out else {}
+

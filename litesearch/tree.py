@@ -67,11 +67,7 @@ def summarize_extractive(text:str, n:int=300) -> str:
 def _clean_title(t:str, max_len:int=100): return _ws.sub(' ', t).strip(' #*_')[:max_len].strip()
 
 def struct_levels(pages, max_levels:int=4) -> dict:
-    '''`{heading word: level}` for one document, as consecutive levels starting at 1.
-
-    Levels are compacted rather than fixed, so a directive that only ever says "Article" gets
-    articles at level 1 instead of burying every one of them four deep. Unknown words are ranked
-    by frequency: the rarer heading word names the bigger division.'''
+    '`{heading word: level}` for one document, as consecutive levels starting at 1.'
     seen = {}
     for _, txt in pages:
         for ln, code in _md_lines(txt):
@@ -104,12 +100,7 @@ def _cite_stats(pages):
     return n, depth
 
 def detect_mode(pages) -> str:
-    """Which structural signal this document carries: `markdown`, `verse`, `chapter` or `window`.
-
-    `verse` is tried before the markdown/chapter pair because a Sanskrit source satisfies neither
-    of them and would fall all the way through to `window` — measured on GRETIL's Manusmṛti, all
-    twelve adhyāyas and 2,685 verses collapsing into a single `Pages 1–1` node. Its own signal is
-    the citation marker, which is unambiguous and carries the hierarchy for free."""
+    'Which structural signal this document carries: `markdown`, `verse`, `chapter` or `window`.'
     md, depths = _md_stats(pages)
     ch = sum(1 for _, txt in pages for ln, code in _md_lines(txt) if not code and _chapter.match(ln))
     npg = max(1, len(pages))
@@ -119,6 +110,7 @@ def detect_mode(pages) -> str:
     if md/npg > MAX_HEAD_DENSITY and depths < 2: return 'chapter' if ch >= 3 else 'window'
     if md >= (2 if len(pages) <= 3 else max(3, npg // 25)): return 'markdown'
     return 'chapter' if ch >= 3 else 'window'
+
 
 # %% ../nbs/06_tree.ipynb #e00e8925
 def build_tree(pages,                  # [(page_no, text)] — markdown or plain text
@@ -160,9 +152,6 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         from litesearch.sanskrit import CITE_RE, cite_parts
         last, head_lvl = [], 0
         for p, txt in pages:
-            # A heading is the other way a Sanskrit source names its divisions: GRETIL addresses
-            # verses by citation, but a stotra names sections (`## dhyanam`) and carries no
-            # citation at all. Verse mode has to read both or one of them gets a flat tree.
             if (h := first(ln for ln, code in _md_lines(txt) if not code and _md_head.match(ln))):
                 m = _md_head.match(h)
                 flush(cur_page)
@@ -179,13 +168,6 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
             for lvl in range(1, len(parts)+1):
                 if last[:lvl] != parts[:lvl]:
                     flush(cur_page)
-                    # Citation depth is *relative to the heading it sits under*. The two signals
-                    # count from different origins — `#` depth starts wherever the markup starts,
-                    # a citation's hierarchy always starts at 1 — so sharing one level space makes
-                    # `open_node` pop the heading off the stack and reparent its verses to the
-                    # root. TEI is exactly this case (`<div type="adhyāya">` *and*
-                    # `<lg xml:id="Manu_1.1">`), and it came out with the adhyāya nodes empty and
-                    # the second one adopted by the first chapter's citation node.
                     open_node(f"{sig} {'.'.join(parts[:lvl])}".strip(), head_lvl + lvl, p)
                     cur_page = p
             last = parts
@@ -224,11 +206,7 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
     return nodes
 
 def _dedent_path(parts) -> list:
-    """Drop a segment that only repeats the one before it.
-
-    A document whose first heading *is* its title — `# Field Manual` in `Field Manual.md`, and
-    every PDF whose H1 is its filename — otherwise reads `Field Manual › Field Manual › Chapter 1`
-    in every breadcrumb, on every hit, and in the text embedded with every chunk."""
+    'Drop a segment that only repeats the one before it.'
     out = []
     for p in parts:
         if p and (not out or _ws.sub(' ', p).strip().lower() != _ws.sub(' ', out[-1]).strip().lower()):
@@ -240,16 +218,13 @@ def heading_path(tree,              # the node list from build_tree
                  title:str,         # document title
                  sep:str=' › ',
                  max_len:int=200) -> str:
-    '''`Doc › Part › Chapter` for one node.
-
-    Embedded with the chunk and indexed for FTS, this is what stops a chunk reading as an
-    out-of-context fragment: "the effects are severe" means nothing until you know which chapter
-    said it.'''
+    '`Doc › Part › Chapter` for one node.'
     parts, cur = [], nd
     while cur is not None:
         if cur.level > 0: parts.append(cur.title)
         cur = tree[cur.parent] if cur.parent is not None else None
     return sep.join(_dedent_path([title] + parts[::-1]))[:max_len]
+
 
 # %% ../nbs/06_tree.ipynb #7026c892
 def doc_id(source, title='') -> str:
@@ -279,14 +254,7 @@ def get_tree(self:Database,
 MIN_CHUNK = 40
 
 def _pack_target(chunker) -> int:
-    """The size a chunker wants to pack *across* segments to, or 0 for the usual one-call-per-segment.
-
-    A chunker only ever sees one segment at a time, because a segment is what carries a page number.
-    That is invisible until a reader hands the tree one segment per unit: GRETIL prints one verse
-    per line and `gretil_parse` makes each verse its own page, so `ProseChunker`'s 700-character
-    target was being applied to a 60-character verse and could never reach — the Īśopaniṣad came out
-    at 10 chunks through either chunker, and the larger budget was decorative. Opting in through an
-    attribute keeps the chunker interface as it was for everything that does not care."""
+    'The size a chunker wants to pack *across* segments to, or 0 for the usual one-call-per-segment.'
     return int(getattr(chunker, 'target', 0) or 0) if getattr(chunker, 'pack_cited', False) else 0
 
 def _pack_segments(rows, target:int) -> L:
@@ -301,17 +269,7 @@ def _pack_segments(rows, target:int) -> L:
     return out
 
 def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=None):
-    """Chunk every node segment, tagging each chunk with its node, page and heading path.
-
-    A chunk under `min_chunk` is *merged into its predecessor*, never dropped. Dropping is the
-    tempting reading of a minimum size and it is wrong here: `read()` assembles a section out of
-    its chunks, so a discarded chunk is text that has silently left the corpus.
-
-    `meta_fn(text) -> dict` annotates each chunk with facets only its format knows — a `Profile`
-    supplies it, and `litesearch.sanskrit` uses it for metre. It runs **after** the short chunks
-    have been merged, so a chunk's metadata always describes the text it actually ended up holding
-    rather than the fragment it started as; annotating first and merging after is the version of
-    this that quietly files a verse under the metre of its neighbour."""
+    'Chunk every node segment, tagging each chunk with its node, page and heading path.'
     out = L()
     for nd in tree:
         head, nid = heading_path(tree, nd, title), f'{did}#{nd.seq}'
@@ -350,10 +308,7 @@ def add_doc(self:Database,
             mode:str=None,          # force a build_tree structural mode instead of detecting one
             meta_fn=None            # (chunk text) -> dict of facets stored as the chunk's `metadata`
 ) -> dict:
-    '''Ingest one document: build its tree, chunk it per node, embed and store.
-
-    Chunks are embedded as `heading ⏎⏎ content` but **stored** as bare content, so retrieval sees
-    the context and the caller gets clean text back.'''
+    'Ingest one document: build its tree, chunk it per node, embed and store.'
     import json as _json
     if isinstance(pages, str): pages = [(0, pages)]
     pages = [(p, t or '') for p, t in pages]
@@ -391,6 +346,7 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     g.docs.delete_where(where=f'id={did!r}')
     if self._ann_meta(store): g.store.rebuild_index()
 
+
 # %% ../nbs/06_tree.ipynb #49bd0c55
 DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb,.xml,.tei,.htm,.html,.conllu'
 
@@ -413,15 +369,7 @@ def add_file(self:Database,
              profile:str=None,     # force a registered Profile by name instead of detecting one
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
-    """Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.
-
-    A registered `Profile` wins over the extension table: it is the only thing that can tell a TEI
-    edition from any other `.xml`, and it carries the chunker, tree mode and per-chunk facets that
-    format needs.
-
-    `profile=` names one directly, which is the only way to reach a profile that cannot be
-    detected: `sanskrit_prose` shares every signal with `sanskrit_verse` and differs only in its
-    chunk budget, so nothing but the caller can tell them apart."""
+    'Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.'
     from litesearch.data import profile_for
     p = Path(path)
     ttl = title or p.stem.replace('_',' ').replace('-',' ').strip()
@@ -456,6 +404,7 @@ def add_dir(self:Database,
     exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
     return [self.add_file(p, store=store, prefix=prefix, **kw)
             for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
+
 
 # %% ../nbs/06_tree.ipynb #81b003f1
 @patch
@@ -531,12 +480,7 @@ def adaptive_weights(q:str,      # the raw query
                      fts:list,   # the FTS leg's results
                      vec:list    # the vector leg's results
 ) -> tuple:
-    '''`(fts_weight, vec_weight)` for RRF, from cheap signals in the query and the legs.
-
-    Three rules, not a learned model: a quoted phrase and a rare identifier are literal requests,
-    an empty leg cannot vote, and everything else is a tie. **Measured inert** on prose queries —
-    neither trigger fires on an ordinary sentence — so `doc_search(adaptive=...)` is off by
-    default. Worth turning on only where users really do type quoted phrases.'''
+    '`(fts_weight, vec_weight)` for RRF, from cheap signals in the query and the legs.'
     if not fts: return (0.0, 1.0)
     if not vec: return (1.0, 0.0)
     w = 1.0
@@ -548,10 +492,7 @@ def adaptive_weights(q:str,      # the raw query
 def merge_spans(hits,            # ranked hits carrying node_id + page
                 gap:int=1        # merge hits at most this many pages apart
 ) -> list:
-    '''Collapse hits that are adjacent inside the same node into one span.
-
-    The merged hit keeps the best rank and score of its members, so ordering is unchanged; what
-    changes is that the caller gets one contiguous passage where it had two halves.'''
+    'Collapse hits that are adjacent inside the same node into one span.'
     out, byn = [], {}
     for i, h in enumerate(hits):
         nid = h.get('node_id')
@@ -586,15 +527,7 @@ def doc_search(self:Database,
                rrf_k:int=60,
                **kw                   # forwarded to Database.search
 ) -> list:
-    """Hybrid search over a node-aware store: span merging and a breadcrumb per hit.
-
-    `adaptive` defaults **off**. Its triggers — a quoted phrase, a name/number-heavy query — did
-    not fire once across 300 natural-language queries over 486 pages of legislation, giving
-    results identical to plain RRF to three decimal places, and a replacement rule that leaned on
-    the FTS leg's coverage measured *worse* (0.425 against 0.496 MRR on degraded queries). Kept
-    and opt-in: the case it was written for — users who really do type quoted phrases and
-    identifiers — is real, and simply is not what that corpus tests.
-    """
+    'Hybrid search over a node-aware store: span merging and a breadcrumb per hit.'
     cols = list(dict.fromkeys((columns or ['content']) + ['node_id','page','heading','doc_id','rowid']))
     base = self.search(q, emb, columns=cols, limit=max(limit*3, 30), table_name=store, rrf=False, **kw)
     if not base: return []
@@ -627,14 +560,7 @@ def sections(self:Database,
              score:str='max',     # how a section scores from its hits: max | mean | sum
              **kw                 # forwarded to doc_search
 ) -> list:
-    '''Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.
-
-    `score='max'` — a section is as relevant as its best evidence. The obvious alternative, summing
-    the RRF mass of every hit in a node, reads well ("five weak hits in a chapter beat one strong
-    hit in an appendix") and measures badly: it is a length prior in disguise. On 150 known-item
-    queries over 486 pages of legislation, summing cost 0.07 MRR against `max` on verbatim queries
-    and 0.16 on keyword-degraded ones, because long chapters outranked the precise article. `mean`
-    is within noise of `max`; `sum` remains available for corpora of uniform section length.'''
+    'Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.'
     hits = self.doc_search(q, emb, limit=max(limit*fanout, 20), store=store, prefix=prefix, spans=False, **kw)
     g, agg = self.get_tree(store, prefix), {}
     for h in hits:
@@ -659,6 +585,7 @@ def sections(self:Database,
                         nchunks=nd.get('nchunks', 0), snippets=a['snippets'],
                         read=f'read({nid!r})'))
     return out
+
 
 # %% ../nbs/06_tree.ipynb #ba21b041
 def _prov(bc): return bool(bc) and '›' in bc   # a bare document title (the root) has no separator

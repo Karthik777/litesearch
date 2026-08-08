@@ -185,11 +185,10 @@ node in which Marie Curie *was* polonium. Merged groups are now cliques under th
 that no longer happens — but yake still gives you four entities where spaCy gives one, and only
 the noun-chunk path produces entity names you would want to read.
 
-For a language spaCy has no model for, `stanza_pipe(lang)` covers stanza's 68 —
-`build_graph(..., nlp=stanza_pipe('sa'))`. Needs `pip install litesearch[stanza]` (it pulls
-torch, which is why it is not a core dep). Two caveats: stanza has **no NER model for Sanskrit**,
-and spaCy implements `noun_chunks` per language and not for `sa`, so extraction there runs on a
-POS-run approximation rather than a real noun-chunk iterator.
+`build_graph(..., nlp=...)` takes any spaCy-shaped pipeline, so a language spaCy has no model
+for can be served by supplying one. Note that spaCy implements `noun_chunks` per language, so for
+a language without it extraction falls back to a POS-run approximation (`_nominal_spans`) rather
+than a real noun-chunk iterator.
 
 ## Document structure (`litesearch.tree`)
 
@@ -263,20 +262,35 @@ signal with its root text — and it is worth asking for on prose: it packs cons
 up to a larger target (`pack_cited=True`), where the verse profile closes a chunk at every
 citation.
 
-**Lemmas are opt-in and need a model.** Sandhi means the surface form is often not what anyone
-types. `register_profiles(nlp=stanza_pipe('sa'))` adds a `lemma` facet to the same `metadata`,
-queryable with `db.by_lemma('gam')`:
+**Lemmas and glosses are opt-in.** Sandhi means the surface form is often not what anyone
+types, and the text is Sanskrit while the reader's question is usually English. `vidyut_pipe()`
+adds a `lemma` facet and `mw_lexicon()` a `gloss` facet, both to the same `metadata`, queryable
+with `db.by_lemma('gam')`:
 
 ```python
-from litesearch import stanza_pipe, register_profiles
-register_profiles(nlp=stanza_pipe('sa'))   # once, before add_file/add_dir
+from litesearch import vidyut_pipe, mw_lexicon, register_profiles
+register_profiles(nlp=vidyut_pipe(), mw=mw_lexicon())   # once, before add_file/add_dir
 ```
 
-Three honest limits. It is **ingest-time only** — the FTS5 tokenizer stays deterministic and
+Needs `pip install litesearch[sanskrit]` — a 2.3 MB Rust wheel with no Python dependencies.
+`vidyut.lipi` transliteration works immediately; the 81 MB kosha and the ~2 MB reduction of
+Monier-Williams are fetched on first use into `sanskrit_home()`.
+
+`vidyut_pipe(split=True)` (the default) undoes sandhi on any token the lexicon does not hold, and
+**every piece must itself be in the kosha, with the whole word covered** — validating a generative
+rule table against 30M real forms is what stops it inventing readings. Measured: token coverage
+52% → 86%, and lemma-query retrieval 0.744 → 0.866 MRR. It also recovers most compound members,
+since a samāsa seam is usually a sandhi seam: `yogaścittavṛttinirodhaḥ` yields `yoga`,
+`cittavṛtti`, `rodha`.
+
+`sanskrit_terms()` is a `terms_fn` for `build_graph`, replacing yake where yake cannot read the
+script. It keeps a word only if the kosha gives it a *subanta* (nominal) reading and no *tinanta*
+(verbal) one — an entity is a thing, not an action.
+
+Two honest limits. It is **ingest-time only** — the FTS5 tokenizer stays deterministic and
 table-driven, because a store's tokenizer must resolve on every connection that opens the file and
-must be fast enough for the query path. Stanza **does not split sandhi or decompose compounds**
-(its Vedic treebank is distributed pre-segmented), so this handles inflection and not the harder
-half. And it needs `pip install litesearch[stanza]`, which pulls torch.
+must be fast enough for the query path. And it is an **exact FST**: it answers or declines rather
+than guessing, so a word outside the lexicon simply gets no lemma.
 
 ## Neighbours, clusters and peers
 
@@ -349,10 +363,11 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 | `resolve_entities(db)` | Merge duplicate entities (ANN + lexical guard; groups stay cliques) |
 | `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
 | `spacy_pipe(terms=...)` | spaCy pipeline for prose entities; `EntityRuler` seeded from exact terms |
-| `stanza_pipe(lang)` | Same seam for stanza's 68 languages, Sanskrit included (`[stanza]` extra) |
 | `db.by_meter(meter=/gana=)` | Filter chunks by the metrical facets `verse_meta` wrote |
 | `db.by_lemma(lemma)` | Filter chunks by lemma (needs `register_profiles(nlp=...)`) |
-| `register_profiles(nlp=)` | Re-register the Sanskrit profiles, optionally adding lemma facets |
+| `register_profiles(nlp=,mw=)` | Re-register the Sanskrit profiles, optionally adding lemma and gloss facets |
+| `vidyut_pipe()` / `mw_lexicon()` | Sanskrit lemmas (sandhi-splitting) and MW glosses (`[sanskrit]` extra) |
+| `sanskrit_terms()` | Nominal terms for `build_graph(terms_fn=)`, replacing yake on Devanagari |
 
 ## Two things that matter more than the model
 

@@ -33,12 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
-# spaCy and yake are core deps, so the prose graph works out of the box; the *model* is not
-# shippable (spaCy models are not on PyPI and PyPI rejects URL deps), so `spacy_pipe` downloads
-# `en_core_web_sm` on first use. Nothing extra to install for it.
-# `stanza` is for languages spaCy has no model for — Sanskrit above all. It pulls torch, which is
-# why it is not a core dep.
-stanza = ["spacy-stanza>=1.0.4"]
+sanskrit = ["vidyut>=0.4.0"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"
