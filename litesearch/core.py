@@ -80,21 +80,27 @@ def process_content(store,          # target Table (hash-id store)
                     embed=True,     # embed content before upsert
                     emb_fn=None,    # embedder, required when embed=True
                     hash_id_columns=('content',),  # columns the row id is hashed over; add 'node_id' to keep identical text in different sections distinct
-                    parallel=False, # safe for concurrent writers: widened busy timeout + chunked BEGIN IMMEDIATE txns
-                    chunk=5_000,    # rows per transaction when parallel=True
+                    parallel=False, # widen the busy timeout so concurrent writers wait rather than fail
+                    chunk=5_000,    # rows per transaction
                     **kw):          # forwarded to emb_fn
-    'Embed chunks (optional) and upsert into a hash-id store. No-op on empty content.'
+    '''Embed chunks (optional) and upsert into a hash-id store. No-op on empty content.
+
+    Every write goes through `write_txn` in `chunk`-sized batches, whether or not `parallel` is set.
+    Left alone, apswutils commits once per insert batch, and in WAL mode a commit is an fsync: the
+    same 8,000 rows cost 7.4s that way against 1.5s inside one transaction. Batching was never what
+    `parallel` meant — it means *other writers are active*, which is what the widened busy timeout
+    is for, and a throughput property has no business being gated behind a concurrency flag.'''
     content = list(content or [])
     if embed:
         assert emb_fn, 'emb_fn is required when embed=True'
         content = embed_chunk(content, emb_fn, **kw)
     if not content: return
     _ins = lambda rows: store.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=list(hash_id_columns))
-    if not parallel: return _ins(content)
-    with busy_window(BUSY_TIMEOUT_MS, store.db):
+    with (busy_window(BUSY_TIMEOUT_MS, store.db) if parallel else nullcontext()):
         for i in range(0, len(content), chunk):
             with write_txn(store.db): _ins(content[i:i+chunk])
     return store
+
 
 # %% ../nbs/01_core.ipynb #eb6da9000ce71a23
 @patch
@@ -262,7 +268,7 @@ def _idx_remove(self:Table, idx, keys):
     if (present := [k for k in keys if idx.contains(k)]): idx.remove(np.array(present, dtype=np.int64))
 
 @patch
-def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16):
+def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16, save=True):
     'Apply adds (by id) / removes (by rowid) to the ANN index from current blobs; infer+persist ndim; save.'
     m = self.db._ann_meta(self.name)
     if rm_rowids and m['ndim']: self._idx_remove(self.db.get_index(self.name), rm_rowids)
@@ -277,7 +283,7 @@ def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16):
         self._idx_remove(idx, keys)
         idx.add(np.array(keys, dtype=np.int64),
                 np.stack([np.frombuffer(b, dtype=dtype) for b in rows.itemgot('embedding')]))
-    self.db._save_index(self.name)
+    if save: self.db._save_index(self.name)
 
 @patch
 def sync(self:Table,            # store table (hash-id; ANN mirrored if registered)
@@ -327,6 +333,27 @@ def rebuild_index(self:Table, dtype=None):
             np.stack([np.frombuffer(b, dtype=dt) for b in rows.itemgot('embedding')]))
     self.db._save_index(self.name)
     return idx.size
+
+# %% ../nbs/01_core.ipynb #bulkload
+@patch
+@contextmanager
+def bulk_load(self:Table):
+    '''Suspend this table's FTS5 triggers for a bulk insert, then rebuild the index once.
+
+    The trigger DDL is captured from `sqlite_master` and replayed verbatim rather than rebuilt from
+    the column list, so the tokenizer chain comes back exactly as it was — `get_store` picks between
+    apsw's `unicodewords` chain and plain `porter` at creation time, and reconstructing that guess
+    here is how the two quietly drift apart.'''
+    ft = self.detect_fts()
+    q = f"select name, sql from sqlite_master where type='trigger' and tbl_name={self.name!r}"
+    trigs = [(r['name'], r['sql']) for r in self.db.q(q)] if ft else []
+    for n, _ in trigs: self.db.execute(f'drop trigger if exists [{n}]')
+    try: yield self
+    finally:
+        for _, sql in trigs:
+            if sql: self.db.execute(sql)
+        if ft: self.db.execute(f"insert into [{ft}]([{ft}]) values('rebuild')")
+
 
 # %% ../nbs/01_core.ipynb #4258d0ab30d7610b
 @patch

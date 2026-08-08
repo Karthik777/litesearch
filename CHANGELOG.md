@@ -1,5 +1,47 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.16
+
+Ingestion performance. `docs/ingestion_performance.md` has the measurements and
+`evals/ingest_bench.py` reproduces them; the short version is that a 400-document directory went
+from 112.2s to 9.2s and, more to the point, from exponent 1.64 to 0.91 — ingest is linear now.
+
+### Changed
+
+- **`add_doc` no longer rebuilds the ANN index per document.** It mirrors that document's keys into
+  the index, the way `sync` always has. A full `rebuild_index` reads every embedding blob in the
+  store, so doing it per document made a directory walk O(N²). `add_dir` now treats the walk as a
+  bulk load: FTS triggers suspended for the duration, one index rebuild at the end. `delete_doc`
+  drops just the deleted rows' keys. **12.2x** at 400 documents, and no longer degrading.
+- **`add_doc` stops re-registering an ANN index the caller opted out of.** It calls `get_tree`
+  internally, which defaults to `ann=True`, so `get_tree(store, ann=False)` was silently overridden
+  on first ingest. A store that already exists now keeps whatever it was created with.
+- **`process_content` always batches writes in a transaction.** apswutils commits per insert batch
+  and a WAL commit is an fsync: 8,000 rows cost 7.4s that way against 1.5s in one transaction. The
+  batching was already implemented but gated behind `parallel=True`, which is a concurrency flag,
+  not a throughput one. `parallel` now controls only the busy window. **6.7x**.
+- **`dir2chunks`/`pkg2chunks` parse on a process pool.** `file_parse` holds the GIL end to end, so
+  the thread pool they used measured 0.76x — *slower than serial*. Directories below
+  `MIN_PARALLEL_FILES` stay serial rather than pay for a pool. **3.3x**.
+
+### Faster, with identical results
+
+- **`pyparse`** hoists the line split out of the per-node loop and iterates `tree.body` instead of
+  walking the whole tree to tag parents. `ast.get_source_segment` re-splits the entire file on
+  every call — 68% of the time spent parsing `transformers`. **7.1–11.4x**, byte-identical across
+  32,720 chunks and every flag combination.
+- **`resolve_entities`** replaces 8,487 individual HNSW probes (each with its own `rowid IN (...)`
+  query) with one batched probe, and memoises `_toks`, which the lexical guard was calling 252,813
+  times on a few thousand strings. **2.3x**, exponent 1.35 → 1.08, same merges.
+
+### New
+
+- `Table.bulk_load()` — suspend a table's FTS5 triggers for a bulk insert and rebuild the index
+  once on the way out (**2x**). For loads only: `rebuild` is O(rows), so it is slower than the
+  triggers for a small update.
+- `evals/ingest_bench.py` — ingestion benchmarks over the `evals.corpus` genres, sweeping corpus
+  size so the growth exponent is visible rather than a single throughput number.
+
 ## 0.1.15
 spacy batching 25% speedup
 

@@ -9,6 +9,7 @@ from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict
 from fastlite import Database
 from apswutils.db import Table
 import ast, math, re, zlib
+from functools import lru_cache
 import numpy as np
 
 from .core import _in, _rid, _slug, _np_dtype, process_content
@@ -52,12 +53,17 @@ def _norm(s):
     if not re.search(r'[A-Za-z]', s): return None          # pure numbers / punctuation
     return s.lower()
 
+@lru_cache(maxsize=1<<17)
 def _toks(s):
     '''Tokens for the lexical guard. UAX#29 treats `_` as a word joiner, so `fts_search` stays one
-    token — splitting it gives {fts, search}, which merges it into `search` by containment.'''
+    token — splitting it gives {fts, search}, which merges it into `search` by containment.
+
+    Cached because the guard is called once per *candidate pair* and there are far more pairs than
+    entities: resolving 8,487 entities tokenised 252,813 times, all of it the same few thousand
+    strings going through apsw's UAX#29 iterator again.'''
     try: from apsw.unicode import word_iter, casefold
-    except ImportError: return set(_TOK.findall(s.lower()))
-    return {casefold(t) for t in word_iter(s or '') if any(c.isalnum() for c in t)}
+    except ImportError: return frozenset(_TOK.findall(s.lower()))
+    return frozenset(casefold(t) for t in word_iter(s or '') if any(c.isalnum() for c in t))
 
 def _acr(s):  return ''.join(w[0] for w in s.split() if w)
 
@@ -344,6 +350,24 @@ def _uf_union(par, rank, a, b):
     par[rb] = ra
     return True
 
+def _ann_pairs(tbl, rows, k=8, dtype=np.float16):
+    '''`(id, neighbour_id, distance)` for every embedded row, from one batched HNSW probe.
+
+    usearch searches a matrix of queries across its own thread pool, so asking it once for 8,487
+    vectors is not the same work as asking it 8,487 times: the per-entity loop also ran one
+    `rowid IN (...)` query per entity, and the two together were 10.3s of a 23.0s resolve. The
+    candidate set is unchanged — same k, same neighbours, same distances.'''
+    idx_ = tbl.db.get_index(tbl.name)
+    emb = [r for r in rows if r['embedding']]
+    if not emb or not idx_.size: return
+    key = {r['rowid']: r for r in tbl.db.q(f'select {_rid()}, id, content from {tbl.name}')}
+    res = idx_.search(np.stack([np.frombuffer(r['embedding'], dtype=dtype) for r in emb]),
+                      count=min(k, idx_.size))
+    ks, ds = np.atleast_2d(res.keys), np.atleast_2d(res.distances)
+    for r, kr, dr in zip(emb, ks, ds):
+        for kk, dd in zip(np.atleast_1d(kr).tolist(), np.atleast_1d(dr).tolist()):
+            if (o := key.get(int(kk))): yield r, o, float(dd)
+
 def _lexical_pairs(name, max_group=60):
     '''Candidate merge pairs by shared-token blocking — catches containment variants
     ("isolated polonium" / "polonium") that an ANN pass on short strings misses.
@@ -374,7 +398,7 @@ def resolve_entities(db,                # Database
     Kinds in `skip_kinds` are left alone — AST symbols are exact identifiers, and resolving them
     collapses `search`/`fts_search`/`vec_search` into one node.'''
     g = db.get_graph(store, prefix)
-    allr = L(g.entities(select='id, content, freq, embedding, kind'))
+    allr = L(g.entities(select=f'{_rid()}, id, content, freq, embedding, kind'))
     rows = allr.filter(lambda r: r['kind'] not in set(skip_kinds or ()))
     if len(rows) < 2:
         return dict(merged=0, by_ann=0, by_lexical=0, edges=len(list(g.edges())),
@@ -383,13 +407,12 @@ def resolve_entities(db,                # Database
     rank = {r['id']: (r['freq'] or 0) for r in rows}
     name = {r['id']: r['content'] for r in rows}
     ann_m = lex_m = 0
-    for r in rows.filter(lambda r: r['embedding']):
-        for h in g.entities.ann_search(r['embedding'], columns=['id','content'], limit=k, dtype=dtype):
-            oid = h.get('id')
-            if not oid or oid == r['id'] or oid not in par: continue
-            if (h.get('_dist') or 1.0) > thresh: continue
-            if not _lex_ok(r['content'], h['content'], lex): continue
-            if _uf_union(par, rank, r['id'], oid): ann_m += 1
+    for r, h, dist in _ann_pairs(g.entities, rows, k, dtype):
+        oid = h.get('id')
+        if not oid or oid == r['id'] or oid not in par: continue
+        if dist > thresh: continue
+        if not _lex_ok(r['content'], h['content'], lex): continue
+        if _uf_union(par, rank, r['id'], oid): ann_m += 1
     if lexical:
         for a, b in _lexical_pairs(name, max_group):
             if _lex_ok(name[a], name[b], lex) and _uf_union(par, rank, a, b): lex_m += 1
