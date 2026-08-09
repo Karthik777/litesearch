@@ -275,9 +275,63 @@ two slightly different graphs and an approximate probe over a different graph re
 different neighbours. This pre-dates the change — hold the index still and the drift disappears.
 Worth knowing if you ever diff two graph builds and expect them to match.
 
-Still open: `build_graph` holds at ~40 chunks/s (~7 hours per million chunks on one core) and
-accumulates `ents`, `mens`, `edges` and `wins` in memory for the whole call, so it cannot be handed
-a million chunks in one go regardless of speed. Feed it in batches.
+### 7b. `build_graph`: throughput, memory, and a recall cliff
+
+Profiling `build_graph` found the same unbatched-write problem: `insert_chunk` was **9.3s of 36.1s**,
+because entities, mentions and edges went through `insert_all` directly rather than
+`process_content`. One `write_txn` around the writes took 1,000 chunks from 21.6s to 11.5s — ~90
+chunks/s against ~45.
+
+Memory was the harder problem. `build_graph` accumulated entities, mentions, edges *and every
+co-occurrence window* for the whole call, and windows are the one term that never saturates: entity
+vocabulary follows Heaps' law, mentions can be flushed, but a window is one per sentence forever.
+Three changes, each verified to leave the graph byte-identical:
+
+- **`batch=`** flushes mentions per batch and moves windows to a scratch SQLite table. `_pmi_edges`
+  already walks its windows twice — it must, since the hub cut-off is not known until the first pass
+  ends — so anything with `__len__` and a re-iterable `__iter__` substitutes for the list.
+- **Pair counting moved into SQL.** It was the last unbounded structure; pairs are quadratic in
+  window size, so the counter tracked the corpus even once the windows were no longer held.
+- **`for c in L(chunks)` became a plain iteration.** `L()` materialises, so a caller passing a
+  generator to keep a corpus off the heap had it read into a list first.
+
+```
+chunks    list, no batch    generator + batch    marginal KB/chunk (batched)
+  2000            113 MB               82 MB
+  4000            171 MB              109 MB           13.5
+  8000            281 MB              150 MB           10.3
+ 16000                 —              190 MB            5.0
+```
+
+Marginal cost halves as the corpus doubles: memory now tracks entity vocabulary, which saturates,
+rather than corpus size, which does not.
+
+Verifying the batched path surfaced a latent bug. The two paths gave the same 2,707 edges with
+*zero* differences in weight or count, but 30 different edges — all exact weight ties, broken by
+whichever order pairs happened to be counted in. `max_degree` pruning now breaks ties on
+`(src, dst)`, which makes both paths identical and the existing path reproducible.
+
+### 7c. `_lexical_pairs` was losing merges as the corpus grew
+
+Not a speed problem, and the one finding here that no timing would ever have surfaced.
+`_lexical_pairs` skipped any shared-token block larger than `max_group`. Blocks grow with the
+corpus, so the pairs that stopped being proposed were exactly the ones a larger corpus added.
+Measured against an exhaustive `_lex_ok` ground truth:
+
+```
+entities   truth pairs   skipping (before)   windowing (after)
+   1,377         1,569              97.0%              99.8%
+   3,254         3,713              94.4%              99.5%
+   5,650         8,193              86.1%              98.3%
+   8,487        15,004              75.9%              97.2%
+```
+
+At 8,487 entities the old blocking proposed three quarters of the valid merges, and falling.
+Oversized blocks are now windowed on sorted names rather than skipped — sorting puts containment
+variants adjacent ("polonium" beside "polonium isotope"), which is the case the lexical pass exists
+for, and the work stays O(block x max_group). It costs 2.2x the pairs examined and **no measurable
+time** (5.62s against 5.65s at n=2000), because `_toks` is cached and `_uf_union` short-circuits
+pairs already merged. It finds 6,422 merges against 5,896.
 
 ## Considered and set aside: sharding
 
@@ -296,9 +350,15 @@ argument for sharding that survives, and it is about RAM, not speed.
 
 ## What is still open at 10^6
 
-- `build_graph` at ~40 chunks/s, single-core, accumulating in memory for the whole call. Batch it.
-- Embedding, which these numbers deliberately exclude. `hash_embed` stands in for the encoder; a
+- **Embedding**, which these numbers deliberately exclude. `hash_embed` stands in for the encoder; a
   real model is the dominant cost once litesearch's own overhead is out of the way, and it is the
   part that wants a GPU or a process pool.
-- `add_dir` walks files serially. `_parse_files` shows the shape of the fix; the document path has
-  not had it applied, because PDF parsing and SQLite writing want different pool sizes.
+- **`add_dir` walks files serially.** `_parse_files` shows the shape of the fix; the document path
+  has not had it applied, because PDF parsing and SQLite writing want different pool sizes.
+- **`build_graph` is single-core** at ~90 chunks/s, so a million chunks is ~3 hours. Extraction is
+  per-chunk and independent — a map/reduce away from scaling with cores, if the accumulation becomes
+  a merge step.
+- **`build_graph` memory is sublinear, not constant.** What remains is entity vocabulary and the
+  edge dict, both on saturating curves. Fine to 10^6 on the measured slope; re-measure before 10^7.
+- **spaCy is slower than the yake fallback** (9.5 vs 16.4 chunks/s) while extracting ~1.7x the
+  entities. Which trade is better has been measured on cost, not on retrieval quality.

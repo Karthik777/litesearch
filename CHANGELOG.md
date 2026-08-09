@@ -1,5 +1,38 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.17
+
+The graph half of the ingest work. `build_graph` was the remaining thing that could not be handed a
+large corpus, and `resolve_entities` turned out to be losing merges as the corpus grew.
+
+### Fixed
+
+- **`_lexical_pairs` no longer skips oversized token blocks.** A block bigger than `max_group`
+  yielded nothing at all, and blocks grow with the corpus — so the merges that stopped being
+  proposed were exactly the ones a larger corpus added, silently, with nothing in any timing to show
+  it. Against an exhaustive `_lex_ok` ground truth, blocking found 97% of valid merges at 1,377
+  entities and **76% at 8,487**. Oversized blocks are now windowed on sorted names, which puts
+  containment variants adjacent: 99.8% and 97.2% at the same two sizes, for 2.2x the pairs examined
+  and no measurable time.
+- **`max_degree` pruning breaks weight ties on `(src, dst)`.** Without it the surviving edges
+  depended on the order pairs happened to be counted in, so two builds of the same corpus could
+  differ. Found while checking the batched path against the in-memory one: same 2,707 edges, zero
+  differences in weight or count, 30 different edges, all of them ties.
+- **`build_graph` writes inside a transaction.** Entities, mentions and edges went through
+  `insert_all` directly, so `insert_chunk` was 9.3s of a 36.1s build. 1,000 chunks: 21.6s -> 11.5s.
+
+### New
+
+- **`build_graph(batch=...)`** — flushes mentions per batch and keeps co-occurrence windows in a
+  scratch SQLite table rather than in memory. Windows are the term that never saturates: entity
+  vocabulary flattens, mentions can be flushed, a window is one per sentence forever. PMI pair
+  counting moved into SQL for the same reason, and `build_graph` now iterates `chunks` instead of
+  wrapping it in `L()`, so passing a generator actually streams. Peak RSS over 8,000 chunks: 281 MB
+  -> 150 MB, and the marginal cost halves as the corpus doubles rather than staying flat.
+
+The graph is byte-identical batched or not — entities, mentions and edges are all pinned in
+`nbs/05_graph.ipynb`.
+
 ## 0.1.16
 
 Ingestion performance. `docs/ingestion_performance.md` has the measurements and

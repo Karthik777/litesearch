@@ -359,6 +359,56 @@ def bench_shard_reads(n=1200, shards=(1,2,4,8,16), queries=60, reps=3, workdir=N
 # Three of the ingest fixes could in principle have changed results rather than just timings. Each is
 # pinned here against the implementation it replaced, so "identical" is a thing you can re-run.
 
+def bench_lexical_recall(sizes=(250, 500, 1000, 2000), lex=0.34, max_group=60, workdir=None):
+    '''What fraction of the merges `_lex_ok` accepts does the blocking actually propose?
+
+    Ground truth is exhaustive — every unordered pair of entity names the guard accepts, O(E²).
+    Blocking exists only to avoid enumerating that set, so the number that matters is how much of
+    it survives, and it has to be measured against corpus size: a recall that is fine at a thousand
+    entities and poor at ten thousand looks like nothing at all from inside a single run.'''
+    from litesearch.graph import _lexical_pairs, _lex_ok
+    print(f'\n== lexical blocking recall (max_group={max_group}) ==')
+    print(f"{'chunks':>7} {'entities':>9} {'truth pairs':>12} {'recall':>8} {'pairs examined':>15}")
+    out = []
+    for n in sizes:
+        root = Path(tempfile.mkdtemp(dir=workdir))
+        db = database(str(root/'g.db')); db.get_store('store', hash=True, ann=True)
+        build_graph(db, corpus_chunks(n, chars=800), emb_fn=hash_emb_fn())
+        rows = [r for r in db.t.entities(select='id, content, kind') if r['kind'] not in ('symbol','module','topic')]
+        name = {r['id']: r['content'] for r in rows}
+        ids = sorted(name)
+        truth = {(a, b) for i, a in enumerate(ids) for b in ids[i+1:] if _lex_ok(name[a], name[b], lex)}
+        got = {(a, b) if a < b else (b, a) for a, b in _lexical_pairs(name, max_group)}
+        rec = len(got & truth)/len(truth) if truth else float('nan')
+        print(f'{n:>7} {len(name):>9,} {len(truth):>12,} {rec:>7.1%} {len(got):>15,}')
+        out.append(dict(n=n, entities=len(name), truth=len(truth), recall=rec, examined=len(got)))
+        db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    return out
+
+def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
+    '''Peak RSS of `build_graph`, listed input against a generator with `batch` set.
+
+    Reported as marginal KB/chunk between sizes rather than as a total, because the total is
+    dominated by the interpreter and the question is only whether the slope flattens.'''
+    import resource
+    print(f'\n== build_graph memory (batch={batch}) ==')
+    print(f"{'chunks':>7} {'mode':>16} {'wall':>8} {'rss delta':>11} {'KB/chunk':>9}")
+    out = []
+    for n in sizes:
+        for label, bt, gen in (('list, no batch', None, False), ('generator, batched', batch, True)):
+            root = Path(tempfile.mkdtemp(dir=workdir))
+            db = database(str(root/'g.db')); db.get_store('store', hash=True, ann=True)
+            src = (c for c in corpus_chunks(n, chars=800)) if gen else corpus_chunks(n, chars=800)
+            base = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
+            with Timer() as t: build_graph(db, src, emb_fn=hash_emb_fn(), batch=bt)
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
+            print(f'{n:>7} {label:>16} {t.wall:>7.2f}s {peak-base:>10.1f}MB {(peak-base)*1024/n:>8.1f}')
+            out.append(dict(n=n, mode=label, wall=t.wall, rss=peak-base))
+            db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    print('  note: RSS is a high-water mark within one process, so run this as its own process per '
+          'size for a clean read — `python -m evals.ingest_bench gmem --sizes N`.')
+    return out
+
 def _pyparse_pre_0116(p=None, code=None, imports=False, assigns=False):
     'The `pyparse` that shipped up to 0.1.15, verbatim, as the reference for the rewrite.'
     import ast
@@ -489,7 +539,7 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
-                                     'verify','all'])
+                                     'lexrecall','gmem','verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -513,6 +563,8 @@ def main(argv=None):
     if a.bench in ('code','all'):  run(bench_code, dirs=(a.dir,), workdir=a.workdir, emb=emb)
     if a.bench in ('chunk','all'): run(bench_chunk, n=(a.sizes or (2000,))[0])
     if a.bench in ('graph','all'): run(bench_graph, sizes=a.sizes or (500,1000,2000), workdir=a.workdir, spacy=a.spacy)
+    if a.bench in ('lexrecall','all'): run(bench_lexical_recall, sizes=a.sizes or (250,500,1000,2000), workdir=a.workdir)
+    if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)
     if a.out: Path(a.out).write_text(json.dumps(rows, indent=1))
     return rows
