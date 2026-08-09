@@ -1,5 +1,85 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.19
+
+Graph layer performance. The question was whether [usearch], [StringZilla] or [NumKong] could speed
+up the set comparisons in `graph.py`; the measured answer is that usearch already does the vector
+work and the other two are slower than the stdlib on inputs this small, so the wins came from
+elsewhere. `docs/graph_performance.md` has the numbers and `evals/ingest_bench.py` reproduces them.
+
+Results are unchanged and checked rather than asserted: `build_graph` emits identical entity,
+mention and edge hashes across all seven `n_workers`/`batch`/generator combinations *and* against
+the pre-change code, `graph_search` returns the same rows in the same order with the same RRF
+scores to twelve decimal places, and `_lex_ok` was compared against its previous form over 979,300
+real entity pairs and 3,844 adversarial ones with zero disagreements.
+
+### Fixed
+
+- **`resolve_entities` is reproducible.** Two resolves of the *same database* in two processes came
+  back with different partitions and merge counts drifting over a range of three. It is not HNSW,
+  which is what it looks like and what the 0.1.17 notes assumed — `verify_ann_probe` shows the ANN
+  candidates were stable throughout and the variance is entirely in `by_lexical`. `_toks` returns a
+  `frozenset`, so its iteration order follows `PYTHONHASHSEED`; that set the insertion order of the
+  inverted index in `_lexical_pairs`, hence the order pairs were proposed in, and `_uf_union` only
+  accepts a merge that keeps the group a clique — an order-dependent test. Tokens are now walked in
+  sorted order. Four resolves under random hash seeds return the same partition and edge table bit
+  for bit; blocking recall is unchanged at 99.5% / 98.3% / 97.2%.
+- **`_collapse_edges` rewrote the edge table outside a transaction**, so it paid an fsync per insert
+  batch and left a window in which a concurrent reader saw no edges at all. Both halves are one
+  write now.
+
+### Changed
+
+- **`resolve_entities` is 6.0x faster** (11.97s → 2.00s at 8,487 entities), and three quarters of
+  that was never entity matching. The `canon` write-back ran one autocommit per entity and each one
+  fired apswutils' `AFTER UPDATE` trigger, re-tokenising `content` into FTS5 — 5,650 fsync'd
+  reindexes to record 2,056 merges. Only rows whose canon actually moves are written now, in one
+  transaction, compared against the *stored* canon so a re-resolve that undoes a merge still writes
+  the row back. `_lex_ok` also evaluated its two most expensive tests first: the digit and acronym
+  checks allocate four throwaway objects per call and can only veto or rescue a pair the cached
+  token sets have already ruled on, which is 300,000 `_acr` calls and 300,000 `findall`s per resolve
+  to change 900 answers.
+- **`graph_search` is 2.0x faster** (140ms → 70ms per query at 2,000 chunks). The canonical-id map
+  was a full scan of the entity table on every query to serve the mentions of twelve chunks — the
+  one cost that grew with the corpus rather than the query — and is now a join. `_adjacency` reads
+  raw tuples instead of building a dict per edge row, and `_ppr` flattens the adjacency into index
+  arrays once and runs each round as a gather plus a `bincount` instead of twelve nested Python
+  loops (34ms → 4ms). Dangling nodes still drop their mass, exactly as before.
+- **`build_graph` opens one process pool per call, not one per batch.** `parallel` opens and closes
+  a `ProcessPoolExecutor` around every invocation and `drain_prose` runs once per `batch`, so the
+  two arguments that exist to make a large corpus finish were each making the other worse: 2,000
+  chunks at `batch=200` spawned forty workers to do the work of four. Extraction 7.7s → 5.1s, and
+  the cost of batching is now flat in batch size rather than rising as batches shrink. This was
+  listed as open in `docs/ingestion_performance.md`.
+- **`hash_embed` is 1.85x faster** and bit-identical. Same hash; the n-gram hashes are binned by one
+  `bincount` rather than fancy-indexing a float row per n-gram, and an all-ASCII string is encoded
+  once and sliced as bytes instead of encoded once per n-gram. n-grams are counted in *characters*,
+  so the byte path is only taken when the encoding is length-preserving.
+- **`_knn_clusters` fetches its vectors in one batched usearch lookup** rather than one call per key.
+  `ctfidf_labels` counts cluster sizes in one pass instead of re-walking the label array per cluster.
+
+### New
+
+- **`evals/ingest_bench.py parts`** — disables one part of `resolve_entities` at a time and
+  re-resolves *the same graph*, so each row is that part's contribution. The clique guard is
+  load-bearing and then some: without it 6,422 merges collapse into transitive blobs covering 14.8
+  million pairs. The lexical pass carries 69% of merged pairs. The ANN pass is not purely additive —
+  removing it *gains* 1,879 pairs and loses 1,284, because merging on embeddings first blocks
+  lexical merges the order-dependent clique guard would otherwise accept — and nets out at four
+  merges on this corpus. The acronym rule is idle on prose (identical partition without it); the
+  digit guard is nearly free and catches 13 `python 3.11`/`python 3.12`-shaped merges.
+- **`evals/ingest_bench.py libs`** — StringZilla and NumKong against the stdlib on the operations
+  this module actually performs, with an agreement check, because a faster function that answers
+  differently is not a drop-in. NumKong's `intersect` is 0.48x a Python `frozenset &` on two-to-five
+  element sets; `sz.contains` is 0.81x Python's already-SIMD `in`; the one real win,
+  `utf8_wordbreaks` for tokenisation at 2.14x, disagrees with apsw's UAX#29 iterator on 1.6% of
+  tokens, which is 1.6% of merge decisions. Neither library is a dependency and on this evidence
+  neither should be.
+
+[usearch]: https://github.com/unum-cloud/USearch
+[StringZilla]: https://github.com/ashvardanian/StringZilla
+[NumKong]: https://github.com/ashvardanian/NumKong
+
 ## 0.1.18
 removed apcy and added a hand rolled noun list at 89% efficiency
 

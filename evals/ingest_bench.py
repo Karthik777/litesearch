@@ -381,6 +381,139 @@ def bench_lexical_recall(sizes=(250, 500, 1000, 2000), lex=0.34, max_group=60, w
         db.conn.close(); shutil.rmtree(root, ignore_errors=True)
     return out
 
+def bench_resolve_parts(n=2000, workdir=None, examples=3):
+    '''Which parts of `resolve_entities` are carrying their weight.
+
+    Every row disables exactly one thing and re-resolves *the same graph* — the database is built
+    once and copied per configuration — so the delta is that part's contribution and not a
+    different corpus. `merges` is the count, `only here` is how many merged pairs no other
+    configuration in the table produced, and `partition` is the fingerprint of which entities ended
+    up together; two rows with the same fingerprint did the same job at different prices.
+
+    Reported because "it is in the pipeline" is not evidence that it is doing anything. Two of the
+    rules turn out to be nearly free and two of them turn out to be load-bearing, and neither fact
+    was visible from a timing of the whole call.'''
+    import hashlib, copy
+    from litesearch import graph as G
+    print(f'\n== resolve_entities: what each part contributes ({n} chunks) ==')
+    root = Path(tempfile.mkdtemp(dir=workdir)); src = root/'built'
+    src.mkdir(parents=True)
+    db = database(str(src/'g.db')); db.get_store('store', hash=True, ann=True)
+    st = build_graph(db, corpus_chunks(n, chars=800), emb_fn=hash_emb_fn()); db.conn.close()
+
+    def pairs_of(d):
+        'The merge partition as a set of (member, representative) facts, plus its fingerprint.'
+        grp = {}
+        for x in d.t.entities(select='id, canon'): grp.setdefault(x['canon'] or x['id'], []).append(x['id'])
+        part = sorted(tuple(sorted(v)) for v in grp.values() if len(v) > 1)
+        merged = {(g_[i], g_[j]) for g_ in part for i in range(len(g_)) for j in range(i+1, len(g_))}
+        return merged, hashlib.sha256(repr(part).encode()).hexdigest()[:10]
+
+    # each patch turns off one rule; `full` is the shipped behaviour. The replacement is built from
+    # the original rather than closing over the module attribute, which by then is the replacement.
+    no_acr    = lambda orig: (lambda s: '\x00')        # an acronym that can never equal a name
+    no_nums   = lambda orig: (lambda s: frozenset())   # every pair agrees on digits
+    no_clique = lambda orig: (lambda par, rank, a, b, name=None, ok=None, members=None, max_check=32:
+                              orig(par, rank, a, b))   # union without the clique test
+    cfgs = [('full',                   dict(), None),
+            ('no lexical pass',        dict(lexical=False), None),
+            ('no ANN pass',            dict(thresh=-1.0), None),   # every distance fails `dist > thresh`
+            ('no acronym rule',        dict(), ('_acr', no_acr)),
+            ('no digit guard',         dict(), ('_nums', no_nums)),
+            ('no clique guard',        dict(), ('_uf_union', no_clique))]
+    rows, got = [], {}
+    for label, kw, patch_ in cfgs:
+        d = root/label.replace(' ', '_'); shutil.rmtree(d, ignore_errors=True); shutil.copytree(src, d)
+        dbc = database(str(d/'g.db'))
+        old = getattr(G, patch_[0]) if patch_ else None
+        if patch_: setattr(G, patch_[0], patch_[1](old))
+        try:
+            with Timer() as t: r = resolve_entities(dbc, **kw)
+        finally:
+            if patch_: setattr(G, patch_[0], old)
+        merged, h = pairs_of(dbc)
+        got[label] = merged
+        rows.append(dict(cfg=label, wall=t.wall, partition=h, pairs=len(merged), **r))
+        dbc.conn.close(); shutil.rmtree(d, ignore_errors=True)
+    base = got['full']
+    print(f"  {'configuration':<18} {'wall':>7} {'merges':>8} {'pairs':>8} {'vs full':>16} {'partition':>11}")
+    for row in rows:
+        m = got[row['cfg']]
+        delta = '' if row['cfg'] == 'full' else f'+{len(m-base):,}/-{len(base-m):,}'
+        print(f"  {row['cfg']:<18} {row['wall']:6.2f}s {row['merged']:>8,} {len(m):>8,} {delta:>16} {row['partition']:>11}")
+        row['gained'], row['lost'] = len(m - base), len(base - m)
+    # a name for the pairs each rule is solely responsible for, so the counts can be sanity-checked
+    dbc = database(str(src/'g.db'))
+    nm = {x['id']: x['content'] for x in dbc.t.entities(select='id, content')}
+    for row in rows:
+        lost = sorted(base - got[row['cfg']])[:examples]
+        if lost: print(f"    merges only '{'full' if True else ''}' keeps vs {row['cfg']}: "
+                       + '; '.join(f'{nm.get(a)!r}~{nm.get(b)!r}' for a, b in lost))
+    dbc.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    return rows
+
+
+def bench_string_libs(n=1500, workdir=None):
+    '''Do StringZilla and NumKong beat the stdlib on the comparisons this module actually does?
+
+    Asked because the graph layer looks like it should be their home ground — token-set overlap,
+    substring scans, sentence splitting, thousands of tiny comparisons — and because "a SIMD
+    library exists for this" is not the same claim as "this workload is SIMD-bound". Both libraries
+    are measured on data taken from a real build rather than on synthetic strings, and any
+    disagreement with the stdlib result is reported, because a faster function that answers
+    differently is not a drop-in.
+
+    usearch is not in the table: it is already doing the vector work here, batched, in
+    `_ann_pairs` and `_cluster_groups`.'''
+    from litesearch.graph import _sentences, _toks, prose_windows, _yake_terms
+    def have(m):
+        try: return __import__(m)
+        except ImportError: return None
+    sz, nk = have('stringzilla'), have('numkong')
+    print(f'\n== stringzilla / numkong on the graph workload ==')
+    print(f'  stringzilla {getattr(sz,"__version__","(not installed)")}   numkong {getattr(nk,"__version__","(not installed)")}')
+    texts = [c['content'] for c in corpus_chunks(n, chars=800)]
+    out = []
+    def cmp(name, base, cand, agree):
+        with Timer() as t: rb = base()
+        with Timer() as u: rc = cand()
+        ok = agree(rb, rc)
+        print(f'  {name:<38} stdlib {t.wall*1000:8.1f} ms   candidate {u.wall*1000:8.1f} ms   '
+              f'{t.wall/u.wall:5.2f}x   same answer: {ok}')
+        out.append(dict(op=name, stdlib=t.wall, candidate=u.wall, speedup=t.wall/u.wall, agrees=bool(ok)))
+
+    if sz:
+        cmp('sentence split (_sentences)',
+            lambda: [len(_sentences(t)) for t in texts],
+            lambda: [len([s for s in (str(x).strip() for x in sz.utf8_sentences(t)) if s]) for t in texts],
+            lambda a, b: a == b)
+        words = [w for t in texts[:300] for w in t.split() if w][:20000]
+        from apsw.unicode import word_iter, casefold
+        cmp('tokenise for the lexical guard',
+            lambda: [frozenset(casefold(x) for x in word_iter(w) if any(c.isalnum() for c in x)) for w in words],
+            lambda: [frozenset(str(x) for x in sz.utf8_wordbreaks(sz.utf8_uncased_fold(w)) if str(x).isalnum()) for w in words],
+            lambda a, b: sum(x == y for x, y in zip(a, b)) / len(a))
+        sents = [s for t in texts[:400] for s in _sentences(t)]
+        terms = [t for t in _yake_terms(texts[0], 12)] or ['the', 'of']
+        low = [t.lower() for t in terms]
+        cmp('term-in-sentence scan (prose_windows)',
+            lambda: [sum(1 for t in low if t in s.lower()) for s in sents],
+            lambda: [sum(1 for t in low if sz.contains(s.lower(), t)) for s in sents],
+            lambda a, b: a == b)
+    if nk:
+        names = [x['content'] for x in [dict(content=' '.join(t.split()[:3])) for t in texts]]
+        sets = [np.sort(np.array(sorted(abs(hash(t)) % (1 << 31) for t in _toks(s)), dtype=np.uint32)) for s in names]
+        sets = [s for s in sets if len(s)]
+        fs = [frozenset(s.tolist()) for s in sets]
+        import random; random.seed(0)
+        prs = [(random.randrange(len(sets)), random.randrange(len(sets))) for _ in range(200_000)]
+        cmp('token-set intersection (_lex_ok)',
+            lambda: sum(len(fs[i] & fs[j]) for i, j in prs),
+            lambda: sum(int(nk.intersect(sets[i], sets[j])) for i, j in prs),
+            lambda a, b: a == b)
+    return out
+
+
 def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
     '''Peak RSS of `build_graph`, listed input against a generator with `batch` set.
 
@@ -535,7 +668,7 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
-                                     'lexrecall','gmem','verify','all'])
+                                     'lexrecall','parts','libs','gmem','verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -562,6 +695,8 @@ def main(argv=None):
     if a.bench in ('graph','all'): run(bench_graph, sizes=a.sizes or (500,1000,2000), workdir=a.workdir,
                                       n_workers=a.workers, batch=a.batch)
     if a.bench in ('lexrecall','all'): run(bench_lexical_recall, sizes=a.sizes or (250,500,1000,2000), workdir=a.workdir)
+    if a.bench in ('parts','all'): run(bench_resolve_parts, n=(a.sizes or (2000,))[0], workdir=a.workdir)
+    if a.bench in ('libs','all'):  run(bench_string_libs, n=(a.sizes or (1500,))[0], workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)
     if a.out: Path(a.out).write_text(json.dumps(rows, indent=1))

@@ -5,7 +5,8 @@ __all__ = ['MIN_PARALLEL_CHUNKS', 'hash_embed', 'code_entities', 'prose_windows'
            'resolve_entities', 'cooccur_edges', 'ctfidf_labels', 'topic_nodes', 'rrf_all', 'graph_stats']
 
 # %% ../nbs/05_graph.ipynb #ab82e9d12af8898f
-from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict, defaults, parallel
+from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict, defaults
+from fastcore.parallel import ProcessPoolExecutor
 from fastlite import Database
 from apswutils.db import Table
 import ast, math, re, zlib
@@ -64,7 +65,11 @@ def _toks(s):
     except ImportError: return frozenset(_TOK.findall(s.lower()))
     return frozenset(casefold(t) for t in word_iter(s or '') if any(c.isalnum() for c in t))
 
+@lru_cache(maxsize=1<<17)
 def _acr(s):  return ''.join(w[0] for w in s.split() if w)
+
+@lru_cache(maxsize=1<<17)
+def _nums(s): return frozenset(_NUM.findall(s))
 
 def _sentences(text):
     'UAX#29 sentence split via apsw; falls back to the whole text as one window.'
@@ -74,18 +79,29 @@ def _sentences(text):
 
 def _jac(a, b):
     A, B = _toks(a), _toks(b)
-    return len(A & B) / len(A | B) if (A | B) else 0.0
+    u = len(A) + len(B) - len(A & B)
+    return len(A & B) / u if u else 0.0
 
 def _lex_ok(a, b, lex=0.34, cover=0.5):
-    'Lexical guard on a proposed merge.'
+    '''Lexical guard on a proposed merge.
+
+    Ordered by what actually decides. The token overlap settles all but a handful of candidate
+    pairs and costs two cached frozensets; the digit and acronym tests allocate four throwaway
+    objects per call and can only ever *veto* or *rescue* a pair the tokens have already ruled on.
+    Running them first meant paying for them on the ~99% of pairs the tokens reject outright — 300k
+    `_acr` calls and 300k `findall`s per resolve, to change 900 answers. Same answer on every pair;
+    the expensive tests just run on far fewer of them.'''
     if a == b: return True
-    if set(_NUM.findall(a)) != set(_NUM.findall(b)): return False
-    if _acr(a) == b.lower() or _acr(b) == a.lower(): return True
     A, B = _toks(a), _toks(b)
-    if not (A and B): return False
-    inter = len(A & B)
-    if inter == min(len(A), len(B)) and inter/max(len(A), len(B)) >= cover: return True
-    return inter/len(A | B) >= lex
+    ok = False
+    if A and B:
+        inter = len(A & B)
+        # union without building it: |A|+|B|-|A&B|, and A,B are non-empty so it cannot be zero
+        ok = ((inter == min(len(A), len(B)) and inter/max(len(A), len(B)) >= cover)
+              or inter/(len(A) + len(B) - inter) >= lex)
+    # an acronym pair shares no tokens by construction, so it is only reachable once tokens fail
+    if not ok and not (_acr(a) == b.lower() or _acr(b) == a.lower()): return False
+    return _nums(a) == _nums(b)
 
 
 # %% ../nbs/05_graph.ipynb #eecb2932441a0d19
@@ -93,15 +109,22 @@ def hash_embed(texts,            # iterable of strings
                ndim:int=256,     # output dimensions
                ngram=(3,5),      # char n-gram range
                dtype=np.float16):
-    'Deterministic char-n-gram hashing embedder — no model, no download.'
+    '''Deterministic char-n-gram hashing embedder — no model, no download.
+
+    The hash is unchanged and so are the vectors, bit for bit: what changed is that the n-gram
+    hashes are collected and binned by one `bincount` instead of fancy-indexing a float row per
+    n-gram, and that an all-ASCII string is encoded once and sliced as bytes rather than encoded
+    once per n-gram. n-grams are counted in *characters*, so the byte path is only taken when the
+    encoding is length-preserving — otherwise a Devanagari name would be cut mid-codepoint.'''
     lo, hi = ngram
     txts = list(L(texts))
-    out = np.zeros((len(txts), ndim), dtype=np.float32)
+    out, crc = np.zeros((len(txts), ndim), dtype=np.float32), zlib.crc32
     for i, t in enumerate(txts):
         s = ' ' + _WS.sub(' ', (t or '').lower().strip()) + ' '
-        for n in range(lo, hi+1):
-            for j in range(len(s)-n+1):
-                out[i, zlib.crc32(s[j:j+n].encode()) % ndim] += 1.0
+        b = s.encode()
+        if len(b) == len(s): h = [crc(b[j:j+n]) % ndim for n in range(lo, hi+1) for j in range(len(b)-n+1)]
+        else:                h = [crc(s[j:j+n].encode()) % ndim for n in range(lo, hi+1) for j in range(len(s)-n+1)]
+        if h: out[i] = np.bincount(h, minlength=ndim)
     out /= np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
     return out.astype(dtype)
 
@@ -151,10 +174,13 @@ def prose_windows(text,             # chunk text
     'Entity surfaces grouped into co-occurrence windows — one per sentence.'
     terms = (terms_fn or _yake_terms)(text, topk)
     if not terms: return L()
+    # the term list is fixed for the whole chunk, so it is lowercased once here rather than once
+    # per sentence — `t.lower()` sat in the inner loop and ran topk times for every sentence
+    low = [(t, t.lower()) for t in terms]
     wins = []
     for s in _sentences(text):
         sl = s.lower()
-        hit = L([(t, 'keyphrase') for t in terms if t.lower() in sl])
+        hit = L([(t, 'keyphrase') for t, tl in low if tl in sl])
         if hit: wins.append(hit)
     return L(wins)
 
@@ -342,7 +368,7 @@ def build_graph(db,                  # Database with a chunk store
         if batch: pend.extend(ws)
         else: wins.extend(ws)
 
-    prose_q = []
+    prose_q, pool = [], None
     def prose_wins():
         '''Windows per queued prose chunk, over a process pool once there are enough to pay for one.
 
@@ -350,12 +376,21 @@ def build_graph(db,                  # Database with a chunk store
         with a cheap serial reduce after it. Processes, not threads: yake is python and holds the
         GIL end to end, so a thread pool contends rather than overlaps.
 
+        The pool is opened once per *call*, not once per drain. `parallel` opens and closes a
+        `ProcessPoolExecutor` around every invocation and `drain_prose` runs once per `batch`, so
+        the two arguments that exist to make a large corpus finish were each making the other
+        worse: 2,000 chunks at `batch=200` spawned forty workers to do the work of four, and spent
+        7.7s extracting what one pool extracts in 5.1s.
+
         Order is preserved by both pools, and the reduce depends on it: `ents.setdefault` keeps the
         `kind` of an entity's *first* mention, so a reordered stream would relabel entities.'''
+        nonlocal pool
         nw = 0 if terms_fn is not None else _n_workers(len(prose_q), n_workers)
         if nw and nw > 1:
-            wins_ = parallel(_prose_job, L(prose_q).itemgot(1), n_workers=nw, threadpool=False, progress=False)
-            return ((cid, w) for (cid, _), w in zip(prose_q, wins_))
+            if pool is None: pool = ProcessPoolExecutor(nw)
+            # both sides materialised: `drain_prose` clears the queue these are drawn from
+            cids, txts = [c for c, _ in prose_q], [t for _, t in prose_q]
+            return zip(cids, pool.map(_prose_job, txts))
         return ((cid, prose_windows(txt, terms_fn=terms_fn)) for cid, txt in prose_q)
 
     def drain_prose():
@@ -373,26 +408,29 @@ def build_graph(db,                  # Database with a chunk store
     # iterated, not `L(chunks)`: wrapping the input in an L materialises it, so a caller who hands in
     # a generator to keep a corpus off the heap had it read into a list before the first chunk was
     # touched. With this, `batch` plus a generator means the corpus never exists in memory at once.
-    for c in ([chunks] if isinstance(chunks, dict) else chunks):
-        txt = c.get('content')
-        if not (txt and txt.strip()): continue
-        cid = c.get('id') or _slug(txt)
-        if code and _is_code(c):
-            dname, calls, imps = code_entities(c)
-            did = ent(dname, 'symbol') if dname else None
-            if did: men(cid, did, dname)
-            w = {did} if did else set()
-            for nm in calls:
-                i = ent(nm, 'symbol'); men(cid, i, nm); edge(did, i, 'calls'); w.add(i)
-            for nm in imps:
-                i = ent(nm, 'module'); men(cid, i, nm); edge(did, i, 'imports'); w.add(i)
-            if len(w) > 1: add_wins([w - {None}])
-        elif prose: prose_q.append((cid, txt))
-        n_seen += 1
-        if batch and n_seen % batch == 0:
-            drain_prose(); wins.extend(pend); pend.clear(); flush_mentions()
+    try:
+        for c in ([chunks] if isinstance(chunks, dict) else chunks):
+            txt = c.get('content')
+            if not (txt and txt.strip()): continue
+            cid = c.get('id') or _slug(txt)
+            if code and _is_code(c):
+                dname, calls, imps = code_entities(c)
+                did = ent(dname, 'symbol') if dname else None
+                if did: men(cid, did, dname)
+                w = {did} if did else set()
+                for nm in calls:
+                    i = ent(nm, 'symbol'); men(cid, i, nm); edge(did, i, 'calls'); w.add(i)
+                for nm in imps:
+                    i = ent(nm, 'module'); men(cid, i, nm); edge(did, i, 'imports'); w.add(i)
+                if len(w) > 1: add_wins([w - {None}])
+            elif prose: prose_q.append((cid, txt))
+            n_seen += 1
+            if batch and n_seen % batch == 0:
+                drain_prose(); wins.extend(pend); pend.clear(); flush_mentions()
 
-    drain_prose()
+        drain_prose()
+    finally:
+        if pool is not None: pool.shutdown()
     if batch: wins.extend(pend); pend.clear()
 
     rows = list(ents.values())
@@ -451,10 +489,19 @@ def _ann_pairs(tbl, rows, k=8, dtype=np.float16):
             if (o := key.get(int(kk))): yield r, o, float(dd)
 
 def _lexical_pairs(name, max_group=60):
-    'Candidate merge pairs by shared-token blocking — catches containment variants'
+    '''Candidate merge pairs by shared-token blocking — catches containment variants
+
+    Tokens are walked in sorted order, which is what makes a resolve reproducible. `_toks` returns
+    a frozenset, so its iteration order follows string hashes and therefore `PYTHONHASHSEED`; that
+    decided the insertion order of `inv`, which decided the order pairs were proposed in, and
+    `_uf_union` only accepts a merge that keeps the group a clique — an order-dependent test. Two
+    resolves of the *same* database in two processes came back with different partitions and merge
+    counts drifting over a range of three, which looked like HNSW noise and was not: hold the seed
+    still and both the old code and the new one are exactly reproducible, and `verify_ann_probe`
+    says the ANN candidates were stable the whole time.'''
     inv = {}
     for i, s in name.items():
-        for t in _toks(s):
+        for t in sorted(_toks(s)):
             if len(t) > 2: inv.setdefault(t, []).append(i)
     seen = set()
     for ids in inv.values():
@@ -479,7 +526,7 @@ def resolve_entities(db,                # Database
                      dtype=np.float16):
     'Merge near-duplicate entities: ANN + shared-token candidates, both gated by the lexical guard.'
     g = db.get_graph(store, prefix)
-    allr = L(g.entities(select=f'{_rid()}, id, content, freq, embedding, kind'))
+    allr = L(g.entities(select=f'{_rid()}, id, content, freq, embedding, kind, canon'))
     rows = allr.filter(lambda r: r['kind'] not in set(skip_kinds or ()))
     if len(rows) < 2:
         return dict(merged=0, by_ann=0, by_lexical=0, edges=len(list(g.edges())),
@@ -499,7 +546,18 @@ def resolve_entities(db,                # Database
         for a, b in _lexical_pairs(name, max_group):
             if _lex_ok(name[a], name[b], lex) and _uf_union(par, rank, a, b, name, guard, members): lex_m += 1
     upd = [(_uf_find(par, i), i) for i in par]
-    db.conn.cursor().executemany(f'update {g.entities.name} set canon=? where id=?', upd)
+    # Only the rows whose canon actually *moves* are written, and they are written inside one
+    # transaction. `canon` is not an FTS column, but apswutils' AFTER UPDATE trigger fires on any
+    # update to the row, so every statement here re-tokenised `content` into the FTS index — and
+    # outside a transaction apsw commits each statement, which in WAL mode is an fsync per entity.
+    # 5,650 entities, 2,056 of them actually merged: 5,650 fsync'd reindexes to record 2,056 facts.
+    # Compared against the *stored* canon rather than against the id, so a re-resolve that undoes a
+    # merge still writes the row back — skipping `c == i` alone would leave a stale canon behind.
+    was = {r['id']: r['canon'] for r in rows}
+    chg = [(c, i) for c, i in upd if c != was.get(i)]
+    if chg:
+        with write_txn(db):
+            db.conn.cursor().executemany(f'update {g.entities.name} set canon=? where id=?', chg)
     canon = {i: c for c, i in upd}
     n_edges = _collapse_edges(db, g, canon)
     skipped = len(allr) - len(rows)
@@ -519,8 +577,12 @@ def _collapse_edges(db, g, canon):
         k = (s, d, r['rel'])
         a = agg.setdefault(k, dict(src=s, dst=d, rel=r['rel'], weight=0.0, n=0))
         a['weight'] = max(a['weight'], r['weight'] or 0.0); a['n'] += (r['n'] or 0)
-    g.edges.delete_where()
-    g.edges.insert_all(list(agg.values()), upsert=True, pk=('src','dst','rel'))
+    # one transaction for the delete and the reinsert: apswutils commits per insert batch, so the
+    # rewrite paid an fsync per batch on top of leaving the table briefly empty for a concurrent
+    # reader. Both halves are now the same write.
+    with write_txn(db):
+        g.edges.delete_where()
+        g.edges.insert_all(list(agg.values()), upsert=True, pk=('src','dst','rel'))
     return len(agg)
 
 
@@ -572,9 +634,13 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     df = {}
     for d in tf:
         for w in d: df[w] = df.get(w, 0) + 1
+    # one pass for every cluster's member count. Counting inside the loop below re-walked the whole
+    # `lab` array once per cluster, which is quadratic in the number of clusters for no reason.
+    sz = {}
+    for j in lab: sz[j] = sz.get(j, 0) + 1
     out = []
     for j, d in enumerate(tf):
-        n = max(1, sum(1 for x in lab if x == j))
+        n = max(1, sz.get(j, 0))
         sc = {w: (c/n) * math.log(k/df[w]) for w, c in d.items() if df[w] < k}
         top = sorted(sc.items(), key=lambda kv: -kv[1])[:top_n]
         out.append(sep.join(w for w, _ in top))
@@ -595,7 +661,9 @@ def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16)
     '(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.'
     keys = list(keys)
     if len(keys) < 4: return L()
-    vecs = np.stack([np.asarray(idx[kk], dtype=dtype).reshape(-1) for kk in keys])
+    # one batched lookup, not one per key: usearch reconstructs a whole key array in C++, and the
+    # search below is already handed the matrix rather than a query at a time
+    vecs = np.asarray(idx[np.array(keys, dtype=np.int64)], dtype=dtype).reshape(len(keys), -1)
     res = idx.search(vecs, count=min(k+1, len(keys)))
     nbr, sims = {}, []
     for i, kk in enumerate(keys):
@@ -756,18 +824,24 @@ def peers(self:Table,            # ANN-registered store
 
 # %% ../nbs/05_graph.ipynb #a380070d2dd9d9da
 def _adjacency(g, nodes, hops=2, max_nodes=4000):
-    'BFS the edge table out to `hops` from `nodes`; returns an undirected dict-of-dict adjacency.'
+    '''BFS the edge table out to `hops` from `nodes`; returns an undirected dict-of-dict adjacency.
+
+    Read as raw tuples rather than through the table wrapper. A two-hop walk off twelve seeds pulls
+    ~16k edges, and fastlite turns each one into a dict with a description lookup per row — 326k
+    dicts over twenty queries, of which this needs three columns and none of the keys.'''
     adj, seen, frontier = {}, set(nodes), set(nodes)
+    con, tbl = g.edges.db.conn, g.edges.name
     for _ in range(max(hops, 0)):
         if not frontier or len(seen) >= max_nodes: break
         fl = list(frontier)
         rows = []
         for i in range(0, len(fl), 400):
             b = fl[i:i+400]
-            rows += g.edges(where=f"{_in('src', b)} OR {_in('dst', b)}")
+            rows += con.execute(f"select src, dst, weight from {tbl} "
+                                f"where {_in('src', b)} OR {_in('dst', b)}").fetchall()
         nxt = set()
-        for r in rows:
-            s, d, w = r['src'], r['dst'], (r['weight'] or 1.0)
+        for s, d, w in rows:
+            w = w or 1.0
             adj.setdefault(s, {})[d] = max(adj.setdefault(s, {}).get(d, 0.0), w)
             adj.setdefault(d, {})[s] = max(adj.setdefault(d, {}).get(s, 0.0), w)
             for x in (s, d):
@@ -776,22 +850,43 @@ def _adjacency(g, nodes, hops=2, max_nodes=4000):
         frontier = nxt
     return adj
 
+def _csr(adj, order):
+    '''`(src, dst, w)` index arrays for `adj`, row-normalised — the transition matrix as three arrays.
+
+    Built once and reused by every power iteration, which is the whole point: the walk itself is
+    then twelve numpy passes instead of twelve nested python loops over the same unchanging edges.'''
+    src, dst, wt = [], [], []
+    for u, nb in adj.items():
+        iu, s = order[u], (sum(nb.values()) or 1.0)
+        for v, w in nb.items(): src.append(iu); dst.append(order[v]); wt.append(w/s)
+    return (np.array(src, dtype=np.intp), np.array(dst, dtype=np.intp),
+            np.array(wt, dtype=np.float64))
+
 def _ppr(adj, seeds, damping=0.85, iters=12):
-    'Personalized PageRank over a dict-of-dict adjacency.'
+    '''Personalized PageRank over a dict-of-dict adjacency.
+
+    The iteration is `r <- d * Wᵀr + (1-d) * p0` and nothing but `r` changes between rounds, so the
+    edges are flattened into index arrays once and each round becomes a gather plus a `bincount` —
+    the same sum, done by numpy instead of by a dict lookup per edge per round. Dangling nodes still
+    drop their mass rather than redistributing it, exactly as the dict version did.'''
     if not seeds: return {}
+    order = {}
+    for u, nb in adj.items():
+        if u not in order: order[u] = len(order)
+        for v in nb:
+            if v not in order: order[v] = len(order)
+    for k in seeds:
+        if k not in order: order[k] = len(order)
+    n = len(order)
+    p0 = np.zeros(n)
     tot = sum(seeds.values()) or 1.0
-    p0 = {k: v/tot for k, v in seeds.items()}
-    r = dict(p0)
+    for k, v in seeds.items(): p0[order[k]] = v/tot
+    src, dst, wt = _csr(adj, order)
+    wt = wt * damping
+    r, rest = p0, (1-damping)*p0
     for _ in range(iters):
-        nxt = {}
-        for u, mass in r.items():
-            nb = adj.get(u)
-            if not nb: continue
-            s = sum(nb.values()) or 1.0
-            for v, w in nb.items(): nxt[v] = nxt.get(v, 0.0) + damping*mass*w/s
-        for k, v in p0.items(): nxt[k] = nxt.get(k, 0.0) + (1-damping)*v
-        r = nxt
-    return r
+        r = np.bincount(dst, weights=r[src]*wt, minlength=n) + rest
+    return {k: float(r[i]) for k, i in order.items() if r[i]}
 
 # %% ../nbs/05_graph.ipynb #66f98425ed3e448
 def rrf_all(lists,              # list of ranked result lists
@@ -808,6 +903,26 @@ def rrf_all(lists,              # list of ranked result lists
             if rid in scores: scores[rid]['_rrf_score'] += w/(k + rank)
             else: scores[rid] = merge(row, {'_rrf_score': w/(k + rank)})
     return sorted(scores.values(), key=lambda x: x['_rrf_score'], reverse=True)[:limit]
+
+def _canon_mentions(g,                # graph tables from `get_graph`
+                    col,              # 'chunk_id' or 'entity_id' — the side being filtered
+                    vals,             # values to filter on
+                    use_canon=True,   # resolve entity_id to its canonical id
+                    batch=400):
+    '''`(chunk_id, entity_id)` for the matching mentions, with `entity_id` already canonicalised.
+
+    The canonical id comes from a join on the mentions being read, not from a dict of the whole
+    entity table. `coalesce(nullif(...))` reproduces `canon.get(eid, eid)` over `{id: canon or id}`
+    exactly: a missing entity, a null canon and an empty canon all fall back to the mention's own
+    entity_id.'''
+    con, mn, en = g.mentions.db.conn, g.mentions.name, g.entities.name
+    sel = (f'select m.chunk_id, coalesce(nullif(e.canon, \'\'), m.entity_id) from {mn} m '
+           f'left join {en} e on e.id = m.entity_id') if use_canon else \
+          f'select m.chunk_id, m.entity_id from {mn} m'
+    out = []
+    for i in range(0, len(vals), batch):
+        out += con.execute(f"{sel} where {_in('m.'+col, vals[i:i+batch])}").fetchall()
+    return out
 
 # %% ../nbs/05_graph.ipynb #fba9515fca9c5b56
 @patch
@@ -838,13 +953,11 @@ def graph_search(self:Database,
     seed_rows = rrf_all([fts, vec], rrf_k, seed_n)
     seed_cids = [r['id'] for r in seed_rows if r.get('id')]
     if not seed_cids: return rrf_all([fts, vec], rrf_k, limit)
-    canon = {}
-    if use_canon: canon = {r['id']: (r['canon'] or r['id']) for r in g.entities(select='id, canon')}
+    # canon is resolved by joining the mentions being read rather than by loading the whole entity
+    # table into a dict. Every query paid O(entities) for a map it used O(mentions-of-12-chunks) of,
+    # which is the one cost in `graph_search` that grew with the corpus rather than with the query.
     seeds = {}
-    for i in range(0, len(seed_cids), 400):
-        for m in g.mentions(select='chunk_id, entity_id', where=_in('chunk_id', seed_cids[i:i+400])):
-            e = canon.get(m['entity_id'], m['entity_id'])
-            seeds[e] = seeds.get(e, 0.0) + 1.0
+    for _, e in _canon_mentions(g, 'chunk_id', seed_cids, use_canon): seeds[e] = seeds.get(e, 0.0) + 1.0
     if not seeds: return rrf_all([fts, vec], rrf_k, limit)
     adj = _adjacency(g, set(seeds), hops)
     mass = _ppr(adj, seeds, damping, iters)
@@ -853,10 +966,8 @@ def graph_search(self:Database,
     eids = [e for e, _ in top if _ > 0]
     if not eids: return rrf_all([fts, vec], rrf_k, limit)
     inv = {}
-    for i in range(0, len(eids), 400):
-        for m in g.mentions(select='chunk_id, entity_id', where=_in('entity_id', eids[i:i+400])):
-            e = canon.get(m['entity_id'], m['entity_id'])
-            inv[m['chunk_id']] = inv.get(m['chunk_id'], 0.0) + mass.get(e, 0.0)
+    for cid, e in _canon_mentions(g, 'entity_id', eids, use_canon):
+        inv[cid] = inv.get(cid, 0.0) + mass.get(e, 0.0)
     if not inv: return rrf_all([fts, vec], rrf_k, limit)
     ranked = sorted(inv.items(), key=lambda kv: -kv[1])[:limit*3]
     cids = [c for c, _ in ranked]

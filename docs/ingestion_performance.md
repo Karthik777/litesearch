@@ -378,7 +378,7 @@ argument for sharding that survives, and it is about RAM, not speed.
   chunks at ~1.3 hours; the reduce is serial, so more cores keep helping until it dominates.
 - **`build_graph` memory is sublinear, not constant.** What remains is entity vocabulary and the
   edge dict, both on saturating curves. Fine to 10^6 on the measured slope; re-measure before 10^7.
-- **`n_workers` with a small `batch` pays pool startup per drain.** The queue is drained once per
-  batch, so the two parameters interact: 4 workers cost 4.87s unbatched and 5.33s at `batch=500`.
+- ~~**`n_workers` with a small `batch` pays pool startup per drain.**~~ Fixed in 0.1.19 — the pool
+  is opened once per `build_graph` call rather than once per drain. See `docs/graph_performance.md`.
 - **spaCy is slower than the yake fallback** (9.5 vs 16.4 chunks/s) while extracting ~1.7x the
   entities. Which trade is better has been measured on cost, not on retrieval quality.
