@@ -127,8 +127,13 @@ def build_lates():
 def build_graphs():
     '''Entity graph + topic nodes beside the tree store, in the same database file.
 
-    The graph is keyed on the hash of chunk content, which is exactly the `id` a hash store
-    already uses, so it attaches to the chunks that are there rather than re-chunking.'''
+    `id` is selected, not just `content`. `build_graph` keys a mention on `chunk['id']` and falls
+    back to `_slug(content)` when there is none — and a **tree** store hashes its ids over
+    `node_id` *and* `content`, so that fallback produced ids matching nothing. Selecting only
+    `content` here meant 0 of 34,891 mentions referenced a chunk that exists, leaving the keyphrase
+    half of the graph disconnected; `topic_nodes` writes mentions against real store ids, so the
+    topics stayed connected and appeared to carry all of the PPR mass. That was this bug, not a
+    finding about topics.'''
     from litesearch import build_graph, resolve_entities, topic_nodes, graph_stats
     e = enc('potion-32M')            # entity-name vectors only; the cheap one is the right one
     out = {}
@@ -137,7 +142,7 @@ def build_graphs():
             p = db_path(g, BASE_GRAIN, encn, 'tree')
             if not p.exists(): print(f'  missing {p.stem}'); continue
             db = database(str(p))
-            rows = list(db.t.store(select='content'))
+            rows = list(db.t.store(select='id, content'))
             t0 = time.time()
             st = build_graph(db, rows, store='store', prose=True, code=False,
                              emb_fn=lambda ts, **kw: e.doc(ts))

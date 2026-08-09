@@ -1,0 +1,242 @@
+[
+ {
+  "genre": "regulatory",
+  "extractor": "yake",
+  "build_s": 27.3,
+  "entities": 15301,
+  "mentions": 35422,
+  "edges": 12551,
+  "windows": 5629,
+  "resolved": {
+   "merged": 6482,
+   "by_ann": 3397,
+   "by_lexical": 3085,
+   "edges": 9639,
+   "entities": 15301,
+   "resolvable": 15301,
+   "canonical": 8819
+  },
+  "topics": {
+   "topics": 239,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 15539,
+   "canonical": 9057,
+   "mentions": 38986,
+   "edges": 9639,
+   "top_degree": [
+    {
+     "content": "taxable",
+     "kind": "keyphrase",
+     "d": 54
+    },
+    {
+     "content": "taxable person",
+     "kind": "keyphrase",
+     "d": 50
+    },
+    {
+     "content": "reduced rates",
+     "kind": "keyphrase",
+     "d": 46
+    },
+    {
+     "content": "council",
+     "kind": "keyphrase",
+     "d": 45
+    },
+    {
+     "content": "regulation",
+     "kind": "keyphrase",
+     "d": 43
+    },
+    {
+     "content": "goods",
+     "kind": "keyphrase",
+     "d": 41
+    },
+    {
+     "content": "member state concerned",
+     "kind": "keyphrase",
+     "d": 39
+    },
+    {
+     "content": "supplies of goods",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "investment",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "transactions",
+     "kind": "keyphrase",
+     "d": 37
+    }
+   ]
+  }
+ },
+ {
+  "genre": "regulatory",
+  "extractor": "yake-rust",
+  "build_s": 12.2,
+  "entities": 14357,
+  "mentions": 35196,
+  "edges": 13294,
+  "windows": 5472,
+  "resolved": {
+   "merged": 6099,
+   "by_ann": 3224,
+   "by_lexical": 2875,
+   "edges": 10248,
+   "entities": 14357,
+   "resolvable": 14357,
+   "canonical": 8258
+  },
+  "topics": {
+   "topics": 239,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 14595,
+   "canonical": 8496,
+   "mentions": 38760,
+   "edges": 10248,
+   "top_degree": [
+    {
+     "content": "taxable persons",
+     "kind": "keyphrase",
+     "d": 55
+    },
+    {
+     "content": "taxable",
+     "kind": "keyphrase",
+     "d": 51
+    },
+    {
+     "content": "taxable person",
+     "kind": "keyphrase",
+     "d": 48
+    },
+    {
+     "content": "council",
+     "kind": "keyphrase",
+     "d": 46
+    },
+    {
+     "content": "reduced rates",
+     "kind": "keyphrase",
+     "d": 44
+    },
+    {
+     "content": "goods",
+     "kind": "keyphrase",
+     "d": 42
+    },
+    {
+     "content": "regulation",
+     "kind": "keyphrase",
+     "d": 42
+    },
+    {
+     "content": "transactions",
+     "kind": "keyphrase",
+     "d": 41
+    },
+    {
+     "content": "member state concerned",
+     "kind": "keyphrase",
+     "d": 40
+    },
+    {
+     "content": "vat",
+     "kind": "keyphrase",
+     "d": 38
+    }
+   ]
+  }
+ },
+ {
+  "genre": "regulatory",
+  "extractor": "rake-nltk",
+  "build_s": 7.8,
+  "entities": 11216,
+  "mentions": 29320,
+  "edges": 7559,
+  "windows": 5730,
+  "resolved": {
+   "merged": 3169,
+   "by_ann": 2166,
+   "by_lexical": 1003,
+   "edges": 7213,
+   "entities": 11216,
+   "resolvable": 11216,
+   "canonical": 8047
+  },
+  "topics": {
+   "topics": 239,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 11454,
+   "canonical": 8285,
+   "mentions": 32884,
+   "edges": 7213,
+   "top_degree": [
+    {
+     "content": "taxable person",
+     "kind": "keyphrase",
+     "d": 74
+    },
+    {
+     "content": "member states",
+     "kind": "keyphrase",
+     "d": 74
+    },
+    {
+     "content": "taxable persons",
+     "kind": "keyphrase",
+     "d": 48
+    },
+    {
+     "content": "goods",
+     "kind": "keyphrase",
+     "d": 46
+    },
+    {
+     "content": "vat",
+     "kind": "keyphrase",
+     "d": 43
+    },
+    {
+     "content": "right",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "transport",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "supply",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "regulation",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "referred",
+     "kind": "keyphrase",
+     "d": 37
+    }
+   ]
+  }
+ }
+]

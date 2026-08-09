@@ -26,6 +26,8 @@ from __future__ import annotations
 import argparse, json, shutil, time
 from pathlib import Path
 
+from fastcore.all import first
+
 from litesearch import database
 from litesearch.core import _in
 
@@ -76,10 +78,31 @@ def available(names=None):
 
 
 # ------------------------------------------------------------------ builds
-def build_for(genre, name, fn, force=False):
-    '''Copy the genre's tree store and build its graph with `fn` as the term extractor.
+def clone_store(src, dst):
+    '''Copy a built store so a graph can be rebuilt over identical chunks.
 
-    A copy rather than a rebuild: the chunks, their embeddings and the ANN index are held fixed so
+    Two things make this more than a `shutil.copy`, and both were silently wrong the first time:
+
+    - **The WAL.** `build_tree` leaves its connection open, so the `.db` file on its own is missing
+      whatever has not been checkpointed — copying it alone gave 2,283 of 3,579 chunks, and every
+      graph was then built over a two-thirds corpus.
+    - **The ANN sidecar path is absolute and stored *inside* the database**, in `usearch_indices`.
+      A plain copy therefore points at the *original's* `.usearch` file, so every clone shared one
+      index, with 3,579 keys over a 2,283-row table. The sidecar is copied and the row repointed.
+    '''
+    s = database(str(src)); s.conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    m = s._ann_meta('store'); s.conn.close()
+    shutil.copy(src, dst)
+    if m and m['path'] and Path(m['path']).exists():
+        side = f'{dst}.store.usearch'
+        shutil.copy(m['path'], side)
+        d = database(str(dst)); d.t.usearch_indices.update(dict(name='store', path=side)); d.conn.close()
+
+
+def build_for(genre, name, fn, force=False):
+    '''Clone the genre's tree store and build its graph with `fn` as the term extractor.
+
+    A clone rather than a rebuild: the chunks, their embeddings and the ANN index are held fixed so
     the only thing that differs between two runs is the graph built over them. `mode` carries the
     extractor name, which is what puts each variant at its own `db_path`.'''
     from litesearch.graph import build_graph, resolve_entities, topic_nodes, graph_stats
@@ -87,10 +110,15 @@ def build_for(genre, name, fn, force=False):
     if not src.exists(): print(f'  missing {src.stem} — run `python -m evals.run build_tree`'); return None
     if dst.exists() and not force: return dict(genre=genre, extractor=name, skipped=True)
     for f in Path(dst).parent.glob(f'{dst.stem}.db*'): f.unlink()
-    shutil.copy(src, dst)
+    clone_store(src, dst)
     e = enc('potion-32M')
     db = database(str(dst))
-    rows = list(db.t.store(select='content'))
+    n_st, n_ix = first(db.q('select count(*) c from store'))['c'], db.get_index('store').size
+    assert n_st == n_ix, f'{dst.stem}: clone has {n_st} chunks but an index of {n_ix} — copy is wrong'
+    # `id`, not just `content`: `build_graph` keys mentions on `chunk['id']` and falls back to
+    # `_slug(content)`, but a tree store hashes ids over `node_id` *and* `content`, so the fallback
+    # matched nothing and the keyphrase graph was fully disconnected from the store
+    rows = list(db.t.store(select='id, content'))
     t0 = time.time()
     st = build_graph(db, rows, store='store', prose=True, code=False,
                      emb_fn=lambda ts, **kw: e.doc(ts), terms_fn=fn)
@@ -132,6 +160,13 @@ def run(genres=None, names=None, graph_w=0.5, force=False, out='extractor'):
         # the no-graph baseline: without it, "every extractor scores the same" is unreadable
         for r in run_store(g, BASE_GRAIN, ENCODER, 'tree', ('hybrid',)):
             r['extractor'] = '(hybrid, no graph leg)'; r['topics'] = None; rows.append(r)
+        # the same baseline over a *clone*, which must match the line above exactly. It is the only
+        # thing that shows the clone carried the whole store: the first version of this eval copied
+        # two thirds of the corpus and every extractor still scored identically, which read as a
+        # null result rather than as the broken harness it was.
+        if exts:
+            for r in run_store(g, BASE_GRAIN, ENCODER, _mode(next(iter(exts))), ('hybrid',)):
+                r['extractor'] = '(hybrid on a clone — control)'; r['topics'] = None; rows.append(r)
         for n in exts:
             for r in run_store(g, BASE_GRAIN, ENCODER, _mode(n), ('graph',), graph_w=graph_w):
                 r['extractor'] = n; r['topics'] = True; rows.append(r)
@@ -154,17 +189,17 @@ def _report(rows, genres, exts):
     'Averaged over flavours, then `paraphrase` alone — it is the only flavour that breaks surface overlap.'
     def table(title, pick):
         print(f'\n== {title} ==')
-        hdr = f"  {'genre':<12}{'topics':<8}{'extractor':<24}{'p_mrr':>8}{'p@1':>8}{'u_mrr':>8}{'ms_p50':>9}"
+        hdr = f"  {'genre':<12}{'topics':<8}{'extractor':<32}{'p_mrr':>8}{'p@1':>8}{'u_mrr':>8}{'ms_p50':>9}"
         print(hdr); print('  ' + '-' * (len(hdr) - 2))
         for g in genres:
             for topics in (None, True, False):
-                for n in (['(hybrid, no graph leg)'] if topics is None else list(exts)):
+                for n in (['(hybrid, no graph leg)', '(hybrid on a clone — control)'] if topics is None else list(exts)):
                     sel = [r for r in rows if r['genre'] == g and r['extractor'] == n
                            and r.get('topics') is topics and pick(r)]
                     if not sel: continue
                     m = lambda k: sum(r[k] for r in sel)/len(sel)
                     lbl = {None: 'n/a', True: 'yes', False: 'no'}[topics]
-                    print(f"  {g:<12}{lbl:<8}{n:<24}{m('p_mrr'):>8.4f}{m('p_hit1'):>8.4f}"
+                    print(f"  {g:<12}{lbl:<8}{n:<32}{m('p_mrr'):>8.4f}{m('p_hit1'):>8.4f}"
                           f"{m('u_mrr'):>8.4f}{m('ms_p50'):>8.1f}ms")
     table('all query flavours, averaged', lambda r: True)
     table('paraphrase only (the flavour that breaks surface overlap)',
