@@ -21,6 +21,8 @@ python -m evals.ingest_bench libs                    # stringzilla / numkong aga
                                                      #    stringzilla rows: pip install stringzilla)
 python -m evals.ingest_bench lexrecall
 python -m evals.ingest_bench legs                    # threading search's two legs (it loses)
+python -m evals.ingest_bench kw                      # keyphrase extractors, speed and agreement
+                                                     #   (pip install yake-rust rake-nltk rakun2)
 python -m evals.ingest_bench verify
 ```
 
@@ -36,8 +38,10 @@ python -m evals.ingest_bench verify
 | `fold_token` (70,413 tokens) | 114.7ms | 20.8ms | **5.5x** |
 | `toc()` over 300 documents | 26.6ms | 16.9ms | 1.57x |
 | `add_doc` x150 | 2.82s | 2.25s | 1.25x |
+| `cooccur_edges` (15,233 edges) | 782ms | 214ms | **3.65x** |
+| `add_dir` over 8 PDFs | 6.18s | 3.54s | **1.75x** |
 | `build_graph` serial | 9.5s | 9.2s | — (yake-bound) |
-| `search`, `fts_search`, `add_dir` | | | unchanged |
+| `search`, `fts_search`, `add_dir` (markdown) | | | unchanged |
 | `clusters`, `peers`, `topic_nodes` | | | unchanged |
 
 Results are unchanged throughout, and that is checked rather than asserted. `build_graph` produces
@@ -194,7 +198,7 @@ the same shapes rather than re-profiled from scratch.
 | `add_doc` x150 | 2.82s | **2.25s** | 1.25x |
 | `toc()` over 300 documents | 26.6ms | **16.9ms** | 1.57x |
 | `fold_token` over 70,413 tokens | 114.7ms | **20.8ms** | 5.5x |
-| `search`, `fts_search`, `add_dir` | | | unchanged |
+| `search`, `fts_search`, `add_dir` (markdown) | | | unchanged |
 
 - **`fold_token` was uncached.** It is called once per token on every FTS write *and* every query,
   and it is three unicode normalisations plus a per-character category scan deep. The eval corpus
@@ -237,14 +241,76 @@ This is the same answer threads got in the graph layer, for a different reason: 
 GIL (yake is Python end to end), here it is the connection mutex. Processes remain the only thing
 that has actually paid in this codebase.
 
+## Two writes and a walk
+
+| | before | after | |
+|---|---|---|---|
+| `cooccur_edges` (15,233 edges) | 782ms | **214ms** | 3.65x |
+| `build_graph` (2,000 chunks) | 7.02s | **6.00s** | 1.17x |
+| `add_dir` over 8 PDFs | 6.18s | **3.54s** | 1.75x |
+| `add_dir` over 150 markdown files | 2.24s | 2.17s | declines the pool |
+
+**`insert_all(upsert=True)` emits two statements per row.** An `INSERT OR IGNORE ... RETURNING *`
+to create the row from its key columns, then an `UPDATE ... RETURNING *` to fill the rest — each
+separately prepared, each materialising a result row nobody reads. That is 23,530 statements to
+write 11,765 mentions. The net effect of the pair is exactly `ON CONFLICT DO UPDATE`, which SQLite
+has had since 3.24, so `core.upsert_all` does it in one prepared statement per batch. The pure
+edge-write path is 3.65x; a whole `build_graph` is 1.17x because extraction still dominates it.
+
+**`add_dir` parsed every file in the writing process**, and the fix is only a fix for some file
+types — which is why it needed measuring rather than applying. Over eight PDFs the parse is 3.55s
+of a 5.31s walk, two thirds of it and embarrassingly parallel. Over 150 markdown files the same
+"parse" is `read_text` and takes **2.7ms in total**, so a pool there is pure loss — forcing one
+costs 2.37s against 2.24s serial. `add_dir(n_workers=None)` therefore decides on how many files
+have a parse worth splitting (`PARSE_HEAVY`), not on how many files there are.
+
+Writing stays in the parent: there is one connection, one FTS index and one HNSW graph, and none of
+them is improved by being contended for. `add_file` is now a `_parse_doc` (plain data in, plain
+data out, picklable) plus an `_add_parsed`, so the two halves can be scheduled separately. A worker
+resolves a profile *by name* rather than re-detecting one, and returns `None` if its registry lacks
+that profile, so the parent re-parses the file itself instead of letting a different reader through
+unnoticed.
+
+Ingest output is byte-identical: doc, node and chunk rows hash the same serial, auto and
+`n_workers=4`, over both PDFs and markdown.
+
+## Is there a yake that does not hold the GIL?
+
+Yes — `yake-rust`, and it is the same algorithm. `python -m evals.ingest_bench kw`:
+
+| extractor | serial | per chunk | 4 threads | GIL-free? | agrees with yake |
+|---|---|---|---|---|---|
+| yake (shipped) | 3.02s | 7.5ms | 7.16s | no | — |
+| **yake-rust** | **0.46s** | **1.1ms** | **0.16s** | **yes** | 66.5% |
+| rake-nltk | 0.20s | 0.5ms | 0.61s | no | 21.6% |
+| rakun2 | 1.70s | 4.2ms | 2.42s | no | 23.9% |
+
+`yake-rust` is **6.6x faster per call** and scales on *threads* (0.46s → 0.16s on four), so it
+would not need the process pool `build_graph` currently carries for extraction — no fork, no
+pickling, no `MIN_PARALLEL_CHUNKS` threshold. The two pure-python candidates both go *slower* on
+threads, which is the GIL showing up exactly where it should.
+
+The catch is the last column. 66.5% agreement is the same algorithm disagreeing about ranking
+inside the top 12, so a swap is a graph change and wants a retrieval eval, not just a stopwatch.
+rake-nltk is the fastest thing here and the least comparable: RAKE returns long noun phrases
+(`'council directive 93'`) where YAKE returns tight keyphrases, so its 21.6% is a different
+extractor doing a different job, not a cheaper one. Whether that is better is a quality question
+`evals/run.py` can answer and this benchmark cannot.
+
+Nothing is swapped: `build_graph(terms_fn=...)` is the seam for it, and the default is unchanged.
+
 ## What is still open
 
 - **`build_graph` is yake-bound on the serial path and pool-bound on the parallel one.** Extraction
   is ~99% of `prose_windows` and scales 3.5x on 4 cores. Nothing in litesearch's own code is
   material next to it; the next real gain is a faster keyphrase extractor, not a faster reduce.
-- **Mentions and edges still go through `insert_all`.** ~1.1s of a 2,000-chunk build is apswutils
-  building parameterised SQL for 22k rows. A raw `executemany` with `ON CONFLICT` would take most
-  of that.
+- ~~**Mentions and edges still go through `insert_all`.**~~ Fixed — `core.upsert_all`.
+- **Extraction is still the ceiling on `build_graph`.** `yake-rust` is 6.6x per call and releases
+  the GIL, so the process pool could become a thread pool; it needs a retrieval eval first, because
+  it agrees with the shipped yake on 66.5% of terms.
+- **`add_dir` still embeds one document at a time.** With `hash_embed` that is 2.05s of a 150-file
+  walk and with a real encoder it is most of the walk; a real model wants one batch over the whole
+  directory, not 150 calls. That is a `process_content` change, not an `add_dir` one.
 - **`_adjacency` set iteration leaves PPR summation order machine-dependent** at the 1e-15 level.
   Harmless for ranking today; it would need pinning if PPR masses were ever compared across runs.
 - **The ANN pass's contribution is corpus-dependent and only measured on one corpus.** Re-run

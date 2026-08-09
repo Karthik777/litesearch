@@ -372,8 +372,9 @@ argument for sharding that survives, and it is about RAM, not speed.
 - **Embedding**, which these numbers deliberately exclude. `hash_embed` stands in for the encoder; a
   real model is the dominant cost once litesearch's own overhead is out of the way, and it is the
   part that wants a GPU or a process pool.
-- **`add_dir` walks files serially.** `_parse_files` shows the shape of the fix; the document path
-  has not had it applied, because PDF parsing and SQLite writing want different pool sizes.
+- ~~**`add_dir` walks files serially.**~~ Fixed in 0.1.19 — parsing runs on a process pool and
+  writing stays in the parent, with the pool declined when the files have no parse worth splitting
+  (8 PDFs: 6.18s -> 3.54s; 150 markdown files: unchanged). See `docs/graph_performance.md`.
 - **`build_graph` scales to cores, not across machines.** 207 chunks/s on 4 cores puts a million
   chunks at ~1.3 hours; the reduce is serial, so more cores keep helping until it dominates.
 - **`build_graph` memory is sublinear, not constant.** What remains is entity vocabulary and the

@@ -13,7 +13,7 @@ import ast, math, re, zlib
 from functools import lru_cache
 import numpy as np
 
-from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn
+from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn, upsert_all
 
 # %% ../nbs/05_graph.ipynb #e2556b625e937d53
 @patch
@@ -360,7 +360,7 @@ def build_graph(db,                  # Database with a chunk store
     def flush_mentions():
         'Mentions are complete once their chunk is processed, so they need not wait for the corpus.'
         if not mens: return
-        with write_txn(db): g.mentions.insert_all(list(mens.values()), upsert=True, pk=('chunk_id','entity_id'))
+        upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
         mens.clear()
 
     pend = []                                   # windows waiting for the next flush
@@ -443,8 +443,8 @@ def build_graph(db,                  # Database with a chunk store
         if rows:
             if emb_fn: process_content(g.entities, rows, embed=True, emb_fn=emb_fn)
             else:      g.entities.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
-        if mens:  g.mentions.insert_all(list(mens.values()), upsert=True, pk=('chunk_id','entity_id'))
-        if edges: g.edges.insert_all(list(edges.values()), upsert=True, pk=('src','dst','rel'))
+        if mens:  upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
+        if edges: upsert_all(g.edges, edges.values(), ('src','dst','rel'))
     if emb_fn and rows: g.entities.rebuild_index()
     return dict(entities=len(rows), mentions=first(db.q(f'select count(*) c from {g.mentions.name}'))['c'],
                 edges=len(edges), windows=n_wins)
@@ -582,7 +582,7 @@ def _collapse_edges(db, g, canon):
     # reader. Both halves are now the same write.
     with write_txn(db):
         g.edges.delete_where()
-        g.edges.insert_all(list(agg.values()), upsert=True, pk=('src','dst','rel'))
+        upsert_all(g.edges, agg.values(), ('src','dst','rel'))
     return len(agg)
 
 
@@ -606,7 +606,7 @@ def cooccur_edges(db,                 # Database
         e = canon.get(m['entity_id'], m['entity_id'])
         cid_ents.setdefault(m['chunk_id'], set()).add(e)
     out = _pmi_edges(list(cid_ents.values()), min_n, min_npmi, max_df, max_degree, rel)
-    if out: g.edges.insert_all(out, upsert=True, pk=('src','dst','rel'))
+    if out: upsert_all(g.edges, out, ('src','dst','rel'))
     return len(out)
 
 
@@ -734,7 +734,7 @@ def topic_nodes(db,                # Database
         ents.append(dict(content=name, kind='topic', freq=len(cids), canon=eid))
         mens += [dict(chunk_id=c, entity_id=eid, surface=name, n=1) for c in cids]
     if ents: g.entities.insert_all(ents, upsert=True, hash_id='id', hash_id_columns=['content'])
-    if mens: g.mentions.insert_all(mens, upsert=True, pk=('chunk_id','entity_id'))
+    if mens: upsert_all(g.mentions, mens, ('chunk_id','entity_id'))
     return dict(topics=len(ents), method=method)
 
 

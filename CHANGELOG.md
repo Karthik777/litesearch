@@ -2,10 +2,16 @@
 
 ## 0.1.19
 
-Graph layer performance. The question was whether [usearch], [StringZilla] or [NumKong] could speed
-up the set comparisons in `graph.py`; the measured answer is that usearch already does the vector
-work and the other two are slower than the stdlib on inputs this small, so the wins came from
-elsewhere. `docs/graph_performance.md` has the numbers and `evals/ingest_bench.py` reproduces them.
+Performance across `graph`, `tree`, `core` and `sanskrit`. The question was whether [usearch],
+[StringZilla] or [NumKong] could speed up the set comparisons in `graph.py`; the measured answer is
+that usearch already does the vector work and the other two are slower than the stdlib on inputs
+this small, so the wins came from elsewhere — SQLite write amplification, guards evaluated far more
+often than they could decide anything, and pools started in the wrong places. The same three shapes
+turned up in the other modules. `docs/graph_performance.md` has the numbers and
+`evals/ingest_bench.py` reproduces them.
+
+Headline: `resolve_entities` **6.0x**, `graph_search` **2.0x**, `cooccur_edges` **3.65x**,
+`add_dir` over PDFs **1.75x**, `fold_token` **5.5x**.
 
 Results are unchanged and checked rather than asserted: `build_graph` emits identical entity,
 mention and edge hashes across all seven `n_workers`/`batch`/generator combinations *and* against
@@ -68,9 +74,36 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
   and third commit previously saw a document whose nodes had vanished. `add_doc` x150: 2.82s →
   2.25s. **`toc()` fetches every node in one query** rather than one per document, which is 26.6ms →
   16.9ms over 300 documents and the right shape for the cheap vectorless listing it is meant to be.
+- **Mentions and edges upsert with one statement per batch, not two per row.**
+  `insert_all(upsert=True)` emits an `INSERT OR IGNORE ... RETURNING *` *and* an
+  `UPDATE ... RETURNING *` for every record, each separately prepared and each materialising a
+  result row nobody reads — 23,530 statements to write 11,765 mentions. That pair is exactly what
+  `ON CONFLICT DO UPDATE` does, which SQLite has had since 3.24, so `core.upsert_all` does it in
+  one. `cooccur_edges` over 15,233 edges: 782ms -> 214ms (**3.65x**); `build_graph` over 2,000
+  chunks 7.02s -> 6.00s.
+- **`add_dir` parses on a process pool and writes in the parent.** Over eight PDFs the parse is
+  3.55s of a 5.31s walk, so splitting it is 6.18s -> 3.54s (**1.75x**). Over 150 markdown files the
+  same "parse" is `read_text` and takes 2.7ms in total, so a pool is pure loss — forcing one costs
+  2.37s against 2.24s — and `n_workers=None` declines to start one. The choice is made on how many
+  files have a parse worth splitting (`PARSE_HEAVY`), not on how many files there are. Writing
+  stays serial: one connection, one FTS index, one HNSW graph, none improved by contention.
+  `add_file` splits into `_parse_doc` (plain data, picklable) and `_add_parsed`; a worker resolves a
+  profile by name rather than re-detecting one and returns `None` if its registry lacks it, so the
+  parent re-parses rather than letting a different reader through unnoticed. Ingest output is
+  byte-identical serial, auto and `n_workers=4`, over both PDFs and markdown.
 
 ### New
 
+- **`evals/ingest_bench.py kw`** — keyphrase extractors on speed *and* on agreement with the
+  shipped yake, since extraction is ~99% of `prose_windows` and the reason a build needs a pool at
+  all. `yake-rust` is the same algorithm at **6.6x** per call (7.5ms -> 1.1ms) and it **releases the
+  GIL** — 0.46s -> 0.16s on four threads, where both pure-python candidates go *slower*. It would
+  retire the process pool for extraction entirely. The catch is that it agrees with the shipped
+  yake on 66.5% of terms, which is a graph change and wants a retrieval eval, not a stopwatch.
+  rake-nltk is the fastest thing measured (0.5ms) and the least comparable at 21.6%: RAKE returns
+  long noun phrases where YAKE returns tight keyphrases, so it is a different extractor rather than
+  a cheaper one. Nothing is swapped — `build_graph(terms_fn=...)` is the seam for it and the
+  default is unchanged.
 - **`evals/ingest_bench.py parts`** — disables one part of `resolve_entities` at a time and
   re-resolves *the same graph*, so each row is that part's contribution. The clique guard is
   load-bearing and then some: without it 6,422 merges collapse into transitive blobs covering 14.8

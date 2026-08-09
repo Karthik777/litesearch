@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fastcore.all import L, first
+from fastcore.all import L, first, defaults
 
 from litesearch.core import database, process_content
 from litesearch.graph import build_graph, hash_embed, resolve_entities, rrf_all
@@ -557,6 +557,70 @@ def bench_search_legs(sizes=(120, 600), workdir=None, reps=30):
     return out
 
 
+def bench_extractors(n=400, topk=12, workdir=None):
+    '''Keyphrase extractors against the yake `build_graph` ships with, on speed *and* on agreement.
+
+    Extraction is ~99% of `prose_windows` and the reason a build needs a process pool at all, so
+    "is there a faster one, and does it release the GIL" is the question with the most headroom
+    behind it. Both halves are measured: the 4-thread column is the GIL test (a pure-python
+    extractor cannot beat 1.0x there, and will usually lose to contention), and the overlap column
+    is the one that decides whether a swap is a speedup or a different graph.
+
+    Install what you want compared — each is skipped if absent:
+
+        pip install yake-rust rake-nltk rakun2
+    '''
+    from concurrent.futures import ThreadPoolExecutor
+    from litesearch.graph import _yake_terms
+    texts = [c['content'] for c in corpus_chunks(n, chars=800)]
+    cands = [('yake (shipped)', _yake_terms)]
+    try:
+        import yake_rust
+        yr = yake_rust.Yake(language='en', ngrams=3)
+        cands.append(('yake-rust', lambda t, k=topk: [w for w, _ in yr.get_n_best(t, n=k)]))
+    except Exception: pass
+    try:
+        from rake_nltk import Rake
+        import nltk
+        for pkg in ('stopwords', 'punkt', 'punkt_tab'):
+            try: nltk.download(pkg, quiet=True)
+            except Exception: pass
+        def _rk(t, k=topk):
+            r = Rake(max_length=3); r.extract_keywords_from_text(t)
+            return r.get_ranked_phrases()[:k]
+        cands.append(('rake-nltk', _rk))
+    except Exception: pass
+    try:
+        from rakun2 import RakunKeyphraseDetector
+        cfg = dict(num_keywords=topk, merge_threshold=1.1, alpha=0.3, token_prune_len=3)
+        cands.append(('rakun2', lambda t, k=topk: [w for w, _ in
+                      RakunKeyphraseDetector(cfg, verbose=False).find_keywords(t, input_type='string')]))
+    except Exception: pass
+
+    print(f'\n== keyphrase extractors ({n} chunks, {defaults.cpus} cores) ==')
+    print(f"  {'extractor':<18}{'serial':>9}{'per chunk':>11}{'4 threads':>11}{'GIL-free?':>11}{'agrees w/ yake':>16}")
+    base, out = None, []
+    for label, fn in cands:
+        try: fn(texts[0])
+        except Exception as e: print(f'  {label:<18} unavailable: {type(e).__name__}'); continue
+        with Timer() as t: res = [fn(x) for x in texts]
+        with ThreadPoolExecutor(4) as ex:
+            with Timer() as u: list(ex.map(fn, texts))
+        sets = [{str(w).lower() for w in r} for r in res]
+        if base is None: base, ov = sets, '—'
+        else:
+            den = sum(len(a) for a in base)
+            ov = f'{sum(len(a & b) for a, b in zip(base, sets))/den:.1%}' if den else 'n/a'
+        gil = 'yes' if t.wall/u.wall > 1.2 else 'no'
+        print(f'  {label:<18}{t.wall:8.2f}s{t.wall/len(texts)*1000:10.1f}ms{u.wall:10.2f}s'
+              f'{gil:>11}{ov:>16}')
+        out.append(dict(extractor=label, serial=t.wall, threaded=u.wall, per_chunk=t.wall/len(texts),
+                        gil_free=gil == 'yes', overlap=ov))
+    print('  (overlap is share of the shipped extractor\'s terms the candidate also returns; a low\n'
+          '   number means a different graph, not a faster one)')
+    return out
+
+
 def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
     '''Peak RSS of `build_graph`, listed input against a generator with `batch` set.
 
@@ -711,7 +775,7 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
-                                     'lexrecall','parts','libs','legs','gmem','verify','all'])
+                                     'lexrecall','parts','libs','legs','kw','gmem','verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -741,6 +805,7 @@ def main(argv=None):
     if a.bench in ('parts','all'): run(bench_resolve_parts, n=(a.sizes or (2000,))[0], workdir=a.workdir)
     if a.bench in ('libs','all'):  run(bench_string_libs, n=(a.sizes or (1500,))[0], workdir=a.workdir)
     if a.bench in ('legs','all'):  run(bench_search_legs, sizes=a.sizes or (120,600), workdir=a.workdir)
+    if a.bench in ('kw','all'):    run(bench_extractors, n=(a.sizes or (400,))[0], workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)
     if a.out: Path(a.out).write_text(json.dumps(rows, indent=1))
