@@ -57,6 +57,17 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
   so the byte path is only taken when the encoding is length-preserving.
 - **`_knn_clusters` fetches its vectors in one batched usearch lookup** rather than one call per key.
   `ctfidf_labels` counts cluster sizes in one pass instead of re-walking the label array per cluster.
+- **`fold_token` is cached — 5.5x** (114.7ms → 20.8ms over 70,413 tokens). It runs once per token on
+  every FTS write *and* every query and is three unicode normalisations plus a per-character
+  category scan deep. In a `cProfile` of `add_doc` x40 the Sanskrit tokenizer chain was a third of
+  the run and `fold_token` half of that, on a corpus with no Sanskrit in it at all. The eval corpus
+  is 70,413 tokens and 4,153 distinct strings: 94% of the calls re-answer a question already
+  answered, and it is a pure function, so the cache is a memo and nothing else.
+- **`add_doc` writes the doc row and its node rows in one transaction** instead of two commits per
+  document, and `delete_doc` covers all three tables in one — a reader landing between the second
+  and third commit previously saw a document whose nodes had vanished. `add_doc` x150: 2.82s →
+  2.25s. **`toc()` fetches every node in one query** rather than one per document, which is 26.6ms →
+  16.9ms over 300 documents and the right shape for the cheap vectorless listing it is meant to be.
 
 ### New
 
@@ -68,6 +79,10 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
   lexical merges the order-dependent clique guard would otherwise accept — and nets out at four
   merges on this corpus. The acronym rule is idle on prose (identical partition without it); the
   digit guard is nearly free and catches 13 `python 3.11`/`python 3.12`-shaped merges.
+- **`evals/ingest_bench.py legs`** — serial against threaded for `search`'s FTS and vector legs.
+  They look independent and both drop into C, but they share one apsw connection, so SQLite
+  serialises them behind its own mutex and threading is *slower* at every size and in both vector
+  modes (0.60x to 0.82x). The `parallel=` flag on `search` stays deprecated, now on evidence.
 - **`evals/ingest_bench.py libs`** — StringZilla and NumKong against the stdlib on the operations
   this module actually performs, with an agreement check, because a faster function that answers
   differently is not a drop-in. NumKong's `intersect` is 0.48x a Python `frozenset &` on two-to-five

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
 
-from .core import _in, _rid, _np_dtype, rrf_merge, process_content
+from .core import _in, _rid, _np_dtype, rrf_merge, process_content, write_txn
 from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
@@ -338,17 +338,22 @@ def add_doc(self:Database,
         if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
         self.delete_doc(did, store, prefix)
     tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
-    g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
-                       pages=(max(p for p, _ in pages)+1 if pages else 0),
-                       meta=_json.dumps(meta or {})), replace=True)
     chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
     counts = {}
     for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
-    g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
-                             parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
-                             title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
-                             summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
-                        for nd in tree], replace=True)
+    # doc row and node rows are one write. Separately they are two commits, and in WAL mode a
+    # commit is an fsync — paid per document, on the path that ingests a directory of them. The
+    # chunk write below opens its own transaction; `write_txn` is a no-op inside an open one, so
+    # nesting it here would just widen this into a single commit for the whole document.
+    with write_txn(self):
+        g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
+                           pages=(max(p for p, _ in pages)+1 if pages else 0),
+                           meta=_json.dumps(meta or {})), replace=True)
+        g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
+                                 parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
+                                 title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
+                                 summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
+                            for nd in tree], replace=True)
     if chunks:
         fn = emb_fn if not (emb_fn and with_heading) else (
             lambda ts, **kw: emb_fn([f"{h}\n\n{t}" if (h := heads.get(t)) else t for t in ts], **kw))
@@ -365,9 +370,12 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     g = self.get_tree(store, prefix, ann=self._tree_ann(store))
     m = self._ann_meta(store)
     rm = L(g.store(select=_rid(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
-    g.store.delete_where(where=f'doc_id={did!r}')
-    g.nodes.delete_where(where=f'doc_id={did!r}')
-    g.docs.delete_where(where=f'id={did!r}')
+    # three tables, one transaction — otherwise a reader between the second and third commit sees
+    # a document whose nodes are gone, and a crash there leaves exactly that on disk
+    with write_txn(self):
+        g.store.delete_where(where=f'doc_id={did!r}')
+        g.nodes.delete_where(where=f'doc_id={did!r}')
+        g.docs.delete_where(where=f'id={did!r}')
     if m and rm: g.store._sync_index([], list(rm), _np_dtype.get(m['dtype'], np.float16))
 
 
@@ -451,10 +459,16 @@ def toc(self:Database,
 ) -> list:
     'The document tree as nested dicts — titles, page ranges, summaries. No embeddings touched.'
     g = self.get_tree(store, prefix)
-    docs = (g.docs(where=f'id={doc!r} or title like {"%"+doc+"%"!r}') if doc else g.docs())
+    docs = list(g.docs(where=f'id={doc!r} or title like {"%"+doc+"%"!r}') if doc else g.docs())
+    # every node for every document being listed, in one query and grouped here. One query per
+    # document made `toc()` cost a round trip per document to build a listing whose whole point is
+    # that it is the cheap, vectorless way to see the corpus.
+    by_doc, ids = {}, [d['id'] for d in docs]
+    for i in range(0, len(ids), 400):
+        for r in g.nodes(where=_in('doc_id', ids[i:i+400])): by_doc.setdefault(r['doc_id'], []).append(r)
     out = []
     for d in docs:
-        rows = sorted(g.nodes(where=f'doc_id={d["id"]!r}'), key=lambda r: r['seq'])
+        rows = sorted(by_doc.get(d['id'], []), key=lambda r: r['seq'])
         kids = {}
         for r in rows: kids.setdefault(r['parent_id'], []).append(r)
         def node(r):

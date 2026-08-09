@@ -1,4 +1,4 @@
-# Graph layer performance
+# Graph, tree and core performance
 
 Measured on the `evals` regulatory corpus (9 EU directives, 489 pages) with `evals/ingest_bench.py`.
 4 CPUs, SQLite in WAL mode, `hash_embed` standing in for an encoder so the numbers are litesearch's
@@ -20,6 +20,7 @@ python -m evals.ingest_bench libs                    # stringzilla / numkong aga
                                                      #   (numkong ships with usearch; for the
                                                      #    stringzilla rows: pip install stringzilla)
 python -m evals.ingest_bench lexrecall
+python -m evals.ingest_bench legs                    # threading search's two legs (it loses)
 python -m evals.ingest_bench verify
 ```
 
@@ -32,7 +33,11 @@ python -m evals.ingest_bench verify
 | `build_graph` (`n_workers=4, batch=250`, 2,000 chunks) | 11.1s | 10.0s | 1.11x |
 | `build_graph` extraction, `batch=200`, 2,000 chunks | 7.7s | 5.1s | **1.5x** |
 | `hash_embed` (3,000 names) | 118ms | 64ms | 1.85x |
+| `fold_token` (70,413 tokens) | 114.7ms | 20.8ms | **5.5x** |
+| `toc()` over 300 documents | 26.6ms | 16.9ms | 1.57x |
+| `add_doc` x150 | 2.82s | 2.25s | 1.25x |
 | `build_graph` serial | 9.5s | 9.2s | — (yake-bound) |
+| `search`, `fts_search`, `add_dir` | | | unchanged |
 | `clusters`, `peers`, `topic_nodes` | | | unchanged |
 
 Results are unchanged throughout, and that is checked rather than asserted. `build_graph` produces
@@ -177,6 +182,60 @@ merge that keeps the group a clique — an order-dependent test.
 Walking the tokens in sorted order fixes it. Four resolves of the same database under random hash
 seeds now return the same partition and the same edge table, bit for bit, and blocking recall is
 unchanged (99.5% / 98.3% / 97.2% at 3,254 / 5,650 / 8,487 entities).
+
+## The same three questions, asked of `core`, `tree` and `sanskrit`
+
+The graph findings fell into three shapes — writes outside a transaction, a pure function
+recomputed, and a per-item loop that should be one query — so the other modules were checked for
+the same shapes rather than re-profiled from scratch.
+
+| | before | after | |
+|---|---|---|---|
+| `add_doc` x150 | 2.82s | **2.25s** | 1.25x |
+| `toc()` over 300 documents | 26.6ms | **16.9ms** | 1.57x |
+| `fold_token` over 70,413 tokens | 114.7ms | **20.8ms** | 5.5x |
+| `search`, `fts_search`, `add_dir` | | | unchanged |
+
+- **`fold_token` was uncached.** It is called once per token on every FTS write *and* every query,
+  and it is three unicode normalisations plus a per-character category scan deep. The eval corpus
+  is 70,413 tokens and 4,153 distinct strings, so 94% of calls re-answer a question already
+  answered. In a `cProfile` of `add_doc` x40 (1.84s) the Sanskrit tokenizer chain was 0.61s
+  cumulative and `fold_token` half of that — on a corpus with no Sanskrit in it at all. It is a
+  pure function of its argument, so an `lru_cache` is a memo and nothing else. Incidental effect on
+  `build_graph`, whose entity store is also FTS-indexed: ~6%, measured with the cache stashed.
+- **`add_doc` committed the doc row and the node rows separately**, so ingesting a directory paid
+  two fsyncs per document where one would do. `delete_doc` had the same shape across three tables,
+  with the added problem that a reader landing between the second and third commit saw a document
+  whose nodes had vanished.
+- **`toc()` ran one query per document** to build the listing whose entire selling point is being
+  the cheap, vectorless way to look at a corpus. One query, grouped in Python.
+
+Output is identical: doc, node and chunk rows, `toc()` at three depths, FTS results and Sanskrit
+folding over mixed Devanagari/IAST all hash the same before and after (once the wall-clock
+`added_at` / `uploaded_at` columns, which are not reproducible in either version, are excluded).
+
+### Threading `search`'s two legs: measured, and it loses
+
+`search` runs its FTS and vector legs one after the other and carries a `parallel=` flag documented
+as "not used". The legs look independent and both drop into C — apsw for FTS, usearch for the ANN
+probe — so a thread each is the obvious idea. `python -m evals.ingest_bench legs`:
+
+| chunks | vector leg | serial | threaded | |
+|---|---|---|---|---|
+| 2,458 | exact | 5.90ms | 9.81ms | 0.60x |
+| 2,458 | ann | 1.36ms | 2.03ms | 0.67x |
+| 12,391 | exact | 26.00ms | 37.64ms | 0.69x |
+| 12,391 | ann | 3.34ms | 4.09ms | 0.82x |
+
+Slower at both sizes and in both modes. The legs share one apsw connection, so SQLite serialises
+them behind its own mutex and the pool buys contention plus two futures instead of overlap. The
+gap narrows as the vector leg grows, which is the shape you would expect if the win were coming —
+but the ceiling is `min(fts, vec)` and the legs are never close to balanced. The flag stays
+deprecated, now on evidence.
+
+This is the same answer threads got in the graph layer, for a different reason: there it was the
+GIL (yake is Python end to end), here it is the connection mutex. Processes remain the only thing
+that has actually paid in this codebase.
 
 ## What is still open
 

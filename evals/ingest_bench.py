@@ -514,6 +514,49 @@ def bench_string_libs(n=1500, workdir=None):
     return out
 
 
+def bench_search_legs(sizes=(120, 600), workdir=None, reps=30):
+    '''Does overlapping the FTS and vector legs of `search` on a thread pool help? No.
+
+    `search` runs its two legs one after the other and carries a deprecated `parallel=` flag that
+    does nothing. The legs look independent and both drop into C — apsw for FTS, usearch for the
+    ANN probe — so a thread each is the obvious idea, and it is measured here rather than argued
+    about. It loses at both corpus sizes and in both vector modes, because the legs share one apsw
+    connection: SQLite serialises them behind its own mutex, so the thread pool buys contention and
+    two futures instead of overlap. Recorded so the flag stays deprecated on evidence.'''
+    from concurrent.futures import ThreadPoolExecutor
+    from litesearch.graph import hash_embed
+    print('\n== search legs: serial vs threaded ==')
+    print(f"  {'chunks':>8} {'vector leg':>11} {'serial':>9} {'threaded':>9} {'change':>9}")
+    out, ex = [], ThreadPoolExecutor(2)
+    for n in sizes:
+        root = Path(tempfile.mkdtemp(dir=workdir))
+        db = database(str(root/'t.db')); db.get_tree('store', ann=True)
+        emb = hash_emb_fn()
+        for i, pages in enumerate(corpus_docs(n, pages_per_doc=3)):
+            db.add_doc(pages, title=f'D{i}', emb_fn=emb, index=False)
+        db.t.store.rebuild_index()
+        nc = first(db.q('select count(*) c from store'))['c']
+        qv = np.asarray(hash_embed(['transport of dangerous goods'], ndim=256)).ravel().tobytes()
+        tbl = db.t.store
+        for label, use_ann in (('exact', False), ('ann', True)):
+            vleg = ((lambda: tbl.ann_search(qv, ['rowid','content'], 20)) if use_ann else
+                    (lambda: tbl.vec_search(qv, ['rowid','content'], limit=20)))
+            fleg = lambda: tbl.fts_search('dangerous OR goods OR transport', ['rowid','content'], 'rank', 20)
+            ser = lambda: (fleg(), vleg())
+            par = lambda: ((lambda f: (f, vleg()))(ex.submit(fleg)))[0].result()
+            ts = []
+            for f in (ser, par):
+                f()
+                with Timer() as t:
+                    for _ in range(reps): f()
+                ts.append(t.wall/reps)
+            print(f'  {nc:>8,} {label:>11} {ts[0]*1000:8.2f}ms {ts[1]*1000:8.2f}ms {ts[0]/ts[1]:8.2f}x')
+            out.append(dict(chunks=nc, leg=label, serial=ts[0], threaded=ts[1], speedup=ts[0]/ts[1]))
+        db.conn.close(); shutil.rmtree(root, ignore_errors=True)
+    ex.shutdown()
+    return out
+
+
 def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
     '''Peak RSS of `build_graph`, listed input against a generator with `batch` set.
 
@@ -668,7 +711,7 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
-                                     'lexrecall','parts','libs','gmem','verify','all'])
+                                     'lexrecall','parts','libs','legs','gmem','verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -697,6 +740,7 @@ def main(argv=None):
     if a.bench in ('lexrecall','all'): run(bench_lexical_recall, sizes=a.sizes or (250,500,1000,2000), workdir=a.workdir)
     if a.bench in ('parts','all'): run(bench_resolve_parts, n=(a.sizes or (2000,))[0], workdir=a.workdir)
     if a.bench in ('libs','all'):  run(bench_string_libs, n=(a.sizes or (1500,))[0], workdir=a.workdir)
+    if a.bench in ('legs','all'):  run(bench_search_legs, sizes=a.sizes or (120,600), workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)
     if a.out: Path(a.out).write_text(json.dumps(rows, indent=1))
