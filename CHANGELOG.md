@@ -23,6 +23,13 @@ large corpus, and `resolve_entities` turned out to be losing merges as the corpu
 
 ### New
 
+- **`build_graph(n_workers=...)`** — extraction on a process pool. It is 88% of a build and a pure
+  function of the chunk text, so a build is a map with a cheap serial reduce; threads are useless
+  because yake and spaCy are both python and both hold the GIL. spaCy's own `n_process` is used
+  rather than reinvented. 1,000 chunks on 4 cores: 11.6s -> 4.9s (yake, **2.4x**) and 19.0s -> 10.2s
+  (spaCy, **1.9x**), 86 chunks/s to 207. `None` picks a pool by queue size and stays serial below
+  `MIN_PARALLEL_CHUNKS`; `0` forces serial. Order is preserved and the reduce depends on it —
+  `ents.setdefault` keeps the `kind` of an entity's first mention.
 - **`build_graph(batch=...)`** — flushes mentions per batch and keeps co-occurrence windows in a
   scratch SQLite table rather than in memory. Windows are the term that never saturates: entity
   vocabulary flattens, mentions can be flushed, a window is one per sentence forever. PMI pair

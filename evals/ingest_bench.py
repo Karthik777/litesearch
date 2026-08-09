@@ -271,9 +271,9 @@ def bench_pdf(pdf='nbs/pdfs/attention_is_all_you_need.pdf', workdir=None, emb=No
     db.conn.close(); shutil.rmtree(root, ignore_errors=True)
     return rows
 
-def bench_graph(sizes=(500, 1000, 2000), workdir=None, spacy=False, emb=None):
-    'build_graph + resolve_entities over synthetic prose chunks.'
-    print(f'\n== graph build (spacy={spacy}) ==')
+def bench_graph(sizes=(500, 1000, 2000), workdir=None, spacy=False, emb=None, n_workers=0, batch=None):
+    'build_graph + resolve_entities over real prose chunks. `n_workers=None` picks a pool by size.'
+    print(f'\n== graph build (spacy={spacy}, n_workers={n_workers}, batch={batch}) ==')
     nlp = None
     if spacy:
         from litesearch.graph import spacy_pipe
@@ -284,7 +284,8 @@ def bench_graph(sizes=(500, 1000, 2000), workdir=None, spacy=False, emb=None):
         root = Path(tempfile.mkdtemp(dir=workdir))
         db = database(str(root/'bench.db')); db.get_store('store', hash=True, ann=True)
         chunks = corpus_chunks(n, chars=800)
-        with Timer() as t: st = build_graph(db, chunks, emb_fn=emb or hash_emb_fn(), nlp=nlp)
+        with Timer() as t: st = build_graph(db, chunks, emb_fn=emb or hash_emb_fn(), nlp=nlp,
+                                            n_workers=n_workers, batch=batch)
         rows.append(_row(f'build_graph({n} chunks)', n, t.wall, f'{st["entities"]:,} ents {st["edges"]:,} edges'))
         with Timer() as t: rs = resolve_entities(db)
         rows.append(_row(f'resolve_entities({st["entities"]} ents)', st['entities'], t.wall, f'{rs["merged"]} merged'))
@@ -545,6 +546,8 @@ def main(argv=None):
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
     p.add_argument('--no-ann', action='store_true')
     p.add_argument('--spacy', action='store_true')
+    p.add_argument('--workers', type=int, default=0, help='graph extraction workers; 0 serial')
+    p.add_argument('--batch', type=int, default=None, help='build_graph chunks per flush')
     p.add_argument('--workdir', default=os.environ.get('LITESEARCH_BENCH_DIR'))
     p.add_argument('--profile', action='store_true')
     p.add_argument('--out', default=None, help='write results as json')
@@ -562,7 +565,8 @@ def main(argv=None):
     if a.bench in ('store','all'): run(bench_store, sizes=a.sizes or (2000,8000,32000), emb=emb, workdir=a.workdir, ann=False)
     if a.bench in ('code','all'):  run(bench_code, dirs=(a.dir,), workdir=a.workdir, emb=emb)
     if a.bench in ('chunk','all'): run(bench_chunk, n=(a.sizes or (2000,))[0])
-    if a.bench in ('graph','all'): run(bench_graph, sizes=a.sizes or (500,1000,2000), workdir=a.workdir, spacy=a.spacy)
+    if a.bench in ('graph','all'): run(bench_graph, sizes=a.sizes or (500,1000,2000), workdir=a.workdir,
+                                      spacy=a.spacy, n_workers=a.workers, batch=a.batch)
     if a.bench in ('lexrecall','all'): run(bench_lexical_recall, sizes=a.sizes or (250,500,1000,2000), workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)

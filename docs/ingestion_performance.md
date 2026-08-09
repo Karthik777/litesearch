@@ -282,7 +282,26 @@ because entities, mentions and edges went through `insert_all` directly rather t
 `process_content`. One `write_txn` around the writes took 1,000 chunks from 21.6s to 11.5s — ~90
 chunks/s against ~45.
 
-Memory was the harder problem. `build_graph` accumulated entities, mentions, edges *and every
+**Cores.** Extraction is 88% of a build (26.6s of 30.3s) and is a pure function of the chunk text,
+so the whole thing is a map with a cheap serial reduce after it. `n_workers=` spreads it over
+processes — threads are useless here, since yake and spaCy are both python and both hold the GIL.
+spaCy's own `n_process` is used rather than reinvented: it forks around the pipeline instead of
+shipping one per task.
+
+```
+1,000 chunks         yake        spaCy
+serial              11.58s      18.97s
+2 workers            7.11s
+4 workers            4.87s      10.16s
+                     2.40x       1.87x
+```
+
+86 chunks/s to 207. Below `MIN_PARALLEL_CHUNKS` (200) a drain stays serial, because a pool costs
+more to start than it saves. Order is preserved by both pools and the reduce depends on it:
+`ents.setdefault` keeps the `kind` of an entity's *first* mention, so a reordered stream would
+relabel entities.
+
+**Memory** was the harder problem. `build_graph` accumulated entities, mentions, edges *and every
 co-occurrence window* for the whole call, and windows are the one term that never saturates: entity
 vocabulary follows Heaps' law, mentions can be flushed, but a window is one per sentence forever.
 Three changes, each verified to leave the graph byte-identical:
@@ -355,10 +374,11 @@ argument for sharding that survives, and it is about RAM, not speed.
   part that wants a GPU or a process pool.
 - **`add_dir` walks files serially.** `_parse_files` shows the shape of the fix; the document path
   has not had it applied, because PDF parsing and SQLite writing want different pool sizes.
-- **`build_graph` is single-core** at ~90 chunks/s, so a million chunks is ~3 hours. Extraction is
-  per-chunk and independent — a map/reduce away from scaling with cores, if the accumulation becomes
-  a merge step.
+- **`build_graph` scales to cores, not across machines.** 207 chunks/s on 4 cores puts a million
+  chunks at ~1.3 hours; the reduce is serial, so more cores keep helping until it dominates.
 - **`build_graph` memory is sublinear, not constant.** What remains is entity vocabulary and the
   edge dict, both on saturating curves. Fine to 10^6 on the measured slope; re-measure before 10^7.
+- **`n_workers` with a small `batch` pays pool startup per drain.** The queue is drained once per
+  batch, so the two parameters interact: 4 workers cost 4.87s unbatched and 5.33s at `batch=500`.
 - **spaCy is slower than the yake fallback** (9.5 vs 16.4 chunks/s) while extracting ~1.7x the
   entities. Which trade is better has been measured on cost, not on retrieval quality.
