@@ -4,7 +4,7 @@
 __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'TreeNode', 'summarize_extractive', 'struct_levels', 'detect_mode',
            'build_tree', 'heading_path', 'doc_id', 'adaptive_weights', 'merge_spans']
 
-# %% ../nbs/06_tree.ipynb #a0a13ca8
+# %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
 from fastcore.all import Path, patch, first, L, AttrDict, ifnone
 from fastlite import Database
 from apswutils.db import Table
@@ -16,7 +16,7 @@ import numpy as np
 from .core import _in, _rid, _np_dtype, rrf_merge, process_content
 from .data import chunk_markdown
 
-# %% ../nbs/06_tree.ipynb #f030bc6e
+# %% ../nbs/06_tree.ipynb #19d522c82ab234ee
 _md_head  = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
 _fence    = re.compile(r'^\s{0,3}(```+|~~~+)')
 # A structural heading line, with an optional leading `#` — a PDF converter may already have
@@ -67,11 +67,7 @@ def summarize_extractive(text:str, n:int=300) -> str:
 def _clean_title(t:str, max_len:int=100): return _ws.sub(' ', t).strip(' #*_')[:max_len].strip()
 
 def struct_levels(pages, max_levels:int=4) -> dict:
-    '''`{heading word: level}` for one document, as consecutive levels starting at 1.
-
-    Levels are compacted rather than fixed, so a directive that only ever says "Article" gets
-    articles at level 1 instead of burying every one of them four deep. Unknown words are ranked
-    by frequency: the rarer heading word names the bigger division.'''
+    '`{heading word: level}` for one document, as consecutive levels starting at 1.'
     seen = {}
     for _, txt in pages:
         for ln, code in _md_lines(txt):
@@ -93,27 +89,42 @@ def _md_stats(pages):
             if (m := _md_head.match(ln)): n += 1; lvls.add(len(m.group(1)))
     return n, len(lvls)
 
+def _cite_stats(pages):
+    'How many blocks carry a verse citation, and the deepest hierarchy any of them names.'
+    from litesearch.sanskrit import CITE_RE, cite_parts
+    n, depth = 0, 0
+    for _, txt in pages:
+        if (m := CITE_RE.search(txt or '')):
+            n += 1
+            depth = max(depth, len(cite_parts(f'{m.group(1)}_{m.group(2)}')[1]))
+    return n, depth
+
 def detect_mode(pages) -> str:
-    'Which structural signal this document carries: `markdown`, `chapter` or `window`.'
+    'Which structural signal this document carries: `markdown`, `verse`, `chapter` or `window`.'
     md, depths = _md_stats(pages)
     ch = sum(1 for _, txt in pages for ln, code in _md_lines(txt) if not code and _chapter.match(ln))
     npg = max(1, len(pages))
+    nc, cdepth = _cite_stats(pages)
+    # a citation on a real share of the blocks, naming more than a flat sequence
+    if nc >= 3 and nc/npg > 0.2 and cdepth >= 2 and nc > md: return 'verse'
     if md/npg > MAX_HEAD_DENSITY and depths < 2: return 'chapter' if ch >= 3 else 'window'
     if md >= (2 if len(pages) <= 3 else max(3, npg // 25)): return 'markdown'
-    return 'chapter' if ch >= 3 else 'window' 
+    return 'chapter' if ch >= 3 else 'window'
 
-# %% ../nbs/06_tree.ipynb #e00e8925
+
+# %% ../nbs/06_tree.ipynb #bddb38a984652387
 def build_tree(pages,                  # [(page_no, text)] — markdown or plain text
                title:str='Document',   # title of the root node
                summarize=None,         # callable(text)->str for node summaries (LLM goes here)
                window:int=8,           # pages per node in `window` mode
                min_level:int=1,        # floor for heading depth
-               max_levels:int=4        # deepest node level kept
+               max_levels:int=4,       # deepest node level kept
+               mode:str=None           # force a structural mode instead of detecting one
 ) -> list:
     'A flat list of `TreeNode` for a document (index = seq, root = 0).'
     pages = [(p, t or '') for p, t in pages]
     summarize = summarize or summarize_extractive
-    mode, nodes = detect_mode(pages), []
+    mode, nodes = mode or detect_mode(pages), []
     slev = struct_levels(pages, max_levels) if mode == 'chapter' else {}
     def fresh(t, lvl, parent, page):
         nd = TreeNode(seq=len(nodes), title=_clean_title(t) or f'Section {len(nodes)}',
@@ -135,7 +146,35 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         cur.page_end = max(cur.page_end, page)
         buf.clear()
 
-    if mode == 'window':
+    if mode == 'verse':
+        # `Mn_1.1` is both the verse's id and its address: everything but the last component names
+        # the division it sits in, so the tree comes out of the citations with no markup at all.
+        from litesearch.sanskrit import CITE_RE, cite_parts
+        last, head_lvl = [], 0
+        for p, txt in pages:
+            if (h := first(ln for ln, code in _md_lines(txt) if not code and _md_head.match(ln))):
+                m = _md_head.match(h)
+                flush(cur_page)
+                head_lvl = max(min_level, len(m.group(1)))
+                open_node(m.group(2), head_lvl, p)
+                cur_page, last = p, []
+                if (rest := txt.replace(h, '', 1).strip()): buf.append(rest)
+                flush(p); cur_page = p
+                continue
+            sig, parts = '', []
+            if (m := CITE_RE.search(txt)):
+                sig, nums = cite_parts(f'{m.group(1)}_{m.group(2)}')
+                parts = nums[:-1][:max_levels]           # drop the verse itself; keep its address
+            for lvl in range(1, len(parts)+1):
+                if last[:lvl] != parts[:lvl]:
+                    flush(cur_page)
+                    open_node(f"{sig} {'.'.join(parts[:lvl])}".strip(), head_lvl + lvl, p)
+                    cur_page = p
+            last = parts
+            if txt.strip(): buf.append(txt)
+            flush(p)
+            cur_page = p
+    elif mode == 'window':
         for i in range(0, len(pages), window):
             grp = pages[i:i+window]
             lead = next((l.strip() for _, t in grp for l in t.splitlines() if l.strip()), '')
@@ -166,23 +205,28 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
     root.page_end = max((n.page_end for n in nodes), default=root.page_end)
     return nodes
 
+def _dedent_path(parts) -> list:
+    'Drop a segment that only repeats the one before it.'
+    out = []
+    for p in parts:
+        if p and (not out or _ws.sub(' ', p).strip().lower() != _ws.sub(' ', out[-1]).strip().lower()):
+            out.append(p)
+    return out
+
 def heading_path(tree,              # the node list from build_tree
                  nd,                # the TreeNode to describe
                  title:str,         # document title
                  sep:str=' › ',
                  max_len:int=200) -> str:
-    '''`Doc › Part › Chapter` for one node.
-
-    Embedded with the chunk and indexed for FTS, this is what stops a chunk reading as an
-    out-of-context fragment: "the effects are severe" means nothing until you know which chapter
-    said it.'''
+    '`Doc › Part › Chapter` for one node.'
     parts, cur = [], nd
     while cur is not None:
         if cur.level > 0: parts.append(cur.title)
         cur = tree[cur.parent] if cur.parent is not None else None
-    return sep.join([title] + parts[::-1])[:max_len]
+    return sep.join(_dedent_path([title] + parts[::-1]))[:max_len]
 
-# %% ../nbs/06_tree.ipynb #7026c892
+
+# %% ../nbs/06_tree.ipynb #762e15b02237e287
 def doc_id(source, title='') -> str:
     'Content-addressed document id — re-adding the same source is a no-op, not a duplicate.'
     return hash_record({'k': f'{source}|{title}'})[:16]
@@ -206,18 +250,30 @@ def get_tree(self:Database,
         self.t[t].create_index([c], if_not_exists=True)
     return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
 
-# %% ../nbs/06_tree.ipynb #303b401c
+# %% ../nbs/06_tree.ipynb #538721312f0bb5f
 MIN_CHUNK = 40
 
-def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK):
-    """Chunk every node segment, tagging each chunk with its node, page and heading path.
+def _pack_target(chunker) -> int:
+    'The size a chunker wants to pack *across* segments to, or 0 for the usual one-call-per-segment.'
+    return int(getattr(chunker, 'target', 0) or 0) if getattr(chunker, 'pack_cited', False) else 0
 
-    A chunk under `min_chunk` is *merged into its predecessor*, never dropped. Dropping is the
-    tempting reading of a minimum size and it is wrong here: `read()` assembles a section out of
-    its chunks, so a discarded chunk is text that has silently left the corpus."""
+def _pack_segments(rows, target:int) -> L:
+    'Join consecutive chunks of one node up to `target` characters; the span keeps its first page.'
+    if not target or len(rows) < 2: return L(rows)
+    out = L()
+    for r in rows:
+        if out and len(out[-1]['content']) + len(r['content']) + 2 <= target:
+            out[-1]['content'] = f"{out[-1]['content']}\n\n{r['content']}"
+            continue
+        out.append(r)
+    return out
+
+def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=None):
+    'Chunk every node segment, tagging each chunk with its node, page and heading path.'
     out = L()
     for nd in tree:
         head, nid = heading_path(tree, nd, title), f'{did}#{nd.seq}'
+        node_out = L()
         for page, seg in nd.segments:
             prev = None
             for c in chunk_markdown(seg, chunker):
@@ -226,7 +282,13 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK):
                     prev['content'] = f"{prev['content']}\n\n{c}"
                     continue
                 prev = dict(content=c, doc_id=did, node_id=nid, page=page, heading=head)
-                out.append(prev)
+                node_out.append(prev)
+        out += _pack_segments(node_out, _pack_target(chunker))
+    if meta_fn:
+        import json as _json
+        # written on every chunk, including as `{}` — heterogeneous keys across rows are what
+        # `insert_all` cannot take, and a prose chunk having no facets is not a reason to omit it
+        for c in out: c['metadata'] = _json.dumps(meta_fn(c['content']) or {}, ensure_ascii=False)
     return out
 
 @patch
@@ -253,7 +315,9 @@ def add_doc(self:Database,
             with_heading:bool=True, # embed each chunk together with its heading path
             meta:dict=None,         # arbitrary json metadata for the doc row
             force:bool=False,       # re-ingest a document already present
-            index:bool=True         # mirror this document's chunks into the ANN index
+            index:bool=True,        # mirror this document's chunks into the ANN index
+            mode:str=None,          # force a build_tree structural mode instead of detecting one
+            meta_fn=None            # (chunk text) -> dict of facets stored as the chunk's `metadata`
 ) -> dict:
     '''Ingest one document: build its tree, chunk it per node, embed and store.
 
@@ -273,11 +337,11 @@ def add_doc(self:Database,
     if first(g.docs(where=f'id={did!r}')):
         if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
         self.delete_doc(did, store, prefix)
-    tree = build_tree(pages, title=title, summarize=summarize)
+    tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
     g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
                        pages=(max(p for p, _ in pages)+1 if pages else 0),
                        meta=_json.dumps(meta or {})), replace=True)
-    chunks = _node_chunks(tree, title, did, chunker)
+    chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
     counts = {}
     for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
     g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
@@ -307,8 +371,8 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     if m and rm: g.store._sync_index([], list(rm), _np_dtype.get(m['dtype'], np.float16))
 
 
-# %% ../nbs/06_tree.ipynb #49bd0c55
-DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb'
+# %% ../nbs/06_tree.ipynb #470e83335ade7f42
+DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb,.xml,.tei,.htm,.html,.conllu'
 
 @patch
 def assets(self:Database, name:str=None) -> Path:
@@ -326,11 +390,21 @@ def add_file(self:Database,
              prefix:str=None,
              kind:str=None,        # overrides the kind inferred from the extension
              out_path=None,        # dir for extracted PDF images; defaults to `assets/<stem>` beside the db
+             profile:str=None,     # force a registered Profile by name instead of detecting one
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
     'Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.'
+    from litesearch.data import profile_for
     p = Path(path)
     ttl = title or p.stem.replace('_',' ').replace('-',' ').strip()
+    if (prof := profile_for(p, name=profile)) is not None and prof.parse:
+        pages, pmeta = prof.parse(p)
+        if prof.chunker: kw.setdefault('chunker', prof.chunker())
+        if prof.mode: kw.setdefault('mode', prof.mode)
+        if prof.meta: kw.setdefault('meta_fn', prof.meta)
+        return self.add_doc(pages, title or pmeta.get('title') or ttl, source=str(p),
+                            kind=kind or prof.kind or prof.name, store=store, prefix=prefix,
+                            meta=kw.pop('meta', None) or pmeta, **kw)
     if p.suffix.lower() == '.pdf':
         from litesearch.data import pdf_parse
         pages = list(enumerate(pdf_parse(str(p), out_path=out_path or self.assets(p.stem))))
@@ -366,7 +440,7 @@ def add_dir(self:Database,
     return out
 
 
-# %% ../nbs/06_tree.ipynb #81b003f1
+# %% ../nbs/06_tree.ipynb #d9507dc29ccaad76
 @patch
 def toc(self:Database,
         doc:str=None,           # doc id, or a substring of the title (None = every document)
@@ -403,7 +477,7 @@ def breadcrumb(self:Database, node_id:str, store:str='store', prefix:str=None, s
         seen.add(cur['id'])
         parts.append(cur['title'])
         cur = first(g.nodes(where=f'id={cur["parent_id"]!r}')) if cur['parent_id'] else None
-    return sep.join(parts[::-1])
+    return sep.join(_dedent_path(parts[::-1]))
 
 @patch
 def read(self:Database,
@@ -432,7 +506,7 @@ def read(self:Database,
                 pages=(nd['page_start'], nd['page_end']), summary=nd['summary'],
                 children=[r['id'] for r in g.nodes(where=f'parent_id={node_id!r}')], text=text)
 
-# %% ../nbs/06_tree.ipynb #283dc191
+# %% ../nbs/06_tree.ipynb #488ac79f875ae930
 _QUOTED = re.compile(r'"[^"]+"')
 _NAMEY  = re.compile(r'[A-Z][a-z]{2,}|\d|_')
 
@@ -440,12 +514,7 @@ def adaptive_weights(q:str,      # the raw query
                      fts:list,   # the FTS leg's results
                      vec:list    # the vector leg's results
 ) -> tuple:
-    '''`(fts_weight, vec_weight)` for RRF, from cheap signals in the query and the legs.
-
-    Three rules, not a learned model: a quoted phrase and a rare identifier are literal requests,
-    an empty leg cannot vote, and everything else is a tie. **Measured inert** on prose queries —
-    neither trigger fires on an ordinary sentence — so `doc_search(adaptive=...)` is off by
-    default. Worth turning on only where users really do type quoted phrases.'''
+    '`(fts_weight, vec_weight)` for RRF, from cheap signals in the query and the legs.'
     if not fts: return (0.0, 1.0)
     if not vec: return (1.0, 0.0)
     w = 1.0
@@ -457,10 +526,7 @@ def adaptive_weights(q:str,      # the raw query
 def merge_spans(hits,            # ranked hits carrying node_id + page
                 gap:int=1        # merge hits at most this many pages apart
 ) -> list:
-    '''Collapse hits that are adjacent inside the same node into one span.
-
-    The merged hit keeps the best rank and score of its members, so ordering is unchanged; what
-    changes is that the caller gets one contiguous passage where it had two halves.'''
+    'Collapse hits that are adjacent inside the same node into one span.'
     out, byn = [], {}
     for i, h in enumerate(hits):
         nid = h.get('node_id')
@@ -495,15 +561,7 @@ def doc_search(self:Database,
                rrf_k:int=60,
                **kw                   # forwarded to Database.search
 ) -> list:
-    """Hybrid search over a node-aware store: span merging and a breadcrumb per hit.
-
-    `adaptive` defaults **off**. Its triggers — a quoted phrase, a name/number-heavy query — did
-    not fire once across 300 natural-language queries over 486 pages of legislation, giving
-    results identical to plain RRF to three decimal places, and a replacement rule that leaned on
-    the FTS leg's coverage measured *worse* (0.425 against 0.496 MRR on degraded queries). Kept
-    and opt-in: the case it was written for — users who really do type quoted phrases and
-    identifiers — is real, and simply is not what that corpus tests.
-    """
+    'Hybrid search over a node-aware store: span merging and a breadcrumb per hit.'
     cols = list(dict.fromkeys((columns or ['content']) + ['node_id','page','heading','doc_id','rowid']))
     base = self.search(q, emb, columns=cols, limit=max(limit*3, 30), table_name=store, rrf=False, **kw)
     if not base: return []
@@ -536,14 +594,7 @@ def sections(self:Database,
              score:str='max',     # how a section scores from its hits: max | mean | sum
              **kw                 # forwarded to doc_search
 ) -> list:
-    '''Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.
-
-    `score='max'` — a section is as relevant as its best evidence. The obvious alternative, summing
-    the RRF mass of every hit in a node, reads well ("five weak hits in a chapter beat one strong
-    hit in an appendix") and measures badly: it is a length prior in disguise. On 150 known-item
-    queries over 486 pages of legislation, summing cost 0.07 MRR against `max` on verbatim queries
-    and 0.16 on keyword-degraded ones, because long chapters outranked the precise article. `mean`
-    is within noise of `max`; `sum` remains available for corpora of uniform section length.'''
+    'Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.'
     hits = self.doc_search(q, emb, limit=max(limit*fanout, 20), store=store, prefix=prefix, spans=False, **kw)
     g, agg = self.get_tree(store, prefix), {}
     for h in hits:
@@ -568,6 +619,7 @@ def sections(self:Database,
                         nchunks=nd.get('nchunks', 0), snippets=a['snippets'],
                         read=f'read({nid!r})'))
     return out
+
 
 # %% ../nbs/06_tree.ipynb #ba21b041
 def _prov(bc): return bool(bc) and '›' in bc   # a bare document title (the root) has no separator

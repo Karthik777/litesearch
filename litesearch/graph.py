@@ -4,7 +4,7 @@
 __all__ = ['MIN_PARALLEL_CHUNKS', 'hash_embed', 'code_entities', 'spacy_pipe', 'prose_windows', 'text_entities', 'build_graph',
            'resolve_entities', 'cooccur_edges', 'ctfidf_labels', 'topic_nodes', 'rrf_all', 'graph_stats']
 
-# %% ../nbs/05_graph.ipynb #imports
+# %% ../nbs/05_graph.ipynb #ab82e9d12af8898f
 from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict, defaults, parallel
 from fastlite import Database
 from apswutils.db import Table
@@ -14,7 +14,7 @@ import numpy as np
 
 from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn
 
-# %% ../nbs/05_graph.ipynb #schema
+# %% ../nbs/05_graph.ipynb #e2556b625e937d53
 @patch
 def get_graph(self:Database,
               store:str='store',   # chunk store the graph is built over
@@ -33,7 +33,7 @@ def get_graph(self:Database,
         self.t[t].create_index([c], if_not_exists=True)
     return AttrDict(entities=ents, mentions=self.t[mn], edges=self.t[eg], store=self.t[store], prefix=p)
 
-# %% ../nbs/05_graph.ipynb #norm
+# %% ../nbs/05_graph.ipynb #673ffc3a5da7b038
 _DET = re.compile(r'^(the|a|an|this|that|these|those|its|their|our|your|his|her)\s+', re.I)
 _WS  = re.compile(r'\s+')
 _PRON = {'it','its','we','our','they','their','he','she','you','i','me','us','them','this','that',
@@ -50,17 +50,16 @@ def _norm(s):
     if not (2 <= len(s) <= 60): return None
     if len(s.split()) > 5: return None
     if s.lower() in _PRON: return None
-    if not re.search(r'[A-Za-z]', s): return None          # pure numbers / punctuation
+    # any *letter*, in any script — not `[A-Za-z]`. The intent is to drop pure numbers and
+    # punctuation, but spelling it in ASCII silently rejected every non-Latin writing system:
+    # `धर्मक्षेत्रे` normalised to None, so `build_graph` on a Devanagari corpus produced an empty
+    # graph however good its term extraction was.
+    if not any(c.isalpha() for c in s): return None
     return s.lower()
 
 @lru_cache(maxsize=1<<17)
 def _toks(s):
-    '''Tokens for the lexical guard. UAX#29 treats `_` as a word joiner, so `fts_search` stays one
-    token — splitting it gives {fts, search}, which merges it into `search` by containment.
-
-    Cached because the guard is called once per *candidate pair* and there are far more pairs than
-    entities: resolving 8,487 entities tokenised 252,813 times, all of it the same few thousand
-    strings going through apsw's UAX#29 iterator again.'''
+    'Tokens for the lexical guard. UAX#29 treats `_` as a word joiner, so `fts_search` stays one'
     try: from apsw.unicode import word_iter, casefold
     except ImportError: return frozenset(_TOK.findall(s.lower()))
     return frozenset(casefold(t) for t in word_iter(s or '') if any(c.isalnum() for c in t))
@@ -78,10 +77,7 @@ def _jac(a, b):
     return len(A & B) / len(A | B) if (A | B) else 0.0
 
 def _lex_ok(a, b, lex=0.34, cover=0.5):
-    '''Lexical guard on a proposed merge.
-    Blocks pairs whose numbers disagree ("python 3.11" vs "python 3.12"), and accepts token
-    containment only when the shorter side covers `cover` of the longer — bare substring matching
-    chains transitively through union-find and collapses the whole graph into one node.'''
+    'Lexical guard on a proposed merge.'
     if a == b: return True
     if set(_NUM.findall(a)) != set(_NUM.findall(b)): return False
     if _acr(a) == b.lower() or _acr(b) == a.lower(): return True
@@ -91,14 +87,13 @@ def _lex_ok(a, b, lex=0.34, cover=0.5):
     if inter == min(len(A), len(B)) and inter/max(len(A), len(B)) >= cover: return True
     return inter/len(A | B) >= lex
 
-# %% ../nbs/05_graph.ipynb #hashemb
+
+# %% ../nbs/05_graph.ipynb #eecb2932441a0d19
 def hash_embed(texts,            # iterable of strings
                ndim:int=256,     # output dimensions
                ngram=(3,5),      # char n-gram range
                dtype=np.float16):
-    '''Deterministic char-n-gram hashing embedder — no model, no download.
-    Sized for *entity-name* resolution (subword overlap is what matters there) and for offline/CI runs.
-    Use FastEncode for chunk embeddings, where you need real semantics.'''
+    'Deterministic char-n-gram hashing embedder — no model, no download.'
     lo, hi = ngram
     txts = list(L(texts))
     out = np.zeros((len(txts), ndim), dtype=np.float32)
@@ -110,7 +105,8 @@ def hash_embed(texts,            # iterable of strings
     out /= np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
     return out.astype(dtype)
 
-# %% ../nbs/05_graph.ipynb #code_ents
+
+# %% ../nbs/05_graph.ipynb #5952ad1336601711
 _PY_SKIP = {'self','cls','super','print','len','str','int','float','bool','list','dict','set','tuple',
             'range','enumerate','zip','map','filter','isinstance','getattr','setattr','hasattr','type',
             'format','join','append','get','items','keys','values','open','sorted','sum','min','max'}
@@ -141,16 +137,14 @@ def code_entities(chunk):
     keep = lambda s: s and s not in _PY_SKIP and not s.startswith('_') and len(s) > 2
     return _def_name(chunk), calls.filter(keep).unique(), imps.filter(keep).unique()
 
-# %% ../nbs/05_graph.ipynb #text_ents
+# %% ../nbs/05_graph.ipynb #d337238a913ea5d3
 _KEEP_ENTS = {'ORG','PRODUCT','PERSON','WORK_OF_ART','LAW','EVENT','GPE','NORP','FAC','SYMBOL'}
 
 def spacy_pipe(model='en_core_web_sm',  # spaCy model name
                terms=None,              # exact-match terms for an EntityRuler (e.g. code symbols)
                label='SYMBOL',          # label applied to ruler matches
                download=True):          # fetch the model on first use if it isn't installed
-    '''spaCy pipeline with an optional EntityRuler seeded from exact terms. None when spaCy is unavailable.
-    The model is lazy-loaded and fetched once on first use — spaCy models aren't shippable as
-    install-time deps (not on PyPI, and PyPI rejects URL deps), so we download on demand.'''
+    'spaCy pipeline with an optional EntityRuler seeded from exact terms. None when spaCy is unavailable.'
     try: import spacy
     except ImportError: return None
     try: nlp = spacy.load(model)
@@ -172,6 +166,26 @@ def _yake_terms(text, topk=12):
     try: return L(KeywordExtractor(n=3, top=topk).extract_keywords(text)).map(lambda kv: kv[0])
     except Exception: return L()
 
+_NOMINAL = ('NOUN', 'PROPN')
+
+def _nominal_spans(sent):
+    'Noun-phrase-like spans for a language whose spaCy class has no `noun_chunks` iterator.'
+    out, run = L(), []
+    def emit():
+        # a run of adjectives with no nominal in it is a predicate ("is severe"), not a phrase
+        if run and any(w.pos_ in _NOMINAL for w in run): out.append(sent.doc[run[0].i:run[-1].i+1])
+    for w in sent:
+        if w.pos_ in _NOMINAL or w.pos_ == 'ADJ': run.append(w)
+        else:
+            emit(); run = []
+    emit()
+    return out
+
+def _chunks_of(sent):
+    'Noun chunks when the language has an iterator, else the POS-run approximation.'
+    try: return list(sent.noun_chunks)
+    except (NotImplementedError, ValueError): return list(_nominal_spans(sent))
+
 def _wins_from_doc(doc, noun_chunks=True, keep=_KEEP_ENTS):
     'Sentence windows from a spaCy doc; shared by single-text and batched paths.'
     wins = []
@@ -179,12 +193,13 @@ def _wins_from_doc(doc, noun_chunks=True, keep=_KEEP_ENTS):
         out, seen = L(), set()
         def add(s, k):
             n = _norm(s)
-            if n and n not in seen: seen.add(n)
+            if not n or n in seen: return
+            seen.add(n)
             out.append((s, k))
         for e in sent.ents:
             if e.label_ in keep: add(e.text, e.label_.lower())
         if noun_chunks:
-            for nc in sent.noun_chunks:
+            for nc in _chunks_of(sent):
                 if all(w.is_stop or w.is_punct or w.pos_ == 'PRON' for w in nc): continue
                 add(nc.text, 'term')
         if out: wins.append(out)
@@ -194,12 +209,11 @@ def prose_windows(text,                 # chunk text
                   nlp=None,             # spaCy pipeline from spacy_pipe(); None -> yake fallback
                   noun_chunks=True,     # use doc.noun_chunks (the main recall driver on technical prose)
                   keep=_KEEP_ENTS,      # spaCy ent labels kept as a `kind` facet
-                  topk=12):             # yake fallback keyphrase count
-    '''Entity surfaces grouped into co-occurrence windows — one per sentence when spaCy is available.
-    Sentence windows are what make PMI meaningful: page-sized chunks turn every entity pair into a
-    clique and no amount of pruning recovers from that.'''
+                  topk=12,              # fallback keyphrase count
+                  terms_fn=None):       # (text, topk) -> terms; None -> yake
+    'Entity surfaces grouped into co-occurrence windows — one per sentence when spaCy is available.'
     if nlp: return _wins_from_doc(nlp(text), noun_chunks=noun_chunks, keep=keep)
-    terms = _yake_terms(text, topk)
+    terms = (terms_fn or _yake_terms)(text, topk)
     if not terms: return L()
     wins = []
     for s in _sentences(text):
@@ -217,7 +231,8 @@ def text_entities(text, nlp=None, **kw):
             if n and n not in seen: seen.add(n); out.append((s, k))
     return out
 
-# %% ../nbs/05_graph.ipynb #build
+
+# %% ../nbs/05_graph.ipynb #8e1af70983a03a3f
 _CODE_TYPES = {'FunctionDef','AsyncFunctionDef','ClassDef'}
 
 def _is_code(chunk):
@@ -339,6 +354,7 @@ def build_graph(db,                  # Database with a chunk store
                 store='store',       # chunk store name
                 prefix=None,         # graph table prefix
                 nlp=None,            # spaCy pipeline for prose (None -> yake fallback)
+                terms_fn=None,       # (text, topk) -> terms, replacing yake (see `sanskrit_terms`)
                 emb_fn=None,         # embedder for entity names (required for resolve_entities)
                 code=True,           # extract AST symbols from code chunks
                 prose=True,          # extract surfaces from prose chunks
@@ -408,7 +424,7 @@ def build_graph(db,                  # Database with a chunk store
             if nw and nw > 1:
                 wins_ = parallel(_prose_job, L(prose_q).itemgot(1), n_workers=nw, threadpool=False, progress=False)
                 return ((cid, w) for (cid, _), w in zip(prose_q, wins_))
-            return ((cid, prose_windows(txt)) for cid, txt in prose_q)
+            return ((cid, prose_windows(txt, terms_fn=terms_fn)) for cid, txt in prose_q)
         kw = dict(batch_size=spacy_batch_size) | (dict(n_process=nw) if nw and nw > 1 else {})
         docs = nlp.pipe(list(L(prose_q).itemgot(1)), **kw)
         return ((cid, _wins_from_doc(d)) for (cid, _), d in zip(prose_q, docs))
@@ -467,18 +483,24 @@ def build_graph(db,                  # Database with a chunk store
                 edges=len(edges), windows=n_wins)
 
 
-# %% ../nbs/05_graph.ipynb #resolve
+# %% ../nbs/05_graph.ipynb #f1e0bc8fd1ac5d91
 _EXACT_KINDS = ('symbol', 'module', 'topic')   # names that are already canonical — never merge these
 
 def _uf_find(par, x):
     while par[x] != x: par[x] = par[par[x]]; x = par[x]
     return x
 
-def _uf_union(par, rank, a, b):
+def _uf_union(par, rank, a, b, name=None, ok=None, members=None, max_check=32):
+    'Merge two groups. With `name`/`ok`, only if the merged group stays a **clique** under `ok`.'
     ra, rb = _uf_find(par, a), _uf_find(par, b)
     if ra == rb: return False
+    if name is not None and ok is not None:
+        A = (members.get(ra, [ra]) if members else [ra])[:max_check]
+        B = (members.get(rb, [rb]) if members else [rb])[:max_check]
+        if not all(ok(name[x], name[y]) for x in A for y in B): return False
     if rank[ra] < rank[rb]: ra, rb = rb, ra
     par[rb] = ra
+    if members is not None: members.setdefault(ra, [ra]).extend(members.pop(rb, [rb]))
     return True
 
 def _ann_pairs(tbl, rows, k=8, dtype=np.float16):
@@ -500,19 +522,7 @@ def _ann_pairs(tbl, rows, k=8, dtype=np.float16):
             if (o := key.get(int(kk))): yield r, o, float(dd)
 
 def _lexical_pairs(name, max_group=60):
-    '''Candidate merge pairs by shared-token blocking — catches containment variants
-    ("isolated polonium" / "polonium") that an ANN pass on short strings misses.
-
-    A block bigger than `max_group` is *windowed*, not skipped. Skipping it is the cheap reading of
-    a size cap and it fails silently in the direction that matters: blocks grow with the corpus, so
-    the pairs that stop being proposed are exactly the ones a larger corpus added. Measured against
-    an exhaustive `_lex_ok` ground truth, skipping found 97% of valid merges at 1,377 entities and
-    76% at 8,487 — a corpus ten times larger resolves visibly worse, with nothing to show why.
-
-    Windowing sorts the block by name and compares each member with the next `max_group`. Sorting
-    puts containment variants adjacent ("polonium" beside "polonium isotope"), which is the case the
-    lexical pass exists for, and the work stays O(block x max_group). Same measurement: 99.8% at
-    1,377 entities, 97.2% at 8,487, for 2.2x the pairs examined.'''
+    'Candidate merge pairs by shared-token blocking — catches containment variants'
     inv = {}
     for i, s in name.items():
         for t in _toks(s):
@@ -538,9 +548,7 @@ def resolve_entities(db,                # Database
                      max_group=60,      # skip token groups bigger than this in the lexical pass
                      skip_kinds=_EXACT_KINDS,  # kinds whose names are already canonical
                      dtype=np.float16):
-    '''Merge near-duplicate entities: ANN + shared-token candidates, both gated by the lexical guard.
-    Kinds in `skip_kinds` are left alone — AST symbols are exact identifiers, and resolving them
-    collapses `search`/`fts_search`/`vec_search` into one node.'''
+    'Merge near-duplicate entities: ANN + shared-token candidates, both gated by the lexical guard.'
     g = db.get_graph(store, prefix)
     allr = L(g.entities(select=f'{_rid()}, id, content, freq, embedding, kind'))
     rows = allr.filter(lambda r: r['kind'] not in set(skip_kinds or ()))
@@ -551,15 +559,16 @@ def resolve_entities(db,                # Database
     rank = {r['id']: (r['freq'] or 0) for r in rows}
     name = {r['id']: r['content'] for r in rows}
     ann_m = lex_m = 0
+    guard, members = (lambda x, y: _lex_ok(x, y, lex)), {}
     for r, h, dist in _ann_pairs(g.entities, rows, k, dtype):
         oid = h.get('id')
         if not oid or oid == r['id'] or oid not in par: continue
         if dist > thresh: continue
         if not _lex_ok(r['content'], h['content'], lex): continue
-        if _uf_union(par, rank, r['id'], oid): ann_m += 1
+        if _uf_union(par, rank, r['id'], oid, name, guard, members): ann_m += 1
     if lexical:
         for a, b in _lexical_pairs(name, max_group):
-            if _lex_ok(name[a], name[b], lex) and _uf_union(par, rank, a, b): lex_m += 1
+            if _lex_ok(name[a], name[b], lex) and _uf_union(par, rank, a, b, name, guard, members): lex_m += 1
     upd = [(_uf_find(par, i), i) for i in par]
     db.conn.cursor().executemany(f'update {g.entities.name} set canon=? where id=?', upd)
     canon = {i: c for c, i in upd}
@@ -570,8 +579,7 @@ def resolve_entities(db,                # Database
                 canonical=len({c for c, _ in upd}) + skipped)
 
 def _collapse_edges(db, g, canon):
-    '''Rewrite edge endpoints onto canonical ids. Traversal reads src/dst straight from the table,
-    so leaving raw ids here would silently strand every merged node.'''
+    'Rewrite edge endpoints onto canonical ids. Traversal reads src/dst straight from the table,'
     rows = list(g.edges())
     if not rows: return 0
     agg = {}
@@ -586,7 +594,8 @@ def _collapse_edges(db, g, canon):
     g.edges.insert_all(list(agg.values()), upsert=True, pk=('src','dst','rel'))
     return len(agg)
 
-# %% ../nbs/05_graph.ipynb #cooc
+
+# %% ../nbs/05_graph.ipynb #dd02940510f58745
 def cooccur_edges(db,                 # Database
                   store='store',      # chunk store
                   prefix=None,        # graph table prefix
@@ -596,9 +605,7 @@ def cooccur_edges(db,                 # Database
                   max_degree=48,      # keep only the strongest edges per node
                   rel='cooc',
                   use_canon=True):    # collapse to canonical ids from resolve_entities
-    '''Rebuild co-occurrence edges from the stored mentions, using the chunk as the window.
-    build_graph already does this over sentence windows; use this to recompute after
-    resolve_entities, or for corpora indexed without a spaCy pass.'''
+    'Rebuild co-occurrence edges from the stored mentions, using the chunk as the window.'
     g = db.get_graph(store, prefix)
     canon = {}
     if use_canon:
@@ -611,7 +618,8 @@ def cooccur_edges(db,                 # Database
     if out: g.edges.insert_all(out, upsert=True, pk=('src','dst','rel'))
     return len(out)
 
-# %% ../nbs/05_graph.ipynb #topics
+
+# %% ../nbs/05_graph.ipynb #3bd6bc9f72663973
 # connector words — cluster names built from these describe the corpus, not the cluster
 _STOP = set('''the a an and or of to in is are was were be been being for on at by with from this that these those
 it its as not but if then than so such can will would could should may might do does did have has had he she they
@@ -625,11 +633,7 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
                   top_n=4,      # terms per label
                   stop=None,    # stopword set (defaults to _STOP)
                   sep=', '):
-    '''Name each cluster by terms common inside it and rare across the other clusters.
-
-    Plain term frequency names every cluster after the same few words the corpus is made of;
-    weighting by IDF across the *clusters* is what makes the names differ from each other,
-    which is the only job they have. (Approach taken from lego/atlas/cluster.py.)'''
+    'Name each cluster by terms common inside it and rare across the other clusters.'
     st = _STOP if stop is None else stop
     tf = [{} for _ in range(k)]
     for t, j in zip(texts, lab):
@@ -648,8 +652,7 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     return out
 
 def _usearch_clusters(idx, min_count, max_count):
-    '''(centroid, members) straight off the HNSW graph. usearch walks the index levels, so it needs
-    a tall enough graph and raises "Index too small to cluster!" on small corpora — caller falls back.'''
+    '(centroid, members) straight off the HNSW graph. usearch walks the index levels, so it needs'
     kw = {k: v for k, v in dict(min_count=min_count, max_count=max_count).items() if v}
     cl = idx.cluster(**kw)
     keys, _ = cl.centroids_popularity
@@ -660,9 +663,7 @@ def _usearch_clusters(idx, min_count, max_count):
     return out
 
 def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16):
-    '''(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.
-    Seeds at the densest unassigned node and claims its unassigned neighbours, so clusters stay
-    bounded — plain label propagation collapses a dense kNN graph into one giant component.'''
+    '(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.'
     keys = list(keys)
     if len(keys) < 4: return L()
     vecs = np.stack([np.asarray(idx[kk], dtype=dtype).reshape(-1) for kk in keys])
@@ -693,11 +694,7 @@ def _cluster_groups(idx,               # usearch Index
                     max_count=None,    # usearch: largest cluster to emit
                     k=8,               # neighbours per node in the kNN fallback
                     dtype=np.float16):
-    '''`([(centroid, members)], method)` for an index.
-
-    usearch raises rather than degrading when the HNSW graph has too few levels to cut, so the
-    greedy kNN pass is not a nicety: without it clustering is simply unavailable on a fresh or
-    small store, which is exactly when someone is most likely to try it.'''
+    '`([(centroid, members)], method)` for an index.'
     try: return _usearch_clusters(idx, min_count, max_count), 'usearch'
     except Exception:
         ks = np.atleast_1d(idx.keys).tolist() if keys is None else list(keys)
@@ -743,7 +740,8 @@ def topic_nodes(db,                # Database
     if mens: g.mentions.insert_all(mens, upsert=True, pk=('chunk_id','entity_id'))
     return dict(topics=len(ents), method=method)
 
-# %% ../nbs/05_graph.ipynb #865c2e21
+
+# %% ../nbs/05_graph.ipynb #15eaacbc30189934
 @patch
 def _cluster_cached(self:Table, min_count, max_count, k, dtype):
     'Cluster once per (store, params, index size). `peers` would otherwise recluster on every call.'
@@ -778,10 +776,7 @@ def clusters(self:Table,              # ANN-registered store
              columns:list=None,       # store columns to return per member row
              max_label_chars:int=4000,# per-member text budget for labelling
              dtype=np.float16):
-    '''The corpus grouped by embedding shape, each group named by c-TF-IDF.
-
-    Returns `AttrDict(clusters, method, note)`; each cluster is
-    `AttrDict(centroid, size, label, member_keys, members)`. `method` is `usearch` or the `knn` fallback.'''
+    'The corpus grouped by embedding shape, each group named by c-TF-IDF.'
     m = self.db._ann_meta(self.name)
     if not m: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} is not an ANN store')
     if not m['ndim']: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} has no vectors yet')
@@ -811,10 +806,7 @@ def peers(self:Table,            # ANN-registered store
           max_count:int=None,    # usearch: largest cluster to emit
           k:int=8,               # neighbours per node in the kNN fallback
           dtype=np.float16):
-    '''The group `key` belongs to — its family, not a ranked list of what is nearest to it.
-
-    Degrades to `ann_neighbors` (and says so in `note`) whenever the index cannot be clustered or
-    the row landed in a group of one. Returns `AttrDict(hits, method, note)`.'''
+    'The group `key` belongs to — its family, not a ranked list of what is nearest to it.'
     nbr = lambda note: AttrDict(hits=L(self.ann_neighbors(key, limit, columns, dtype=dtype)), method='ann', note=note)
     m = self.db._ann_meta(self.name)
     if not m: return AttrDict(hits=L(), method=None, note=f'{self.name!r} is not an ANN store')
@@ -832,7 +824,8 @@ def peers(self:Table,            # ANN-registered store
     return AttrDict(hits=L(rows[r] for r in sorted(rows, key=lambda r: order.get(r, 1<<30)) if r in rows),
                     method=method, note=f'cluster of {len(grp)} ({method})')
 
-# %% ../nbs/05_graph.ipynb #ppr
+
+# %% ../nbs/05_graph.ipynb #a380070d2dd9d9da
 def _adjacency(g, nodes, hops=2, max_nodes=4000):
     'BFS the edge table out to `hops` from `nodes`; returns an undirected dict-of-dict adjacency.'
     adj, seen, frontier = {}, set(nodes), set(nodes)
@@ -871,7 +864,7 @@ def _ppr(adj, seeds, damping=0.85, iters=12):
         r = nxt
     return r
 
-# %% ../nbs/05_graph.ipynb #rrf_all
+# %% ../nbs/05_graph.ipynb #66f98425ed3e448
 def rrf_all(lists,              # list of ranked result lists
             k=60,               # RRF k
             limit=50,           # max results
@@ -887,7 +880,7 @@ def rrf_all(lists,              # list of ranked result lists
             else: scores[rid] = merge(row, {'_rrf_score': w/(k + rank)})
     return sorted(scores.values(), key=lambda x: x['_rrf_score'], reverse=True)[:limit]
 
-# %% ../nbs/05_graph.ipynb #graph_search
+# %% ../nbs/05_graph.ipynb #fba9515fca9c5b56
 @patch
 def graph_search(self:Database,
                  q:str,                 # query string
@@ -904,13 +897,7 @@ def graph_search(self:Database,
                  rrf_k:int=60,
                  use_canon=True,
                  **kw):                 # forwarded to Database.search
-    '''Hybrid search plus a graph leg: PPR over the entity graph seeded by the top hybrid hits.
-
-    The graph leg is weighted low on purpose. It pays when the answer shares no vocabulary with
-    the query and is reachable only along an entity path — common in prose, rare in code, where
-    call edges link different levels of abstraction rather than substitutable answers. On code
-    corpora prefer `graph_w=0` and use the graph for context assembly (callers/callees of a hit)
-    rather than for ranking.'''
+    'Hybrid search plus a graph leg: PPR over the entity graph seeded by the top hybrid hits.'
     g = self.get_graph(table_name, prefix)
     cols = list(columns or [])
     if 'rowid' not in cols: cols = ['rowid'] + cols
@@ -949,7 +936,8 @@ def graph_search(self:Database,
     graph_leg = [rows[c] for c, _ in ranked if c in rows]
     return rrf_all([fts, vec, graph_leg], rrf_k, limit, weights=[1.0, 1.0, graph_w])
 
-# %% ../nbs/05_graph.ipynb #stats
+
+# %% ../nbs/05_graph.ipynb #96b2124dafe08d01
 def graph_stats(db, store='store', prefix=None):
     'Row counts and top-degree nodes for a built graph.'
     g = db.get_graph(store, prefix)

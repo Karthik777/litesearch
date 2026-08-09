@@ -16,7 +16,7 @@ import numpy as np, warnings
 from .data import pre
 BUSY_TIMEOUT_MS = 30_000   # lock wait during a busy_window; apsw's stock default is 100ms
 
-# %% ../nbs/01_core.ipynb #72086eb6ff361455
+# %% ../nbs/01_core.ipynb #65d70b81c9fc026c
 _dtype_suffixes = {np.int8: 'i8', np.float16: 'f16', np.float64: 'f64', np.float32: 'f32'}
 def _dtype_suffix(dtype=np.float16): return _dtype_suffixes.get(dtype, 'f32')
 _usearch_metric = {'cosine':'cos', 'inner':'ip', 'sqeuclidean':'l2sq', 'divergence':'divergence'}
@@ -105,7 +105,7 @@ def process_content(store,          # target Table (hash-id store)
     return store
 
 
-# %% ../nbs/01_core.ipynb #eb6da9000ce71a23
+# %% ../nbs/01_core.ipynb #752be578bb3e57df
 @patch
 def get_store(self:Database,        # database connection
             name:str='store',       # table name
@@ -131,7 +131,7 @@ def get_store(self:Database,        # database connection
     if ann: self._register_ann(name, ndim, metric, dtype, connectivity, expansion_add, expansion_search, index_path)
     return _content
 
-# %% ../nbs/01_core.ipynb #803a2e5497883d62
+# %% ../nbs/01_core.ipynb #1a18ae1db1ae4552
 @patch
 def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.float16,
                   connectivity=None, expansion_add=None, expansion_search=None, index_path=None):
@@ -178,7 +178,7 @@ def _save_index(self:Database, name):
     m = self._ann_meta(name)
     if m and m['path'] and name in self.ann_indices: self.ann_indices[name].save(m['path'])
 
-# %% ../nbs/01_core.ipynb #aea0410ad7106548
+# %% ../nbs/01_core.ipynb #a2795bc64605251
 @patch
 def fts_search(self:Table,
                q:str, # query string
@@ -232,7 +232,7 @@ def vec_search(self: Table,
     return _dtype_check(self, dtype, rows)
 
 
-# %% ../nbs/01_core.ipynb #f77f5d4162ca5935
+# %% ../nbs/01_core.ipynb #97d0c051acb6d536
 def _rid(): return 'rowid as rowid'
 @patch
 def ann_search(self:Table,          # store table (must be ANN-registered)
@@ -331,7 +331,7 @@ def rebuild_index(self:Table, dtype=None):
     self.db._save_index(self.name)
     return idx.size
 
-# %% ../nbs/01_core.ipynb #bulkload
+# %% ../nbs/01_core.ipynb #e93f1fcef2e928f3
 @patch
 @contextmanager
 def bulk_load(self:Table):
@@ -352,7 +352,7 @@ def bulk_load(self:Table):
         if ft: self.db.execute(f"insert into [{ft}]([{ft}]) values('rebuild')")
 
 
-# %% ../nbs/01_core.ipynb #4258d0ab30d7610b
+# %% ../nbs/01_core.ipynb #d177df9fd4622ca1
 @patch
 def ann_vec(self:Table,          # ANN-registered store
             key:int,             # usearch key (the row's rowid)
@@ -380,7 +380,7 @@ def ann_neighbors(self:Table,             # ANN-registered store
     return rows[:limit] if include_self else [r for r in rows if r['rowid'] != key][:limit]
 
 
-# %% ../nbs/01_core.ipynb #ecffd1079678f470
+# %% ../nbs/01_core.ipynb #c1c7f47e3b5c18a5
 def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
     "Reciprocal Rank Fusion: merges FTS and vector results. Items in both lists score highest."
     scores = {}
@@ -393,7 +393,7 @@ def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
         else: scores[rid] = merge(row, {'_rrf_score': 1.0/(k + rank)})
     return sorted(scores.values(), key=lambda x: x['_rrf_score'], reverse=True)[:limit]
 
-# %% ../nbs/01_core.ipynb #92985104635cbc5b
+# %% ../nbs/01_core.ipynb #4037ed73523beff7
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
              sem_search:bool=True,          # enable usearch extensions
@@ -420,7 +420,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     return _db
 
 
-# %% ../nbs/01_core.ipynb #b0ca47afb872e0d6
+# %% ../nbs/01_core.ipynb #571724f3bc9bcf44
 _RERANKERS = {}
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
@@ -438,7 +438,7 @@ def rerank_hits(q, hits, model=None, limit=None, text_col='content'):
     out = [hits[r['id']] for r in ranked]
     return out[:limit] if limit else out
 
-# %% ../nbs/01_core.ipynb #533c9264e227dc25
+# %% ../nbs/01_core.ipynb #f2bae9d21821d306
 @patch
 def search(self: Database,  # database connection
            q:str,  # query string
