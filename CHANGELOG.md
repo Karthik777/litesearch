@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.18
+removed apcy and added a hand rolled noun list at 89% efficiency
+
 ## 0.1.17
 
 The graph half of the ingest work. `build_graph` was the remaining thing that could not be handed a
