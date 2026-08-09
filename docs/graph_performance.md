@@ -23,6 +23,7 @@ python -m evals.ingest_bench lexrecall
 python -m evals.ingest_bench legs                    # threading search's two legs (it loses)
 python -m evals.ingest_bench kw                      # keyphrase extractors, speed and agreement
                                                      #   (pip install yake-rust rake-nltk rakun2)
+python -m evals.ingest_bench embatch                 # encoder gain from batching across documents
 python -m evals.ingest_bench verify
 ```
 
@@ -40,11 +41,14 @@ python -m evals.ingest_bench verify
 | `add_doc` x150 | 2.82s | 2.25s | 1.25x |
 | `cooccur_edges` (15,233 edges) | 782ms | 214ms | **3.65x** |
 | `add_dir` over 8 PDFs | 6.18s | 3.54s | **1.75x** |
+| `add_dir` over 150 md, static encoder | 3.08s | 2.46s | 1.25x |
 | `build_graph` serial | 9.5s | 9.2s | — (yake-bound) |
-| `search`, `fts_search`, `add_dir` (markdown) | | | unchanged |
+| `search`, `fts_search` | | | unchanged |
 | `clusters`, `peers`, `topic_nodes` | | | unchanged |
 
-Results are unchanged throughout, and that is checked rather than asserted. `build_graph` produces
+Results are unchanged throughout — with one deliberate exception, the duplicate-content heading
+bug below, which changes 4.35% of embeddings on re-ingest. Everything else is checked rather than
+asserted. `build_graph` produces
 identical entity, mention and edge hashes across all seven combinations of `n_workers`, `batch` and
 generator-vs-list input, and identical hashes to the pre-change code. `graph_search` returns the
 same rows in the same order with the same RRF scores to twelve decimal places. `_lex_ok` was
@@ -198,7 +202,7 @@ the same shapes rather than re-profiled from scratch.
 | `add_doc` x150 | 2.82s | **2.25s** | 1.25x |
 | `toc()` over 300 documents | 26.6ms | **16.9ms** | 1.57x |
 | `fold_token` over 70,413 tokens | 114.7ms | **20.8ms** | 5.5x |
-| `search`, `fts_search`, `add_dir` (markdown) | | | unchanged |
+| `search`, `fts_search` | | | unchanged |
 
 - **`fold_token` was uncached.** It is called once per token on every FTS write *and* every query,
   and it is three unicode normalisations plus a per-character category scan deep. The eval corpus
@@ -274,6 +278,46 @@ unnoticed.
 Ingest output is byte-identical: doc, node and chunk rows hash the same serial, auto and
 `n_workers=4`, over both PDFs and markdown.
 
+## Batching the encoder across documents
+
+`add_dir` called the encoder once per document — about 20 chunks — and `embed_batch` (default
+2,000) now widens that across documents, flushing on a chunk count so a large directory does not
+hold its own text twice. How much that is worth depends entirely on the encoder, which is why it is
+a parameter and not a constant (`python -m evals.ingest_bench embatch`, 2,025 chunks):
+
+| chunks per call | static encoder |
+|---|---|
+| 20 (one document) | 336ms |
+| 64 | 290ms |
+| 256 | 272ms |
+| everything, one call | 272ms |
+
+**A static model gains ~19% and flattens by 64 chunks a call.** It is a lookup table with a mean
+pool on top: there is no kernel launch and no graph execution to amortise, and model2vec already
+batches internally. An ONNX model has real per-call setup and should gain more — run the bench with
+the encoder you actually use before choosing a number.
+
+End to end the encoder is not where the time is either: with the static encoder, embedding is 0.46s
+of a 4.31s `add_dir` over 150 markdown files. Most of the 3.08s → 2.46s came from the *writes*
+being batched alongside it, and from `process_content` now going through `upsert_all` — it was
+still emitting apswutils' two statements per row, 5,912 of them for 2,956 chunks. The row id is now
+hashed in `process_content` rather than left to `hash_id=`, which is what lets the single-statement
+form be used; the hash is `hash_record` over the same columns, so ids are unchanged and a re-ingest
+still lands on the same row.
+
+### A bug this turned up: duplicate content took the wrong heading
+
+Chunks are embedded as `heading ⏎⏎ content` and stored as bare content. The heading was attached
+through a `{content: heading}` dict rebuilt per document, which collapses on duplicate content —
+so two chunks with the same text under different headings were **both** embedded with whichever
+heading came last. Pairing by position instead is what makes a cross-document batch safe, and it is
+also just correct.
+
+It is not a rare case: re-ingesting the eight-PDF corpus, 148 of 3,402 rows (**4.35%**) come back
+with a different embedding. Same ids, same content, same nodes — every changed row is one whose
+content appears more than once under more than one heading. If you have a store built before this,
+those rows are embedded against the wrong heading and re-ingesting will fix them.
+
 ## Is there a yake that does not hold the GIL?
 
 Yes — `yake-rust`, and it is the same algorithm. `python -m evals.ingest_bench kw`:
@@ -308,9 +352,10 @@ Nothing is swapped: `build_graph(terms_fn=...)` is the seam for it, and the defa
 - **Extraction is still the ceiling on `build_graph`.** `yake-rust` is 6.6x per call and releases
   the GIL, so the process pool could become a thread pool; it needs a retrieval eval first, because
   it agrees with the shipped yake on 66.5% of terms.
-- **`add_dir` still embeds one document at a time.** With `hash_embed` that is 2.05s of a 150-file
-  walk and with a real encoder it is most of the walk; a real model wants one batch over the whole
-  directory, not 150 calls. That is a `process_content` change, not an `add_dir` one.
+- **The ANN rebuild and the FTS rebuild are now the two biggest slices of `add_dir`** — 1.47s and
+  1.03s of 4.31s with a static encoder. Both are once-per-walk and both are doing real work
+  (`usearch.compiled.add_many` builds the HNSW graph); neither is obviously wrong, and neither has
+  been attacked.
 - **`_adjacency` set iteration leaves PPR summation order machine-dependent** at the 1e-15 level.
   Harmless for ranking today; it would need pinning if PPR masses were ever compared across runs.
 - **The ANN pass's contribution is corpus-dependent and only measured on one corpus.** Re-run

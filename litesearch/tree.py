@@ -2,7 +2,8 @@
 
 # %% auto #0
 __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'PARSE_HEAVY', 'MIN_PARALLEL_DOCS', 'TreeNode', 'summarize_extractive',
-           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'adaptive_weights', 'merge_spans']
+           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'store_chunks', 'adaptive_weights',
+           'merge_spans']
 
 # %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
 from fastcore.all import Path, patch, first, L, AttrDict, ifnone, defaults, parallel
@@ -317,7 +318,8 @@ def add_doc(self:Database,
             force:bool=False,       # re-ingest a document already present
             index:bool=True,        # mirror this document's chunks into the ANN index
             mode:str=None,          # force a build_tree structural mode instead of detecting one
-            meta_fn=None            # (chunk text) -> dict of facets stored as the chunk's `metadata`
+            meta_fn=None,           # (chunk text) -> dict of facets stored as the chunk's `metadata`
+            defer:list=None         # collect chunks here instead of embedding and storing them
 ) -> dict:
     '''Ingest one document: build its tree, chunk it per node, embed and store.
 
@@ -354,15 +356,34 @@ def add_doc(self:Database,
                                  title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
                                  summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
                             for nd in tree], replace=True)
-    if chunks:
-        fn = emb_fn if not (emb_fn and with_heading) else (
-            lambda ts, **kw: emb_fn([f"{h}\n\n{t}" if (h := heads.get(t)) else t for t in ts], **kw))
-        heads = {c['content']: c['heading'] for c in chunks}
-        process_content(g.store, list(chunks), embed=bool(emb_fn), emb_fn=fn, hash_id_columns=['node_id','content'])
+    if chunks and defer is not None: defer.extend(chunks)
+    elif chunks:
+        store_chunks(g.store, chunks, emb_fn, with_heading)
         if index and (m := self._ann_meta(store)):
             ids = L(g.store(select='id', where=f'doc_id={did!r}')).itemgot('id')
             if ids: g.store._sync_index(list(ids), [], _np_dtype.get(m['dtype'], np.float16))
     return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
+
+def store_chunks(store,                 # chunk store table
+                 chunks,                # chunk dicts from `_node_chunks`, from one document or many
+                 emb_fn=None,           # embedder: list[str] -> vectors
+                 with_heading=True):    # embed each chunk together with its heading path
+    '''Embed a batch of chunks and upsert them. The batch may span documents, which is the point.
+
+    Chunks are embedded as `heading ⏎⏎ content` but **stored** as bare content, so retrieval sees
+    the context and the caller gets clean text back. The heading is paired with its chunk by
+    position rather than through a `{content: heading}` dict: that dict was rebuilt per document
+    and collapsed on duplicate content, so two chunks with the same text under different headings
+    were both embedded with whichever heading came last. Positional pairing is what makes the batch
+    safe to widen past one document, and it is also just correct.'''
+    rows = [c for c in chunks if (c.get('content') or '').strip()]
+    if not rows: return 0
+    if emb_fn:
+        txt = [f"{h}\n\n{c['content']}" if (with_heading and (h := c.get('heading'))) else c['content']
+               for c in rows]
+        for c, v in zip(rows, emb_fn(txt)): c['embedding'] = np.asarray(v).tobytes()
+    process_content(store, rows, embed=False, hash_id_columns=['node_id','content'])
+    return len(rows)
 
 @patch
 def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
@@ -465,6 +486,7 @@ def add_dir(self:Database,
             store:str='store',
             prefix:str=None,
             n_workers:int=None,     # parse workers; 0 is serial, None picks by parse-heavy file count
+            embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             **kw                    # forwarded to add_doc
 ) -> list:
     '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.
@@ -488,21 +510,38 @@ def add_dir(self:Database,
     exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
     files = [p for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
     g = self.get_tree(store, prefix, ann=self._tree_ann(store))
-    prof, nw = kw.pop('profile', None), _n_parse_workers(files, n_workers)
+    # both are `add_file` parameters, not `add_doc` ones: popped here so the pooled branch, which
+    # goes straight to `_add_parsed`, does not forward them into `add_doc` and trip over them
+    prof, outp = kw.pop('profile', None), kw.pop('out_path', None)
+    nw = _n_parse_workers(files, n_workers)
+    # chunks from every document so far, embedded and written together. Per document the encoder
+    # was called once per ~20 chunks and the store was upserted once per document; both would
+    # rather see the whole directory. Flushed on a chunk count rather than at the end so a large
+    # directory does not hold its own text twice — once as chunks, once as embeddings.
+    pend, emb_fn, wh = [], kw.get('emb_fn'), kw.get('with_heading', True)
+    def flush(force=False):
+        if pend and (force or len(pend) >= embed_batch):
+            store_chunks(g.store, pend, emb_fn, wh); pend.clear()
+    if embed_batch: kw['defer'] = pend
     out = []
     with g.store.bulk_load():
         if nw and nw > 1 and files:
-            jobs = [(str(p), prof, str(kw.get('out_path') or self.assets(p.stem))) for p in files]
+            jobs = [(str(p), prof, str(outp or self.assets(p.stem))) for p in files]
             for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False,
                                                  progress=False)):
                 # `None` means that worker could not resolve the profile the parent asked for;
                 # re-read it here rather than let a different parser through unnoticed
                 out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw)
                            if parsed is not None else
-                           self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, **kw))
+                           self.add_file(p, store=store, prefix=prefix, index=False, profile=prof,
+                                         out_path=outp, **kw))
+                flush()
         else:
-            out = [self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, **kw)
-                   for p in files]
+            for p in files:
+                out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof,
+                                         out_path=outp, **kw))
+                flush()
+        flush(force=True)
     if self._ann_meta(store): g.store.rebuild_index()
     return out
 

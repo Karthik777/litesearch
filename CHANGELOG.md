@@ -19,6 +19,10 @@ the pre-change code, `graph_search` returns the same rows in the same order with
 scores to twelve decimal places, and `_lex_ok` was compared against its previous form over 979,300
 real entity pairs and 3,844 adversarial ones with zero disagreements.
 
+**One exception, and it is a bug fix rather than a speedup:** chunks whose text appears under more
+than one heading were embedded against the wrong one. Re-ingesting changes 4.35% of embeddings on
+the eval PDF corpus. See the first entry under Fixed.
+
 ### Fixed
 
 - **`resolve_entities` is reproducible.** Two resolves of the *same database* in two processes came
@@ -30,6 +34,14 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
   accepts a merge that keeps the group a clique — an order-dependent test. Tokens are now walked in
   sorted order. Four resolves under random hash seeds return the same partition and edge table bit
   for bit; blocking recall is unchanged at 99.5% / 98.3% / 97.2%.
+- **Chunks with duplicate content were embedded against the wrong heading.** Chunks are embedded as
+  `heading ⏎⏎ content` and stored as bare content, but the heading was attached through a
+  `{content: heading}` dict rebuilt per document — which collapses on duplicate content, so two
+  chunks with the same text under different headings were both embedded with whichever heading came
+  last. Headings are paired with their chunk by position now. Re-ingesting the eight-PDF eval corpus
+  changes 148 of 3,402 embeddings (**4.35%**) — same ids, same content, same nodes, every changed
+  row one whose text appears under more than one heading. A store built before this has those rows
+  embedded against the wrong heading; re-ingesting fixes them.
 - **`_collapse_edges` rewrote the edge table outside a transaction**, so it paid an fsync per insert
   batch and left a window in which a concurrent reader saw no edges at all. Both halves are one
   write now.
@@ -81,6 +93,18 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
   `ON CONFLICT DO UPDATE` does, which SQLite has had since 3.24, so `core.upsert_all` does it in
   one. `cooccur_edges` over 15,233 edges: 782ms -> 214ms (**3.65x**); `build_graph` over 2,000
   chunks 7.02s -> 6.00s.
+- **`add_dir` embeds and writes across documents, not per document** (`embed_batch`, default 2,000
+  chunks, flushed on a count so a large directory does not hold its own text twice). 150 markdown
+  files with a static encoder: 3.08s → 2.46s. How much the encoder itself gains depends on the
+  encoder and is now measurable (`ingest_bench embatch`): a static model gains ~19% and flattens by
+  64 chunks a call — it is a lookup table with nothing to amortise — while an ONNX model has real
+  per-call setup. Most of the gain here is the *writes* being batched alongside it.
+- **`process_content` upserts through `upsert_all`.** It was still emitting apswutils' two
+  statements per row, 5,912 of them for 2,956 chunks. The row id is hashed in `process_content` now
+  rather than left to `hash_id=`, which is what allows the single-statement form; it is
+  `hash_record` over the same columns, so ids are unchanged and a re-ingest lands on the same row.
+  `upsert_all` routes values through apswutils' own `jsonify_if_needed`, so a dict `metadata` is
+  stored exactly as before.
 - **`add_dir` parses on a process pool and writes in the parent.** Over eight PDFs the parse is
   3.55s of a 5.31s walk, so splitting it is 6.18s -> 3.54s (**1.75x**). Over 150 markdown files the
   same "parse" is `read_text` and takes 2.7ms in total, so a pool is pure loss — forcing one costs
@@ -94,6 +118,9 @@ real entity pairs and 3,844 adversarial ones with zero disagreements.
 
 ### New
 
+- **`evals/ingest_bench.py embatch`** — what the encoder gains from being handed the whole
+  directory instead of one document, swept over batch size, because the answer is a property of the
+  encoder rather than of litesearch.
 - **`evals/ingest_bench.py kw`** — keyphrase extractors on speed *and* on agreement with the
   shipped yake, since extraction is ~99% of `prose_windows` and the reason a build needs a pool at
   all. `yake-rust` is the same algorithm at **6.6x** per call (7.5ms -> 1.1ms) and it **releases the

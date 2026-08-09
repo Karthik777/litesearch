@@ -98,10 +98,17 @@ def process_content(store,          # target Table (hash-id store)
         assert emb_fn, 'emb_fn is required when embed=True'
         content = embed_chunk(content, emb_fn, **kw)
     if not content: return
-    _ins = lambda rows: store.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=list(hash_id_columns))
+    # The row id is the content hash, computed here rather than left to apswutils, because doing it
+    # here is what lets the write go through `upsert_all` — one prepared statement per batch instead
+    # of the `INSERT OR IGNORE` + `UPDATE` pair apswutils emits for every single row. Same hash
+    # (`hash_record` over the same columns) and the same id, so a re-ingest still lands on the same
+    # row; an id already on the record is left alone, exactly as `hash_id=` does.
+    hc = list(hash_id_columns)
+    for r in content:
+        if not r.get('id'): r['id'] = hash_record(r, hc)
     with (busy_window(BUSY_TIMEOUT_MS, store.db) if parallel else nullcontext()):
         for i in range(0, len(content), chunk):
-            with write_txn(store.db): _ins(content[i:i+chunk])
+            upsert_all(store, content[i:i+chunk], 'id')
     return store
 
 
@@ -118,9 +125,11 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
     The net effect of that pair is exactly what `ON CONFLICT DO UPDATE` does in one statement, and
     SQLite has had it since 3.24, so this is the same write with the round trips taken out.
 
-    Scalar columns only: apswutils' `jsonify_if_needed` is not reproduced here, so a dict or list
-    value must be serialised by the caller. `write_txn` is a no-op inside an open transaction, so
-    callers that already hold one keep their single commit.'''
+    Values go through apswutils' own `jsonify_if_needed`, imported rather than reimplemented, so a
+    dict `metadata` or a `datetime` is stored exactly as `insert_all` would have stored it.
+    `write_txn` is a no-op inside an open transaction, so callers already holding one keep their
+    single commit.'''
+    from apswutils.db import jsonify_if_needed as _j
     rows = list(rows)
     if not rows: return 0
     pks = (pk,) if isinstance(pk, str) else tuple(pk)
@@ -134,7 +143,8 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
            f'on conflict ({", ".join(f"[{c}]" for c in pks)}) do {do}')
     with write_txn(tbl.db):
         for i in range(0, len(rows), chunk):
-            tbl.db.conn.cursor().executemany(sql, [[r.get(c) for c in cols] for r in rows[i:i+chunk]])
+            tbl.db.conn.cursor().executemany(
+                sql, [[_j(r.get(c)) for c in cols] for r in rows[i:i+chunk]])
     return len(rows)
 
 @patch

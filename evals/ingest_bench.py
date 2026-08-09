@@ -621,6 +621,38 @@ def bench_extractors(n=400, topk=12, workdir=None):
     return out
 
 
+def bench_embed_batch(n=200, sizes=(20, 64, 256, 2000, 0), workdir=None):
+    '''How much the encoder gains from being handed the whole directory instead of one document.
+
+    `add_dir` used to call the encoder once per document — about 20 chunks — and `embed_batch` now
+    widens that across documents. How much that is worth depends entirely on the encoder, which is
+    why it is a parameter and not a constant: a static model is a lookup table with nothing to
+    amortise and flattens by ~64 chunks a call, while an ONNX model has real per-call setup. Run
+    this with the encoder you actually use before choosing a number. `0` means one call.'''
+    from litesearch.utils import static_retrieval_embedder, doc_encoder
+    enc = doc_encoder(static_retrieval_embedder())
+    texts = []
+    for pages in corpus_docs(n, pages_per_doc=3):
+        for _, t in pages: texts += [t[i:i+800] for i in range(0, len(t), 800)]
+    texts = [x for x in texts if x.strip()]
+    enc(texts[:8])
+    print(f'\n== static encoder, {len(texts):,} chunks, avg {sum(map(len, texts))//len(texts)} chars ==')
+    out = []
+    for bs in sizes:
+        b = [texts] if not bs else [texts[i:i+bs] for i in range(0, len(texts), bs)]
+        b = [x for x in b if x]
+        best = min((_t.wall for _t in (_time_calls(enc, b) for _ in range(3))), default=0.0)
+        lbl = 'one call, everything' if not bs else f'{bs} per call'
+        print(f'  {lbl:<26} {best*1000:8.1f} ms  ({len(b)} calls)')
+        out.append(dict(batch=bs, wall=best, calls=len(b)))
+    return out
+
+def _time_calls(fn, batches):
+    with Timer() as t:
+        for b in batches: fn(b)
+    return t
+
+
 def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
     '''Peak RSS of `build_graph`, listed input against a generator with `batch` set.
 
@@ -775,7 +807,7 @@ def _sizes(s): return tuple(int(x) for x in s.split(','))
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('bench', choices=['docs','defer','shards','reads','store','code','pdf','graph','chunk',
-                                     'lexrecall','parts','libs','legs','kw','gmem','verify','all'])
+                                     'lexrecall','parts','libs','legs','kw','embatch','gmem','verify','all'])
     p.add_argument('--sizes', type=_sizes, default=None)
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
@@ -806,6 +838,7 @@ def main(argv=None):
     if a.bench in ('libs','all'):  run(bench_string_libs, n=(a.sizes or (1500,))[0], workdir=a.workdir)
     if a.bench in ('legs','all'):  run(bench_search_legs, sizes=a.sizes or (120,600), workdir=a.workdir)
     if a.bench in ('kw','all'):    run(bench_extractors, n=(a.sizes or (400,))[0], workdir=a.workdir)
+    if a.bench in ('embatch','all'): run(bench_embed_batch, n=(a.sizes or (200,))[0], workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)
     if a.out: Path(a.out).write_text(json.dumps(rows, indent=1))
