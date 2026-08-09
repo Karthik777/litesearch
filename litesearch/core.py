@@ -24,10 +24,15 @@ _np_dtype = {'i8':np.int8, 'f16':np.float16, 'f32':np.float32, 'f64':np.float64}
 
 def _in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL IN clause; callers guard against empty vals
 
-# `porter unicode61` (the FTS5 default) splits on `_` and then stems the pieces, so `fts_search`
-# indexes as `ft`+`search` and a search for it matches almost anything. apsw's UAX#29 tokenizer
-# treats `_` as a word joiner, so identifiers survive; porter still stems ordinary prose.
-_FTS_TOKENIZE = 'porter simplify casefold 1 unicodewords'
+_FTS_TOKENIZE = 'porter simplify casefold 1 sanskrit unicodewords'
+
+def _tokenizers_ok(conn, chain:str=None) -> bool:
+    'Whether `chain` actually resolves on this connection.'
+    parts = (chain or _FTS_TOKENIZE).split()
+    try:
+        conn.fts5_tokenizer(parts[0], parts[1:])
+        return True
+    except Exception: return False
 
 def _slug(content):
     "Content hash matching a hash-id store's `id` (hash over the content column)."
@@ -46,9 +51,7 @@ _busy_lock, _busy_depth, _busy_saved = threading.Lock(), 0, None
 
 @contextmanager
 def busy_window(busy_ms=BUSY_TIMEOUT_MS, *dbs):
-    '''Widen apsw's busy timeout for the duration of the block, then restore it.
-    Refcounted: overlapping windows share one widening and only the last exit restores, so
-    concurrent ingests can't race the save/restore and strand the widened value forever.'''
+    "Widen apsw's busy timeout for the duration of the block, then restore it."
     global _busy_depth, _busy_saved
     bp = apsw.bestpractice.connection_busy_timeout
     with _busy_lock:
@@ -194,13 +197,7 @@ def fts_search(self:Table,
     return self.db.q(sql, merge(dict(query=fts_q), where_args or {}))
 
 def _dtype_check(tbl, dtype, rows):
-    '''Warn when `dtype` cannot be the dtype these vectors were stored as.
-
-    The failure is otherwise silent and total. `model2vec` returns float32, `FastEncode` returns
-    float16, and this function defaults to float16 — store the first and search as the second and
-    `distance_cosine_f16` reads the f32 bytes as twice as many f16 values, whose inf/nan bit patterns
-    make the distance function return *SQL NULL for every row*. No exception, no empty result: the
-    vector leg just returns rows in rowid order, and a hybrid search quietly degrades to FTS only.'''
+    'Warn when `dtype` cannot be the dtype these vectors were stored as.'
     want = _dtype_suffix(dtype)
     m = tbl.db._ann_meta(tbl.name)
     if m and m['dtype'] and m['dtype'] != want:
@@ -212,7 +209,6 @@ def _dtype_check(tbl, dtype, rows):
                       f'does not match how the embeddings were stored (e.g. float32 vectors from '
                       f'model2vec searched as float16). The ranking is meaningless.')
     return rows
-
 
 @patch
 def vec_search(self: Table,
@@ -234,6 +230,7 @@ def vec_search(self: Table,
     rows = self.db.q(f'SELECT {sel} FROM {self.name} WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
                 dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
     return _dtype_check(self, dtype, rows)
+
 
 # %% ../nbs/01_core.ipynb #f77f5d4162ca5935
 def _rid(): return 'rowid as rowid'
@@ -376,14 +373,12 @@ def ann_neighbors(self:Table,             # ANN-registered store
                   where_args:dict=None,   # args for where clause
                   include_self:bool=False,# keep the anchor row in the results
                   dtype=np.float16):      # embedding dtype
-    '''Rows nearest an already-indexed row — "what else looks like this".
-
-    Reuses the stored vector rather than re-embedding the row, so no model is loaded and no
-    text is tokenised: the whole call is one HNSW probe plus one `rowid IN (...)` fetch.'''
+    'Rows nearest an already-indexed row — "what else looks like this".'
     v = self.ann_vec(key, dtype)
     if v is None: return []
     rows = self.ann_search(v.tobytes(), columns, limit + (0 if include_self else 1), where, where_args, dtype)
     return rows[:limit] if include_self else [r for r in rows if r['rowid'] != key][:limit]
+
 
 # %% ../nbs/01_core.ipynb #ecffd1079678f470
 def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
@@ -413,13 +408,17 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
         _db = Database(pth_or_uri, **kw)
         if busy_timeout: _db.conn.set_busy_timeout(busy_timeout)   # persists past the window
         if wal: _db.enable_wal()
-    _db._fts_tokenizers = register_tokenizers(_db.conn, map_tokenizers)
+    register_tokenizers(_db.conn, map_tokenizers)
+    from litesearch.sanskrit import register_sanskrit
+    register_sanskrit(_db)
+    _db._fts_tokenizers = _tokenizers_ok(_db.conn)
     if not sem_search: return _db
     from usearch import sqlite_path
     _db.conn.enableloadextension(True)
     _db.conn.loadextension(sqlite_path())
     _db.conn.enableloadextension(False)
     return _db
+
 
 # %% ../nbs/01_core.ipynb #b0ca47afb872e0d6
 _RERANKERS = {}

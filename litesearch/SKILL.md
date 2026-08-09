@@ -174,8 +174,21 @@ score by +0.003 to +0.006, i.e. very slightly better without them. Call it becau
 labels in the graph are useful to read, not to improve retrieval.
 
 For prose, pass `nlp=spacy_pipe(terms=code_symbols)` — the `EntityRuler` then links prose
-mentions of your functions to the code nodes. Needs `pip install litesearch[graph]` and
-`python -m spacy download en_core_web_sm`; without it, extraction falls back to yake.
+mentions of your functions to the code nodes. spaCy and yake are core dependencies, so there is
+nothing extra to install; `spacy_pipe` downloads `en_core_web_sm` on first use, and without a
+model extraction falls back to yake.
+
+**Pass a real `nlp`.** The yake fallback emits overlapping sub-phrases of the same span
+(`marie curie isolated`, `curie isolated polonium`, `isolated polonium`, `polonium`), and every
+adjacent pair is a legitimate containment merge, so `resolve_entities` used to chain them into one
+node in which Marie Curie *was* polonium. Merged groups are now cliques under the lexical guard, so
+that no longer happens — but yake still gives you four entities where spaCy gives one, and only
+the noun-chunk path produces entity names you would want to read.
+
+`build_graph(..., nlp=...)` takes any spaCy-shaped pipeline, so a language spaCy has no model
+for can be served by supplying one. Note that spaCy implements `noun_chunks` per language, so for
+a language without it extraction falls back to a POS-run approximation (`_nominal_spans`) rather
+than a real noun-chunk iterator.
 
 ## Document structure (`litesearch.tree`)
 
@@ -216,6 +229,68 @@ place to spend tokens, because `toc()` is what an agent reads when deciding wher
 
 **Source code does not belong here.** Its tree is module › class › function and comes from the
 AST, not from headings — that is `kosha`.
+
+## Sanskrit (`litesearch.sanskrit`)
+
+Registered as two `Profile`s at import, so `add_file` needs no arguments: it picks the reader
+(GRETIL plain text, TEI, vedicreader XML, DCS), the `verse` tree mode, `VerseChunker`, and
+per-chunk metrical facets on its own.
+
+```python
+db.add_file('gretil/manu.htm', emb_fn=doc_encoder(enc))          # detected
+db.add_file('bhasya.htm', profile='sanskrit_prose', emb_fn=...)  # by name only — see below
+db.by_meter(meter='mandākrāntā')          # a filter over the facets, not a ranking
+db.by_meter(gana='ma bha na ta ta ga ga') # every verse with that shape
+```
+
+**Cross-script search is on by every store, not just Sanskrit ones.** The `sanskrit` FTS5
+tokenizer emits an ASCII fold of each token as a *colocated* token, so `श्रीमाता`, `śrīmātā` and
+`srimata` all reach the same row while `content` stays exactly as ingested. It is purely additive —
+`running`, `cat` and `fts_search` behave identically to the bare chain — which is why it is the
+default: a store's tokenizer is fixed when its table is created and the first document ingested
+should not get to decide it. The cost is real and worth knowing: **a store built with this chain
+cannot be opened by a connection that has not registered the tokenizer**, including plain
+`sqlite3`.
+
+**Metre is computed, not annotated.** `verse_meta` writes `meter`, `variant`, `gana`, `pada` and
+`matra` into the chunk's existing `metadata` column, which `get_store` already indexes for FTS —
+so it is searchable and `where`-filterable with no schema change and no cooperation from callers.
+Both the syllable-counting (varṇa) and mora-counting (āryā family) systems are covered.
+
+**`profile='sanskrit_prose'` is the one profile nothing can detect** — a commentary shares every
+signal with its root text — and it is worth asking for on prose: it packs consecutive cited units
+up to a larger target (`pack_cited=True`), where the verse profile closes a chunk at every
+citation.
+
+**Lemmas and glosses are opt-in.** Sandhi means the surface form is often not what anyone
+types, and the text is Sanskrit while the reader's question is usually English. `vidyut_pipe()`
+adds a `lemma` facet and `mw_lexicon()` a `gloss` facet, both to the same `metadata`, queryable
+with `db.by_lemma('gam')`:
+
+```python
+from litesearch import vidyut_pipe, mw_lexicon, register_profiles
+register_profiles(nlp=vidyut_pipe(), mw=mw_lexicon())   # once, before add_file/add_dir
+```
+
+Needs `pip install litesearch[sanskrit]` — a 2.3 MB Rust wheel with no Python dependencies.
+`vidyut.lipi` transliteration works immediately; the 81 MB kosha and the ~2 MB reduction of
+Monier-Williams are fetched on first use into `sanskrit_home()`.
+
+`vidyut_pipe(split=True)` (the default) undoes sandhi on any token the lexicon does not hold, and
+**every piece must itself be in the kosha, with the whole word covered** — validating a generative
+rule table against 30M real forms is what stops it inventing readings. Measured: token coverage
+52% → 86%, and lemma-query retrieval 0.744 → 0.866 MRR. It also recovers most compound members,
+since a samāsa seam is usually a sandhi seam: `yogaścittavṛttinirodhaḥ` yields `yoga`,
+`cittavṛtti`, `rodha`.
+
+`sanskrit_terms()` is a `terms_fn` for `build_graph`, replacing yake where yake cannot read the
+script. It keeps a word only if the kosha gives it a *subanta* (nominal) reading and no *tinanta*
+(verbal) one — an entity is a thing, not an action.
+
+Two honest limits. It is **ingest-time only** — the FTS5 tokenizer stays deterministic and
+table-driven, because a store's tokenizer must resolve on every connection that opens the file and
+must be fast enough for the query path. And it is an **exact FST**: it answers or declines rather
+than guessing, so a word outside the lexicon simply gets no lemma.
 
 ## Neighbours, clusters and peers
 
@@ -285,8 +360,14 @@ Plain Python fallback: `uv run python -c "from litesearch import database; ..."`
 | `pre(q)` | Preprocess FTS query: keywords, wildcards, OR |
 | `build_graph(db, chunks, ...)` | Extract entities/mentions/edges into the graph tables |
 | `db.graph_search(q, emb, ...)` | Hybrid search + personalized-PageRank graph leg |
-| `resolve_entities(db)` | Merge duplicate entities (ANN + lexical guard) |
+| `resolve_entities(db)` | Merge duplicate entities (ANN + lexical guard; groups stay cliques) |
 | `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
+| `spacy_pipe(terms=...)` | spaCy pipeline for prose entities; `EntityRuler` seeded from exact terms |
+| `db.by_meter(meter=/gana=)` | Filter chunks by the metrical facets `verse_meta` wrote |
+| `db.by_lemma(lemma)` | Filter chunks by lemma (needs `register_profiles(nlp=...)`) |
+| `register_profiles(nlp=,mw=)` | Re-register the Sanskrit profiles, optionally adding lemma and gloss facets |
+| `vidyut_pipe()` / `mw_lexicon()` | Sanskrit lemmas (sandhi-splitting) and MW glosses (`[sanskrit]` extra) |
+| `sanskrit_terms()` | Nominal terms for `build_graph(terms_fn=)`, replacing yake on Devanagari |
 
 ## Two things that matter more than the model
 
