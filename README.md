@@ -380,15 +380,15 @@ Nothing here calls a language model.
 
 The split that makes it work: **code is parsed, prose is tagged.** For Python the AST already
 knows every symbol and every call, so [`code_entities`](https://Karthik777.github.io/litesearch/graph.html#code_entities) returns exact `defines`/`calls`/`imports`
-edges. For prose, spaCy’s `noun_chunks` (not its OntoNotes NER, which misses lowercase technical
-terms like `usearch`) supply the nodes, and edges come from normalized-PMI co-occurrence.
+edges. For prose, yake keyphrases supply the nodes and edges come from normalized-PMI
+co-occurrence.
 
 ``` python
 kg = database()
 kg.get_store(hash=True, ann=True)
 chunks = [dict(content=t, metadata='{}') for _,_,t in doc.pdf_chunks()][:60]
 
-build_graph(kg, chunks, prose=True, nlp=spacy_pipe(), emb_fn=emb)
+build_graph(kg, chunks, prose=True, emb_fn=emb)
 ```
 
 ``` python
@@ -405,7 +405,7 @@ the query — only an entity path.
 | `db.get_graph(store)` | Create `entities` / `mentions` / `edges` tables |
 | `build_graph(db, chunks, ...)` | Extract entities, mentions and edges from chunks |
 | `code_entities(chunk)` | Exact `(defined, called, imported)` symbols from a Python AST |
-| `text_entities(text, nlp)` | Entity surfaces from prose (spaCy, or yake fallback) |
+| `text_entities(text)` | Entity surfaces from prose (yake, or a supplied `terms_fn`) |
 | `resolve_entities(db)` | Merge duplicate entities via ANN + a lexical guard |
 | `topic_nodes(db)` | Cluster the ANN index into labelled topic nodes |
 | `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
@@ -416,33 +416,44 @@ Details that matter in practice:
 - **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
   chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
   top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
-  come from spaCy, or from `apsw.unicode.sentence_iter` on the no-spaCy path.
+  come from `apsw.unicode.sentence_iter`.
 - **Resolution must not touch exact identifiers.** [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) leaves `symbol`/`module`/
   `topic` kinds alone, and [`_toks`](https://Karthik777.github.io/litesearch/graph.html#_toks) uses UAX#29 segmentation so `fts_search` never decomposes into
   `{fts, search}` and collapses into `search`.
 - **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
   clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
   IDF is what makes labels distinguish clusters from each other.
-- **The graph leg is weighted low (`graph_w=0.5`) on purpose.** It pays when the answer shares no
-  vocabulary with the query and is reachable only along an entity path — common in prose, rare in
-  code, where call edges connect different levels of abstraction rather than substitutable answers.
-  On code corpora prefer `graph_w=0` and use the graph for context assembly (pull callers/callees of
-  a hit) rather than for reranking.
+- **Default to `graph_w=0`.** Across 351 known-item queries on three prose corpora the graph leg
+  lost at every weight, and it costs 55–107ms against 8–13ms. Build the graph for context assembly
+  — pulling callers/callees or co-mentioned entities of a hit — rather than for ranking.
 
-spaCy and yake are core dependencies, so there is nothing extra to install. The *model* is not
-shippable — spaCy models are not on PyPI and PyPI rejects URL deps — so [`spacy_pipe`](https://Karthik777.github.io/litesearch/graph.html#spacy_pipe) downloads
-`en_core_web_sm` on first use; without a model the extractor falls back to yake keyphrases, which
-are weaker node identities.
+### Choosing the prose extractor
 
-That difference is worth more than it sounds. yake emits overlapping sub-phrases of one span
-(`marie curie isolated`, `curie isolated polonium`, `isolated polonium`, `polonium`), and each
-adjacent pair is a legitimate containment merge, so entity resolution can walk the ladder from one
-end to the other. [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) now keeps every merged group a **clique** under the lexical
-guard, which stops that; but a noun-chunk pass still gives you one entity where yake gives four.
+yake is the default, and it is a *keyphrase* extractor doing an *entity* extractor’s job. It emits
+overlapping sub-phrases of one span (`marie curie isolated`, `curie isolated polonium`,
+`isolated polonium`, `polonium`), so a chunk naming a character and another chunk naming the same
+character often share no node at all — which is the graph’s only bridge. [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) keeps
+every merged group a **clique** under the lexical guard, which stops the ladder from collapsing
+`marie curie` into `polonium`, but it cannot invent the shared node yake never produced.
 
-`build_graph(..., nlp=...)` takes any spaCy-shaped pipeline, so a language spaCy has no model for
-can be served by supplying one. Note that spaCy implements `noun_chunks` per language, so where it
-is missing extraction falls back to a POS-run approximation instead.
+Measured on 961 chunks of *Pride and Prejudice*, counting chunk pairs that name the same character
+and share a canonical entity:
+
+| extractor                 | build | shared-entity rate | `Elizabeth` resolves to |
+|---------------------------|-------|--------------------|-------------------------|
+| yake (default)            | 1.5s  | 27.2%              | 101 entities            |
+| proper-noun regex         | 0.3s  | 89.2%              | 7 entities              |
+| spaCy `noun_chunks` + NER | 22.5s | 97.2%              | 32 entities             |
+
+spaCy was a dependency and is not any more: it costs 15x the build for a graph leg that is off by
+default, and on the retrieval eval it changed nothing, because PPR mass lands on topic nodes rather
+than on extracted entities. If you want entity-dense prose to bridge, a proper-noun pass gets most
+of the way at a fraction of the cost.
+
+`build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a
+choice rather than a fork in the library. [`litesearch.sanskrit.sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is one, for a
+script yake cannot tokenise. Extraction runs serially whenever `terms_fn` is set, because such
+callables usually close over state that does not pickle.
 
 ## PDF extraction
 

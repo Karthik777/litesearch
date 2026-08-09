@@ -28,7 +28,6 @@ dependencies = [
     "usearch>=2.23.0",
     "yake>=0.7.3",
     "flashrank>=0.2.10",
-    "spacy>=3.8.0",
 ]
 
 [project.optional-dependencies]

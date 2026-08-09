@@ -271,20 +271,15 @@ def bench_pdf(pdf='nbs/pdfs/attention_is_all_you_need.pdf', workdir=None, emb=No
     db.conn.close(); shutil.rmtree(root, ignore_errors=True)
     return rows
 
-def bench_graph(sizes=(500, 1000, 2000), workdir=None, spacy=False, emb=None, n_workers=0, batch=None):
+def bench_graph(sizes=(500, 1000, 2000), workdir=None, emb=None, n_workers=0, batch=None):
     'build_graph + resolve_entities over real prose chunks. `n_workers=None` picks a pool by size.'
-    print(f'\n== graph build (spacy={spacy}, n_workers={n_workers}, batch={batch}) ==')
-    nlp = None
-    if spacy:
-        from litesearch.graph import spacy_pipe
-        nlp = spacy_pipe()
-        if nlp is None: print('  (spaCy unavailable; using the yake fallback)')
+    print(f'\n== graph build (n_workers={n_workers}, batch={batch}) ==')
     rows = []
     for n in sizes:
         root = Path(tempfile.mkdtemp(dir=workdir))
         db = database(str(root/'bench.db')); db.get_store('store', hash=True, ann=True)
         chunks = corpus_chunks(n, chars=800)
-        with Timer() as t: st = build_graph(db, chunks, emb_fn=emb or hash_emb_fn(), nlp=nlp,
+        with Timer() as t: st = build_graph(db, chunks, emb_fn=emb or hash_emb_fn(),
                                             n_workers=n_workers, batch=batch)
         rows.append(_row(f'build_graph({n} chunks)', n, t.wall, f'{st["entities"]:,} ents {st["edges"]:,} edges'))
         with Timer() as t: rs = resolve_entities(db)
@@ -545,7 +540,6 @@ def main(argv=None):
     p.add_argument('--dir', default='litesearch')
     p.add_argument('--encoder', choices=['hash','fast','none'], default='hash')
     p.add_argument('--no-ann', action='store_true')
-    p.add_argument('--spacy', action='store_true')
     p.add_argument('--workers', type=int, default=0, help='graph extraction workers; 0 serial')
     p.add_argument('--batch', type=int, default=None, help='build_graph chunks per flush')
     p.add_argument('--workdir', default=os.environ.get('LITESEARCH_BENCH_DIR'))
@@ -566,7 +560,7 @@ def main(argv=None):
     if a.bench in ('code','all'):  run(bench_code, dirs=(a.dir,), workdir=a.workdir, emb=emb)
     if a.bench in ('chunk','all'): run(bench_chunk, n=(a.sizes or (2000,))[0])
     if a.bench in ('graph','all'): run(bench_graph, sizes=a.sizes or (500,1000,2000), workdir=a.workdir,
-                                      spacy=a.spacy, n_workers=a.workers, batch=a.batch)
+                                      n_workers=a.workers, batch=a.batch)
     if a.bench in ('lexrecall','all'): run(bench_lexical_recall, sizes=a.sizes or (250,500,1000,2000), workdir=a.workdir)
     if a.bench == 'gmem': bench_graph_memory(sizes=a.sizes or (2000,4000,8000), workdir=a.workdir)
     if a.bench in ('pdf','all'):   run(bench_pdf, workdir=a.workdir, emb=emb)

@@ -129,10 +129,7 @@ def build_graphs():
 
     The graph is keyed on the hash of chunk content, which is exactly the `id` a hash store
     already uses, so it attaches to the chunks that are there rather than re-chunking.'''
-    from litesearch import build_graph, resolve_entities, topic_nodes, spacy_pipe, graph_stats
-    nlp = None
-    try: nlp = spacy_pipe()
-    except Exception as ex: print(f'  spaCy unavailable ({ex}); falling back to yake', flush=True)
+    from litesearch import build_graph, resolve_entities, topic_nodes, graph_stats
     e = enc('potion-32M')            # entity-name vectors only; the cheap one is the right one
     out = {}
     for g in C.GENRES:
@@ -142,7 +139,7 @@ def build_graphs():
             db = database(str(p))
             rows = list(db.t.store(select='content'))
             t0 = time.time()
-            st = build_graph(db, rows, store='store', nlp=nlp, prose=True, code=False,
+            st = build_graph(db, rows, store='store', prose=True, code=False,
                              emb_fn=lambda ts, **kw: e.doc(ts))
             t_g = time.time()-t0
             t0 = time.time(); res = resolve_entities(db, store='store'); t_r = time.time()-t0
@@ -223,8 +220,9 @@ def eval_graph():
 
     Removing the topics is how the clustering layer's contribution *to ranking* gets isolated:
     `topic_nodes` writes one entity per cluster plus a mention per member, so deleting exactly those
-    rows leaves the spaCy/PMI graph intact and answers "did clustering the index help retrieval, or
-    only help a human read the corpus".'''
+    rows leaves the keyphrase/PMI graph intact and answers "did clustering the index help retrieval,
+    or only help a human read the corpus". On regulation the answer is that the topics are the whole
+    graph leg: they carry 100% of the PPR mass, which is why swapping the extractor moved nothing.'''
     rows = []
     for g in C.GENRES:
         for w in (0.25, 0.5, 1.0):
