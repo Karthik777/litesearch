@@ -1,7 +1,7 @@
 # Release notes <!-- do not remove -->
 
 ## 0.1.16
-sanskrit parsing and vidyut pipe
+bump
 
 ## 0.1.15
 spacy batching 25% speedup
