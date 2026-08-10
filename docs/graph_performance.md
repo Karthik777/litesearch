@@ -29,6 +29,7 @@ python -m evals.ingest_bench verify
 python -m evals.run build_tree && python -m evals.run build_graph
 python -m evals.extractor_eval                       # extractor -> retrieval, 3 genres
 python -m evals.extractor_sig                        # paired bootstrap over per-query RR
+python -m evals.multihop --evaluate                  # bridge queries: hybrid vs the graph leg
 ```
 
 ## Headline
@@ -397,14 +398,51 @@ even the lightest setting costs 7–15 points at 2–4x the latency. This replac
 `graph.json`, which showed 0.98 for the regulatory graph leg — those numbers came from the
 disconnected-graph path described below.
 
-**The caveat is that this benchmark cannot test what the graph leg is for.** Its stated purpose, in
-`nbs/05_graph.ipynb`, is bridging: the query names Marie Curie, doc B never mentions her, and B is
-reachable only by walking `Marie Curie → polonium → B`. The eval query set is *known-item* — every
-query is derived from a source sentence that occurs exactly once, so the target passage is always
-lexically present and a bridge leg can only add noise to a leg that has already found it. What
-these numbers license is "do not turn the graph leg on for known-item retrieval", which is worth
-knowing given `graph_w=0.5` is the default. They do not license "the graph leg does not work". The
-question it is built for needs a multi-hop query set that does not exist here.
+**But that benchmark cannot test what the graph leg is for**, so the next section builds one that
+can. Its stated purpose, in `nbs/05_graph.ipynb`, is bridging: the query names Marie Curie, doc B
+never mentions her, and B is reachable only by walking `Marie Curie → polonium → B`. Every query in
+`evals/queries.py` is a lexical transformation of the sentence it is looking for, so the target is
+always lexically present and a bridge leg can only add noise to a leg that has already found it.
+
+### The bridge query set, and the opposite result
+
+`evals/multihop.py` builds the missing set. Ground truth is the corpus's own structure rather than
+a similarity score: **X and Y are two chunks of the same section**, a section being the author's
+own statement that its contents belong together, recovered by `build_tree` from headings and
+recorded in `node_id` — no extractor, no embedding, and nothing from the entity graph, which would
+have made the eval circular. The query is three tokens that appear in X and *nowhere* in Y, so
+nothing lexical connects it to the target. Two controls run on the identical hit lists: `source`
+(is the query answerable at all — FTS should find X) and `control` (a random chunk from a third
+document — the noise floor).
+
+Target MRR@50 over any sibling of X in its section:
+
+| genre | hybrid | graph 0.25 | graph 0.5 | graph 1.0 | source | control |
+|---|---|---|---|---|---|---|
+| regulatory | 0.0408 | 0.0438 | 0.0451 | **0.0491** | 0.63 | 0.0000 |
+| arxiv | 0.1116 | 0.1259 | 0.1320 | **0.1503** | 0.66 | 0.0006 |
+| astrology | 0.0596 | 0.0648 | 0.0697 | **0.0733** | 0.62 | 0.0002 |
+
+Monotone *upwards* in `graph_w` on all three genres — the exact opposite of the known-item table,
+and the controls hold (source high, control at the floor). Paired bootstrap against hybrid over
+the per-query reciprocal ranks:
+
+| genre | graph 0.25 | graph 0.5 | graph 1.0 |
+|---|---|---|---|
+| regulatory | +0.0030, p=0.047 ✓ | +0.0043, p=0.033 ✓ | +0.0082, p=0.008 ✓ |
+| arxiv | +0.0143, p=0.003 ✓ | +0.0204, p=0.012 ✓ | +0.0387, p=0.003 ✓ |
+| astrology | +0.0053, p=0.080 | +0.0101, p=0.091 | +0.0137, p=0.035 ✓ |
+
+**Seven of nine significant in the graph's favour**, the other two trending the same way. Note the
+`source` column falling as `graph_w` rises (0.63 → 0.53): the graph leg pushes the lexically
+obvious answer down to make room, which is the whole trade in one number.
+
+### The decision: `graph` is opt-in
+
+The two tables together say the graph leg is a real capability with a narrow domain, and a bad
+default. `Database.context(graph=...)` now defaults to **False**. `graph_search` is unchanged — it
+is a method you have to call by name, and calling it *is* the opt-in; `graph_w=0.5` remains its
+default, with the note that bridging wants it nearer 1.0 and known-item search wants it at 0.
 
 Nothing is swapped on the strength of this: `build_graph(terms_fn=...)` is the seam, the default is
 unchanged, and the finding that wants acting on is about `graph_w`, not about extractors.

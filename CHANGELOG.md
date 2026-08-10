@@ -58,6 +58,17 @@ the eval PDF corpus. See the first entry under Fixed.
 
 ### Changed
 
+- **`Database.context(graph=...)` now defaults to `False`.** The graph leg is a real capability with
+  a narrow domain, so it is opt-in rather than on. Measured both ways over three genres:
+  on **known-item** queries — the target contains the words you searched for — it is a straight loss
+  that deepens with `graph_w` (regulatory p_mrr 0.8170 hybrid against 0.7395 / 0.6859 / 0.6463 at
+  0.25 / 0.5 / 1.0), at 2–4x the latency; on **bridge** queries — the target never uses those words
+  and is relevant on structural grounds — it is a significant win that also deepens with `graph_w`,
+  in seven of nine paired-bootstrap comparisons (arXiv +0.0387 target MRR at `graph_w=1.0`, 95% CI
+  [+0.0110, +0.0694]). Most queries are known-item, so the default was making most users pay for a
+  leg they do not use. `graph_search` is unchanged: it is a method you call by name, and calling it
+  is the opt-in.
+
 - **`resolve_entities` is 6.0x faster** (11.97s → 2.00s at 8,487 entities), and three quarters of
   that was never entity matching. The `canon` write-back ran one autocommit per entity and each one
   fired apswutils' `AFTER UPDATE` trigger, re-tokenising `content` into FTS5 — 5,650 fsync'd
@@ -128,6 +139,14 @@ the eval PDF corpus. See the first entry under Fixed.
 
 ### New
 
+- **`evals/multihop.py`** — the bridge query set the existing harness was missing, and the reason
+  the `graph` default could be decided on evidence. Ground truth is the corpus's own structure
+  rather than a similarity score: X and Y are two chunks of the same section, and the query is
+  three tokens present in X and absent from Y, so nothing lexical connects it to the target. No
+  extractor, embedding or entity graph is consulted in building the pairs — using the graph to pick
+  them would have guaranteed the graph could answer them. Two controls run on the identical hit
+  lists: `source` (FTS should find X — are these queries answerable at all) and `control` (a random
+  chunk from a third document — the noise floor, which stays at ~0.000 throughout).
 - **`evals/extractor_eval.py` and `evals/extractor_sig.py`** — does the keyphrase extractor change
   *retrieval*, not just the stopwatch. Each genre's tree store is cloned so chunks, embeddings and
   the ANN index are held fixed and the graph is rebuilt over the identical store once per extractor;

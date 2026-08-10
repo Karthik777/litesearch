@@ -763,13 +763,29 @@ def context(self:Database,
             prefix:str=None,
             sections:int=6,         # operative sections returned
             per:int=3,              # snippets kept per section
-            graph:bool=True,        # include graph-reached related sections
+            graph:bool=False,       # opt in to graph-reached related sections (see the note below)
             vector:bool=True,       # include embedding-nearest related sections
             related:int=8,          # max related sections
             max_read:int=6000,      # chars of assembled text per operative section
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
             graph_w:float=0.6):
-    'One composed retrieval over a document tree: the operative sections plus what they connect to.'
+    '''One composed retrieval over a document tree: the operative sections plus what they connect to.
+
+    `graph` is opt-in because the graph leg both helps and hurts, and which one depends on the
+    query rather than on the corpus. Measured over three genres (`evals/multihop.py`,
+    `evals/run.py eval_graph`):
+
+    - On **known-item** queries — the target passage contains the words you searched for — it is a
+      straight loss, monotonically worse as `graph_w` rises: p_mrr 0.8170 for plain hybrid against
+      0.7395 / 0.6859 / 0.6463 at `graph_w` 0.25 / 0.5 / 1.0 on regulation, at 2-4x the latency.
+    - On **bridge** queries — the target never uses the words you searched for and is relevant on
+      structural grounds — it is a significant *win*, monotonically better as `graph_w` rises, in
+      seven of nine paired-bootstrap comparisons (arXiv +0.0387 target MRR at `graph_w=1.0`,
+      95% CI [+0.0110, +0.0694]).
+
+    Most queries are known-item, so on as a default made most callers pay for a leg they do not
+    use. Turn it on when you expect the corpus to answer by connection rather than by wording, and
+    raise `graph_w` towards 1.0 when you do.'''
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     N, D, src = self.t[f'{p}nodes'], self.t[f'{p}docs'], {}
     def doc_of(nid):

@@ -411,6 +411,24 @@ the query — only an entity path.
 | `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
 | `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
 
+### When to use the graph leg
+
+The graph leg is a real capability with a narrow domain, so it is **opt-in**: `db.context()`
+defaults to `graph=False` and `db.graph_search` is a method you call by name. Which way it goes is
+decided by the *query*, not by the corpus, and both directions are measured over three genres
+(`python -m evals.run eval_graph`, `python -m evals.multihop --evaluate`):
+
+| your queries look like | use | why |
+|----|----|----|
+| **known-item** — the wording you search for appears in the passage you want ("what does Article 12 say about withdrawal") | `db.search` / `db.context()` | hybrid wins by 15-20 points of p_mrr and is 2-4x faster; the graph leg reorders a list FTS had already got right, and costs more the higher `graph_w` goes: 0.8170 / 0.7395 / 0.6859 / 0.6463 at 0 / 0.25 / 0.5 / 1.0 |
+| **bridge** — the answer never uses your words and is reachable only through a shared entity ("what else relates to polonium", "what does this provision interact with") | `db.graph_search(..., graph_w=1.0)`, or `db.context(..., graph=True)` | significantly better in 7 of 9 paired comparisons, and better the *higher* `graph_w` goes (arXiv +0.0387 target MRR at 1.0, 95% CI \[+0.0110, +0.0694\]) |
+| **you do not know yet** | hybrid | it is the cheaper default and what most queries want; add the graph leg once you can point at queries it should be answering |
+
+`graph_w` is a dial rather than a switch: raising it lifts bridge targets and pushes the lexically
+obvious passage down, which is the trade in one number. And none of this applies to `clusters`,
+`peers`, `topic_nodes` or `graph_stats` — those read a corpus rather than rank it, and are worth
+having however you search.
+
 Details that matter in practice:
 
 - **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
@@ -446,8 +464,15 @@ and share a canonical entity:
 | spaCy `noun_chunks` + NER | 22.5s | 97.2%              | 32 entities             |
 
 spaCy was a dependency and is not any more: it costs 15x the build for a graph leg that is off by
-default, and on the retrieval eval it changed nothing, because PPR mass lands on topic nodes rather
-than on extracted entities. If you want entity-dense prose to bridge, a proper-noun pass gets most
+default, and on the retrieval eval it changed nothing. The reason once given for that — "PPR mass
+lands on topic nodes rather than on extracted entities" — turned out to be a bug in the eval
+harness rather than a fact about the graph: `build_graph` was being handed chunks without their
+`id`, so every keyphrase mention pointed at a hash no chunk had and only the topic nodes stayed
+connected. With that fixed the extractor does reach the walk, and it still changes nothing
+measurable: yake, `yake-rust` and `rake-nltk` are statistically indistinguishable on retrieval
+across three genres and 1,755 query-flavour pairs, all nine paired comparisons straddling zero
+(`python -m evals.extractor_sig`). `yake-rust` is 6.6x faster per chunk and releases the GIL, so it
+is the swap to make if extraction is your bottleneck. If you want entity-dense prose to bridge, a proper-noun pass gets most
 of the way at a fraction of the cost.
 
 `build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a

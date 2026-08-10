@@ -136,6 +136,14 @@ over a 32M static embedder was worth +0.007 for 1,700x the indexing compute.
 | `build_graph(db, chunks, terms_fn=)` | Entities/mentions/edges; swap the prose extractor |
 | `resolve_entities(db)` / `topic_nodes(db)` | Merge duplicates; labelled topic nodes |
 | `db.graph_search(q, emb)` | Hybrid + personalized-PageRank leg |
+
+**Graph leg: opt-in, and query-dependent.** `db.context()` defaults to `graph=False`.
+Use hybrid (`db.search`) for **known-item** queries — the words you search for appear in the
+passage you want; the graph leg costs 15-20 points of p_mrr there and 2-4x the latency, worse the
+higher `graph_w` goes. Use `db.graph_search(..., graph_w=1.0)` for **bridge** queries — the answer
+never uses your words and is reachable only through a shared entity; measured significantly better
+in 7 of 9 paired comparisons, and better the higher `graph_w` goes. When unsure, start with hybrid.
+`clusters` / `peers` / `topic_nodes` are for reading a corpus, not ranking it, and are unaffected.
 | `pre(q)` | Preprocess an FTS query: keywords, wildcards, OR |
 
 ## Installing this skill
