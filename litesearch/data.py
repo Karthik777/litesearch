@@ -171,11 +171,24 @@ def repo_root() -> Path:
 	'Find the root of the current git repository, or None if not in a repo.'
 	return first((Path.cwd(), *Path.cwd().parents), lambda p: (p/'.git').exists())
 
+def _pkg_name(pkg:str) -> str:
+	'Base distribution/import name from a requirement string.'
+	return re.split(r'[\[<>=!~;]', pkg, maxsplit=1)[0].strip()
+
+def _pkg_dist(pkg:str):
+	'Installed distribution for a package or requirement string.'
+	pkg = _pkg_name(pkg)
+	for nm in L(pkg, pkg.replace('-', '_'), pkg.replace('_', '-')).unique():
+		try: return dist(nm)
+		except ModuleNotFoundError: pass
+	return None
+
 def spec(pkg:str) -> ModuleSpec | None:
 	'Return the importlib ModuleSpec for a package, or None if not found.'
 	try:
+		pkg = _pkg_name(pkg)
 		if s := fs(pkg) or fs(pkg.replace('-', '_')): return s
-		if not (d:= dist(pkg)): return None
+		if not (d:= _pkg_dist(pkg)): return None
 		if tl:=d.read_text('top_level.txt'): return s if (s:=fs(tl.splitlines()[0])) else None
 		chk = lambda f: len(f.parts) >= 2 and f.name=='__init__.py' and not f.parts[0].endswith('.dist-info')
 		if p:= L(d.files).filter(chk).map(lambda f: f.parts[0]): return fs(first(p))
@@ -341,7 +354,8 @@ def pkg2chunks(pkg:str,             # package name
                **kw                 # additional args to pass to pkg2files
 )->L:
     'Return code chunks from a package with extra metadata.'
-    upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=version(pkg))) or d
+    pkg, ver = _pkg_name(pkg), getattr(_pkg_dist(pkg), 'version', None)
+    upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=ver)) or d
     files = pkg2files(pkg, **kw)
     return _parse_files(files, n_workers, threadpool, imports=imports).filter(true).concat().map(upd_v)
 
@@ -379,7 +393,7 @@ def installed_packages(nms:list=None,    # list of package names
         nms = set(nms).union(tlp) if nms else tlp
     not_stdlib = lambda d: d.metadata.get('Author-email') not in ('Python', None)
     try:
-        pkgs = L(nms).filter(spec).map(dist) if nms else L(dists())
+        pkgs = L(nms).map(_pkg_dist).filter(true) if nms else L(dists())
         return pkgs.filter(not_stdlib).map(lambda d: d.metadata['Name'])
     except Exception as e: print(f'Error checking installed packages: {e}')
 

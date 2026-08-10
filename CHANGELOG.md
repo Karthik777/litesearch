@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.21
+spec supports extra deps like rishi[all]
+
 ## 0.1.20
 release
 
