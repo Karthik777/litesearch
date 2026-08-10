@@ -1,13 +1,37 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.24
+
+Two additions, both asked for by the vishalakshi port that 0.1.23 nominated.
+
+**`Index(db=…)`** takes a `Database` that is already open, so several `Index`es can be several
+stores in one file. They have to share the *connection* and not just the path —
+`database(':memory:')` twice is two different databases — and without this an `Index` could not
+express a partitioned corpus at all.
+
+**`rerank=` on the tree legs.** `doc_search` and `sections` grow the lever `Index.search` already
+had, and `context` inherits it by forwarding. The fanout discipline moves to `RERANK_FANOUT` in
+`core`, beside the reranker it describes, so every caller fans out to thirty candidates rather
+than each rediscovering that reranking ten only reorders ten.
+
+`sections` needed more than a forwarded kwarg. It rolls its groups up by `_rrf_score`, so
+reranking the chunk hits and leaving that score in place would have reordered a list nothing
+downstream reads — `sections(rerank=True)` would have been a silent no-op. When the cross-encoder
+runs it is now the authority on the score as well as the order.
+
+Also: the 0.1.23 notes and the ladder in `index.ipynb` both named `potion-retrieval-32M` as the
+default encoder. `static_embedder()` returns `potion-multilingual-128M`, and has since 470a3b6.
+Corrected in all three places.
+
 ## 0.1.23
 
 `Index` — one route in, so that nobody has to weigh six tradeoffs to search a folder.
 
 The library had grown four ways to answer the same question, and picking between them meant
 knowing what `evals/` had already decided. `litesearch.api.Index` decides it: static
-`potion-retrieval-32M` (the spread across four encoders is 0.018–0.046, and the static one *wins*
-one genre while indexing ~1,700x cheaper), float16 to match the store, 512-character chunks
+`potion-multilingual-128M` (the spread across four encoders is 0.018–0.046, and a static one
+*wins* one genre while indexing ~1,700x cheaper; the multilingual member of the family is the one
+shipped, so non-Latin scripts work without choosing), float16 to match the store, 512-character chunks
 (+0.06 to +0.12 over page-sized), `pre()` on the FTS leg (+0.016 to +0.093), an HNSW vector leg
 (−0.005 for a large speedup), and a document tree built unconditionally because its effect on
 *ranking* is a wash (−0.052 to +0.011) and `toc`/`read`/`sections`/`context` are worth having for

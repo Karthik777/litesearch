@@ -140,7 +140,9 @@ Three findings worth more than their line in the table:
 
 **The encoder is not the lever.** Across `potion-32M` (static, no GPU), `bge-small`, `jina-v2-sm`
 and `egemma-300m` the spread is 0.018–0.046, and the static model *wins* one genre outright. It
-indexes ~1,700x cheaper. That is why it is the default.
+indexes ~1,700x cheaper. That is why the default is a static model — specifically
+`potion-multilingual-128M`, the multilingual member of that family, so that Devanagari and other
+non-Latin scripts are covered without choosing an encoder.
 
 **The tree does not improve ranking, and is still worth building.** Section *ranking* is a wash.
 Section *assembly* is not: on the Sanskrit corpus `context()` roughly doubles verse-level recall
