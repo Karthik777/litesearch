@@ -162,12 +162,6 @@ from fastcore.basics import fdelegates, true
 from fastcore.nbio import read_nb
 
 # %% ../nbs/02_data.ipynb #e2d83d2c61b7dfe2
-# Folders whose contents are *generated from* something else in the same tree, so walking them
-# indexes the same content twice. An nbdev project keeps a processed copy of every notebook in
-# `_proc` and a rendered one in `_docs`: without these, indexing such a repo lands three copies of
-# every notebook, which inflates the corpus and splits topics across documents that are the same
-# document. `__pycache__` is here for the same reason and one more: `pkg2files` was returning the
-# bytecode beside every module, which the chunker then discards.
 skip_folder_re = r'^[.]|^(?:tests?|examples?|docs?|build|dist|_proc|_docs|_site|_site_libs|node_modules|__pycache__)$'
 skip_file_re = r'^[.]|^(?:setup\.py|conftest\.py)$'
 code_exts = '.py,.js,.ts,.jsx,.tsx,.java,.go,.cs,.ruby,.php,.swift,.kt,.kts,.rs,.scala,.lua'
