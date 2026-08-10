@@ -459,20 +459,29 @@ def _n_parse_workers(files, n_workers):
     heavy = sum(1 for p in files if p.suffix.lower() in PARSE_HEAVY)
     return 0 if heavy < MIN_PARALLEL_DOCS else defaults.cpus
 
+def _profile_name(p):
+    'The name of the Profile registered for `p`, resolved in the parent rather than in a worker.'
+    from litesearch.data import profile_for
+    return pr.name if (pr := profile_for(p)) is not None else None
+
 # %% ../nbs/06_tree.ipynb #3de848afd05c0b42
 @patch
 def add_dir(self:Database,
-            dir,                    # directory to walk
+            dir=None,               # directory to walk; ignored when `files` is given
             types:str=DOC_EXTS,     # comma-separated extensions to ingest
             store:str='store',
             prefix:str=None,
             n_workers:int=None,     # parse workers; 0 is serial, None picks by parse-heavy file count
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
+            files=None,             # ingest exactly these paths instead of walking `dir`
             **kw                    # forwarded to add_doc
 ) -> list:
     '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.'''
-    exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
-    files = [p for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
+    if files is None:
+        if dir is None: raise ValueError('pass `dir` or `files`')
+        exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
+        files = [p for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
+    else: files = [Path(p) for p in files]
     g = self.get_tree(store, prefix, ann=self._tree_ann(store))
     prof, outp = kw.pop('profile', None), kw.pop('out_path', None)
     nw = _n_parse_workers(files, n_workers)
@@ -484,7 +493,7 @@ def add_dir(self:Database,
     out = []
     with g.store.bulk_load():
         if nw and nw > 1 and files:
-            jobs = [(str(p), prof, str(outp or self.assets(p.stem))) for p in files]
+            jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
             for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False, progress=False)):
                 if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
                 else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
@@ -719,7 +728,8 @@ def context(self:Database,
             related:int=8,          # max related sections
             max_read:int=6000,      # chars of assembled text per operative section
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
-            graph_w:float=0.6):
+            graph_w:float=0.6,
+            **kw):                  # forwarded to every retrieval leg, and on to Database.search
     '''One composed retrieval over a document tree: the operative sections plus what they connect to.
 
     `graph` is opt-in because the graph leg both helps and hurts, and which one depends on the
@@ -745,7 +755,7 @@ def context(self:Database,
             d = first(D(where=f'id={did!r}'))
             src[did] = Path(d['source']).name if (d and d['source']) else (d['title'] if d else did)
         return did, src.get(did)
-    secs = self.sections(q, emb, limit=sections * 3, per=per, store=store, prefix=prefix)
+    secs = self.sections(q, emb, limit=sections * 3, per=per, store=store, prefix=prefix, **kw)
     prim, seen, results = set(), set(), L()
     for s in secs:
         nid, bc = s.get('node_id'), s.get('breadcrumb')
@@ -765,10 +775,10 @@ def context(self:Database,
         rel[nid] = AttrDict(node_id=nid, via=via, score=score or 0.0, breadcrumb=heading)
     if graph and f'{p}entities' in self.t:
         for h in self.graph_search(q, emb, columns=['content', 'heading', 'node_id'],
-                                   limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w):
+                                   limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w, **kw):
             add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))
     if vector:
-        for h in self.doc_search(q,emb,columns=['content'],limit=related * 2,store=store,prefix=prefix,spans=False):
+        for h in self.doc_search(q,emb,columns=['content'],limit=related * 2,store=store,prefix=prefix,spans=False,**kw):
             add(h.get('node_id'), 'vector', h.get('_rrf_score'), h.get('heading') or h.get('breadcrumb'))
     related_list, seen_rel = L(), set(seen)
     for r in sorted(rel.values(), key=lambda r: -r.score):

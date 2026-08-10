@@ -344,11 +344,13 @@ def build_graph(db,                  # Database with a chunk store
         if not (s and d) or s == d: return
         e = edges.setdefault((s, d, rel), dict(src=s, dst=d, rel=rel, weight=0.0, n=0))
         e['weight'] += w; e['n'] += 1
+    n_mens = 0
     def flush_mentions():
         'Mentions are complete once their chunk is processed, so they need not wait for the corpus.'
+        nonlocal n_mens
         if not mens: return
         upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
-        mens.clear()
+        n_mens += len(mens); mens.clear()
 
     pend = []                                   # windows waiting for the next flush
     def add_wins(ws):
@@ -422,11 +424,11 @@ def build_graph(db,                  # Database with a chunk store
         if rows:
             if emb_fn: process_content(g.entities, rows, embed=True, emb_fn=emb_fn)
             else: g.entities.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
-        if mens: upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
+        if mens:
+            upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id')); n_mens += len(mens)
         if edges: upsert_all(g.edges, edges.values(), ('src','dst','rel'))
     if emb_fn and rows: g.entities.rebuild_index()
-    return dict(entities=len(rows), mentions=first(db.q(f'select count(*) c from {g.mentions.name}'))['c'],
-                edges=len(edges), windows=n_wins)
+    return dict(entities=len(rows), mentions=n_mens, edges=len(edges), windows=n_wins)
 
 
 # %% ../nbs/05_graph.ipynb #f1e0bc8fd1ac5d91

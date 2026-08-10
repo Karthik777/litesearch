@@ -120,6 +120,9 @@ Both are defaults; both are free.
 Spending latency? `reranking=True` (flashrank, ~40ms) is worth +0.03 to +0.08. A 300M transformer
 over a 32M static embedder was worth +0.007 for 1,700x the indexing compute.
 
+All of these are `Database.search` options, and `db.context()` forwards to every leg it runs, so the
+call that assembles a whole answer is where you set them.
+
 ## Key API
 
 | Function | Description |
@@ -131,6 +134,7 @@ over a 32M static embedder was worth +0.007 for 1,700x the indexing compute.
 | `store.clusters()` / `store.peers(rowid)` | Labelled clusters; the cluster a row belongs to |
 | `db.get_tree(store)` | Add docs/nodes tables to a chunk store |
 | `db.add_file(path)` / `db.add_dir(dir)` | Ingest: tree → node-linked chunks → embed |
+| `db.add_dir(files=[...])` | The same bulk load over an explicit list, for callers that route per file |
 | `db.doc_search(q, emb)` / `db.sections(q, emb)` | Search with breadcrumbs / ranked sections |
 | `db.toc(doc)` / `db.read(node_id)` | Navigate structure, no embeddings |
 | `build_graph(db, chunks, terms_fn=)` | Entities/mentions/edges; swap the prose extractor |
