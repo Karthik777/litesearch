@@ -58,6 +58,7 @@ vector leg reaches targets FTS cannot score at all. And the largest measured ret
 repository is not an embedding at all: the `sanskrit` FTS5 tokenizer's ASCII fold gives 1.000
 Devanagari→verse recall for *every* encoder tested, which is why it is on for every store.
 
+
 ## 0.1.22
 vishalakshi support
 
