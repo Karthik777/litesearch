@@ -381,15 +381,30 @@ And rake-nltk being indistinguishable at 21.6% term overlap says something less 
 the graph leg: if the keyphrases can be almost entirely different and the answers do not move, the
 walk is not discriminating on them.
 
-### The graph leg loses to plain hybrid on all three genres
+### The graph leg loses to plain hybrid — but read the caveat
 
-The row that matters in that table is the first one. Hybrid with no graph leg beats every graph
-configuration by 15 points on regulation, 20 on arXiv and 18 on astrology, and by more on
-`paraphrase` (regulatory 0.9595 against 0.8468 for the best graph run). It is also 3–4x faster.
+The row that matters in that table is the first one, and regenerating `eval_graph` over the
+now-connected graph makes it worse rather than better. p_mrr averaged over flavours:
 
-This contradicts the checked-in `evals/results/graph.json`, which shows 0.98 for the regulatory
-graph leg. Those numbers were produced by the broken path described below and should not be
-trusted; they are regenerated.
+| | hybrid | graph 0.25 | graph 0.5 | graph 1.0 | graph 0.5, no topics |
+|---|---|---|---|---|---|
+| regulatory | **0.8170** | 0.7395 | 0.6859 | 0.6463 | 0.6827 |
+| arxiv | **0.7692** | 0.6246 | 0.5726 | 0.5219 | 0.5580 |
+| astrology | **0.6767** | 0.5349 | 0.5006 | 0.4715 | 0.4995 |
+
+Monotone in `graph_w` on every genre: the more weight the graph leg gets, the worse the answer, and
+even the lightest setting costs 7–15 points at 2–4x the latency. This replaces the checked-in
+`graph.json`, which showed 0.98 for the regulatory graph leg — those numbers came from the
+disconnected-graph path described below.
+
+**The caveat is that this benchmark cannot test what the graph leg is for.** Its stated purpose, in
+`nbs/05_graph.ipynb`, is bridging: the query names Marie Curie, doc B never mentions her, and B is
+reachable only by walking `Marie Curie → polonium → B`. The eval query set is *known-item* — every
+query is derived from a source sentence that occurs exactly once, so the target passage is always
+lexically present and a bridge leg can only add noise to a leg that has already found it. What
+these numbers license is "do not turn the graph leg on for known-item retrieval", which is worth
+knowing given `graph_w=0.5` is the default. They do not license "the graph leg does not work". The
+question it is built for needs a multi-hop query set that does not exist here.
 
 Nothing is swapped on the strength of this: `build_graph(terms_fn=...)` is the seam, the default is
 unchanged, and the finding that wants acting on is about `graph_w`, not about extractors.

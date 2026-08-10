@@ -136,8 +136,11 @@ the eval PDF corpus. See the first entry under Fixed.
   yake, yake-rust and rake-nltk are statistically indistinguishable on retrieval. So `yake-rust`'s
   6.6x is free, and rake-nltk matching at 21.6% term overlap says the walk is not discriminating on
   keyphrases. The larger finding is in the baseline row: **plain hybrid beats every graph
-  configuration** by 15–20 points of p_mrr at `graph_w=0.5` on all three genres, at a third of the
-  latency. Nothing is swapped; `terms_fn` remains the seam and the default is unchanged.
+  configuration on every genre**, monotonically in `graph_w` (regulatory 0.8170 against 0.7395 /
+  0.6859 / 0.6463 at 0.25 / 0.5 / 1.0), at 2–4x the latency. Read with the caveat that a known-item
+  query set cannot test what the graph leg is for — bridging to a document the query never mentions
+  — so it licenses "do not default `graph_w` on for known-item search", not "the graph leg does not
+  work". Nothing is swapped; `terms_fn` remains the seam and the default is unchanged.
 - **`evals/ingest_bench.py embatch`** — what the encoder gains from being handed the whole
   directory instead of one document, swept over batch size, because the answer is a property of the
   encoder rather than of litesearch.
