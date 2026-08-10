@@ -5,22 +5,20 @@
 
 > **NB** Reading this on GitHub? The formatted [documentation](https://Karthik777.github.io/litesearch/) is nicer.
 
-litesearch stores and searches documents in a single SQLite database. It
-combines FTS5 keyword search with SIMD vector similarity (via usearch),
-then merges the ranked lists using Reciprocal Rank Fusion. No server, no
-new infrastructure.
+litesearch stores and searches documents in a single SQLite database. It combines FTS5 keyword
+search with SIMD vector similarity (via usearch), then merges the ranked lists using Reciprocal
+Rank Fusion. No server, no new infrastructure.
 
-There are **two ways in**, and picking between them takes one question:
-do you want the defaults decided for you?
+There are **two ways in**, and picking between them takes one question: do you want the defaults
+decided for you?
 
 | route | use it when | what it costs you |
 |----|----|----|
-| **[`Index`](https://Karthik777.github.io/litesearch/api.html)** | you want to search a folder of documents or code | nothing you asked about — encoder, dtype, chunk size, retrieval strategy and tree are all chosen from `evals/` |
-| **[`database()`](https://Karthik777.github.io/litesearch/core.html#database)** | you need your own columns, your own encoder, SQL, or float32 vectors | you now own six decisions, and one of them fails silently |
+| **[\[`Index`\](https://Karthik777.github.io/litesearch/api.html#index)](07_api.ipynb)** | you want to search a folder of documents or code | nothing you asked about — encoder, dtype, chunk size, retrieval strategy and tree are all chosen from `evals/` |
+| **[\[`database()`\](https://Karthik777.github.io/litesearch/core.html#database)](01_core.ipynb)** | you need your own columns, your own encoder, SQL, or float32 vectors | you now own six decisions, and one of them fails silently |
 
-Start at `Index`. Drop to `database()` when it stops fitting — it is the
-same object underneath, reachable as `Index.db`, so there is no migration
-and no wrapper to escape from.
+Start at [`Index`](https://Karthik777.github.io/litesearch/api.html#index). Drop to [`database()`](https://Karthik777.github.io/litesearch/core.html#database) when it stops fitting — it is the same object underneath,
+reachable as `Index.db`, so there is no migration and no wrapper to escape from.
 
 ## Install
 
@@ -30,10 +28,9 @@ and no wrapper to escape from.
 !uv add litesearch
 ```
 
-## Route 1 — `Index`
+## Route 1 — [`Index`](https://Karthik777.github.io/litesearch/api.html#index)
 
-Three lines. `add` takes a directory, a file, a string, a list of
-strings, or `{title: text}`.
+Three lines. `add` takes a directory, a file, a string, a list of strings, or `{title: text}`.
 
 ``` python
 ix = Index()                                        # pass a path to keep it on disk
@@ -42,74 +39,44 @@ hits = ix.search('how does multi-head attention work', limit=3)
 [(h['heading'], h['page']) for h in hits]
 ```
 
-    [('attention is all you need › Abstract', 6),
-     ('attention is all you need › Attention Visualizations', 16),
-     ('attention is all you need › Abstract', 0)]
-
-Every hit carries a `heading` breadcrumb and a `node_id`, because `Index`
-builds a document tree at ingest. That tree is what turns “which 512
-characters” into “which section”:
+Every hit carries a `heading` breadcrumb and a `node_id`, because [`Index`](https://Karthik777.github.io/litesearch/api.html#index) builds a document tree at
+ingest. That tree is what turns “which 512 characters” into “which section”:
 
 ``` python
 sec = ix.sections('how does multi-head attention work', limit=2)   # ranked *sections*, not chunks
 [(s['node_id'], (s['snippets'] or [''])[0][:60]) for s in sec]
 ```
 
-    [('3d5cb9e53d8efa9e#2', 'Rdmodel i\n\ni\n\ni dmodel\n\nand WO Rhdv\n\nIn this work we employ '),
-     ('3d5cb9e53d8efa9e#4', 'Figure 5: Many of the attention heads exhibit behaviour that')]
-
 ``` python
 ix.read(sec[0]['node_id'])['text'][:300]            # one whole section, reassembled
 ```
-
-    'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer'
 
 ``` python
 ix.toc(summaries=False)                             # the corpus — no embeddings computed at all
 ```
 
-    [{'doc_id': '3d5cb9e53d8efa9e',
-      'title': 'attention is all you need',
-      'source': 'pdfs/attention_is_all_you_need.pdf',
-      'pages': 17,
-      'tree': {'id': '3d5cb9e53d8efa9e#0',
-               'title': 'attention is all you need',
-               'level': 0, 'pages': (0, 16), 'nchunks': 1,
-               'children': [{'id': '3d5cb9e53d8efa9e#1',
-                             'title': 'Attention Is All You Need',
-                             'level': 2, 'pages': (0, 0), 'nchunks': 2,
-                             'children': [{'id': '3d5cb9e53d8efa9e#2', 'title': 'Abstract',
-                                           'level': 4, 'pages': (0, 10), 'nchunks': 75},
-                                          {'id': '3d5cb9e53d8efa9e#3', 'title': 'References',
-                                           'level': 4, 'pages': (11, 13), 'nchunks': 18},
-                                          {'id': '3d5cb9e53d8efa9e#4', 'title': 'Attention Visualizations',
-                                           'level': 4, 'pages': (14, 16), 'nchunks': 6}]}]}}]
-
-One knob is left to you. `rerank=True` runs a flashrank cross-encoder
-over the top 30 candidates and is worth **+0.026 to +0.077** weighted
-MRR — positive in all twelve paired cells measured — at roughly 10x the
-query latency and a 4 MB model download on first use.
+One knob is left to you. `rerank=True` runs a flashrank cross-encoder over the top 30 candidates
+and is worth **+0.026 to +0.077** weighted MRR — positive in all twelve paired cells measured — at
+roughly 10x the query latency and a 4 MB model download on first use.
 
 ``` python
 ix.search('how does multi-head attention work', rerank=True)
 ```
 
-For code, `add_code` uses the AST path instead of headings — its tree is
-module › class › function:
+For code, `add_code` uses the AST path instead of headings — its tree is module › class › function:
 
 ``` python
 ix.add_code('litesearch')      # a directory, or an installed package name
 ```
 
-That is the whole surface. `Index` has six methods; everything below this
-line is the layer it sits on, which you do not need until you do.
+That is the whole surface. [`Index`](https://Karthik777.github.io/litesearch/api.html#index) has six methods; everything below this line is the layer it sits
+on, which you do not need until you do.
 
-## Route 2 — `database()`
+## Route 2 — [`database()`](https://Karthik777.github.io/litesearch/core.html#database)
 
-`database()` returns a [fastlite](https://fastlite.answer.ai/) `Database`
-patched with usearch’s SIMD distance functions. Pass a file path for
-persistence; omit it for an in-memory store. Reach for this when you want
-columns, filters and joins of your own.
+[`database()`](https://Karthik777.github.io/litesearch/core.html#database) returns a [fastlite](https://fastlite.answer.ai/) `Database` patched with usearch’s
+SIMD distance functions. Pass a file path for persistence; omit it for an in-memory store. Reach
+for this when you want columns, filters and joins of your own.
 
 ``` python
 db = database()
@@ -119,13 +86,10 @@ vecs = dict(v1=np.ones((100,), dtype=np.float32).tobytes(),
  for m in ['sqeuclidean', 'divergence', 'inner', 'cosine']}
 ```
 
-    {'sqeuclidean': 100.0, 'divergence': 34.657352447509766, 'inner': 1.0, 'cosine': 1.0}
+Four metrics — `cosine`, `sqeuclidean`, `inner`, `divergence` — each with `f32`, `f16`, `f64` and
+`i8` variants, running inside SQL.
 
-Four metrics — `cosine`, `sqeuclidean`, `inner`, `divergence` — each with
-`f32`, `f16`, `f64` and `i8` variants, running inside SQL.
-
-The hand-rolled version of route 1 is eight lines, and one of them is a
-trap:
+The hand-rolled version of route 1 is eight lines, and one of them is a trap:
 
 ``` python
 enc   = static_retrieval_embedder()   # 512-dim static model — no GPU, no ONNX runtime
@@ -146,33 +110,23 @@ q = 'self-attention mechanism'
 db.search(q, emb([q])[0].tobytes(), columns=['content'], limit=2)
 ```
 
-    [{'rowid': 1,
-      'content': 'attention mechanisms in neural networks',
-      'rank': -2.1603995844199706,
-      '_rrf_score': 0.03333333333333333},
-     {'rowid': 3,
-      'content': 'stochastic gradient descent and learning rate schedules',
-      '_dist': 0.8964529633522034,
-      '_rrf_score': 0.01639344262295082}]
-
-`Index` exists because those eight lines have to be right every time, and
-the dtype line has no error message when it is wrong.
+[`Index`](https://Karthik777.github.io/litesearch/api.html#index) exists because those eight lines have to be right every time, and the dtype line has no
+error message when it is wrong.
 
 ## What the evaluation says
 
-`evals/` runs 120 known-item queries per genre over three corpora (EU
-legislation, arXiv papers, a 19th-century astrology treatise) in five
-query flavours, and scores section-level MRR weighted so that three
-quarters of the mass sits on flavours where the query is *not* a copy of
-the answer. `python -m evals.decide` reproduces every number below.
+`evals/` runs 120 known-item queries per genre over three corpora (EU legislation, arXiv papers, a
+19th-century astrology treatise) in five query flavours, and scores section-level MRR weighted so
+that three quarters of the mass sits on flavours where the query is *not* a copy of the answer.
+`python -m evals.decide` reproduces every number below.
 
-Read it as a ladder. Everything above the line is already on by default;
-everything below it is off, and stays off:
+Read it as a ladder. Everything above the line is already on by default; everything below it is
+off, and stays off:
 
 | change | Δ weighted MRR | verdict |
 |----|----|----|
-| `pre()` on the FTS leg | **+0.016 → +0.093** | on by default since 0.1.6 |
-| 512-char chunks over page-sized | **+0.06 → +0.12** | `Index` default |
+| [`pre()`](https://Karthik777.github.io/litesearch/data.html#pre) on the FTS leg | **+0.016 → +0.093** | on by default since 0.1.6 |
+| 512-char chunks over page-sized | **+0.06 → +0.12** | [`Index`](https://Karthik777.github.io/litesearch/api.html#index) default |
 | cross-encoder rerank | **+0.026 → +0.077** | `rerank=True` — the one lever worth a decision |
 | HNSW ANN vector leg | −0.005 | on by default; buy the speed |
 | — |  |  |
@@ -184,76 +138,56 @@ everything below it is off, and stays off:
 
 Three findings worth more than their line in the table:
 
-**The encoder is not the lever.** Across `potion-32M` (static, no GPU),
-`bge-small`, `jina-v2-sm` and `egemma-300m` the spread is 0.018–0.046,
-and the static model *wins* one genre outright. It indexes ~1,700x
-cheaper. That is why it is the default.
+**The encoder is not the lever.** Across `potion-32M` (static, no GPU), `bge-small`, `jina-v2-sm`
+and `egemma-300m` the spread is 0.018–0.046, and the static model *wins* one genre outright. It
+indexes ~1,700x cheaper. That is why it is the default.
 
-**The tree does not improve ranking, and is still worth building.**
-Section *ranking* is a wash. Section *assembly* is not: on the Sanskrit
-corpus `context()` roughly doubles verse-level recall over plain chunk
-search (0.190 → 0.340), the largest single effect measured anywhere in
-`evals/`.
+**The tree does not improve ranking, and is still worth building.** Section *ranking* is a wash.
+Section *assembly* is not: on the Sanskrit corpus `context()` roughly doubles verse-level recall
+over plain chunk search (0.190 → 0.340), the largest single effect measured anywhere in `evals/`.
 
-**FTS alone looks unbeatable on this benchmark, and that is the
-benchmark’s fault.** Keyword-only retrieval with `pre()` beats hybrid in
-all 24 paired cells — because every query in the main set is a lexical
-transformation of the sentence it targets, so surface overlap always
-suffices. `evals/multihop.py` builds the corrective: a bridge set where
-the answer shares *no token* with the question. There FTS cannot score at
-all and the vector leg reaches the target 53–84% of the time at rank 1.
-Vectors earn their place on bridging, not on known-item lookup.
+**FTS alone looks unbeatable on this benchmark, and that is the benchmark’s fault.** Keyword-only
+retrieval with [`pre()`](https://Karthik777.github.io/litesearch/data.html#pre) beats hybrid in all 24 paired cells — because every query in the main set is
+a lexical transformation of the sentence it targets, so surface overlap always suffices.
+`evals/multihop.py` builds the corrective: a bridge set where the answer shares *no token* with the
+question. There FTS cannot score at all and the vector leg reaches the target 53–84% of the time at
+rank 1. Vectors earn their place on bridging, not on known-item lookup.
 
 ## Beyond the two routes
 
-Each of these has its own page. None of them is a decision you have to
-make to get started.
+Each of these has its own page. None of them is a decision you have to make to get started.
 
 | module | what you get |
 |----|----|
-| [`litesearch.tree`](https://Karthik777.github.io/litesearch/tree.html) | the document tree directly — `add_dir`, `doc_search`, `context`, custom chunkers and summarizers |
-| [`litesearch.data`](https://Karthik777.github.io/litesearch/data.html) | PDF extraction, `file_parse` for any file type, `pyparse`/`pkg2chunks` for code, FTS query preprocessing |
-| [`litesearch.utils`](https://Karthik777.github.io/litesearch/utils.html) | ONNX encoders — `FastEncode`, `FastEncodeImage`, `FastEncodeMultimodal` for cross-modal image+text search |
-| [`litesearch.sanskrit`](https://Karthik777.github.io/litesearch/sanskrit.html) | verse readers, `VerseChunker`, metre detection, sandhi-splitting lemmas, Monier-Williams glosses |
-| [`litesearch.graph`](https://Karthik777.github.io/litesearch/graph.html) | entity graph and `graph_search`, with no LLM anywhere |
+| [`litesearch.tree`](06_tree.ipynb) | the document tree directly — `add_dir`, `doc_search`, `context`, custom chunkers and summarizers |
+| [`litesearch.data`](02_data.ipynb) | PDF extraction, [`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse) for any file type, [`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse)/[`pkg2chunks`](https://Karthik777.github.io/litesearch/data.html#pkg2chunks) for code, FTS query preprocessing |
+| [`litesearch.utils`](03_utils.ipynb) | ONNX encoders — [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage), [`FastEncodeMultimodal`](https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal) for cross-modal image+text search |
+| [`litesearch.sanskrit`](09_sanskrit.ipynb) | verse readers, [`VerseChunker`](https://Karthik777.github.io/litesearch/sanskrit.html#versechunker), metre detection, sandhi-splitting lemmas, Monier-Williams glosses |
+| [`litesearch.graph`](05_graph.ipynb) | entity graph and `graph_search`, with no LLM anywhere |
 
-**Cross-script search is on for every store**, not only Sanskrit ones:
-the `sanskrit` FTS5 tokenizer emits an ASCII fold of each token as a
-colocated token, so `श्रीमाता`, `śrīmātā` and `srimata` all reach the
-same row. It is purely additive — ordinary English tokenises identically
-— and it is the single largest measured retrieval win in the repository:
-**1.000 Devanagari→verse recall for every encoder tested**, because the
-tokenizer does the work no embedding had to. One real cost: a store built
-with this chain cannot be opened by a connection that has not registered
+**Cross-script search is on for every store**, not only Sanskrit ones: the `sanskrit` FTS5
+tokenizer emits an ASCII fold of each token as a colocated token, so `श्रीमाता`, `śrīmātā` and
+`srimata` all reach the same row. It is purely additive — ordinary English tokenises identically —
+and it is the single largest measured retrieval win in the repository: **1.000 Devanagari→verse
+recall for every encoder tested**, because the tokenizer does the work no embedding had to. One
+real cost: a store built with this chain cannot be opened by a connection that has not registered
 the tokenizer, plain `sqlite3` included.
 
-**The graph leg is opt-in by name.** `Index` does not expose it and
-`db.context()` defaults to `graph=False`. On ordinary queries it is
-negative in every cell, genre and flavour, monotonically worse as its
-weight rises. On the bridge set built to favour it, it buys roughly +0.04
-target MRR and +0.12 hit@1 on one genre of three, while losing 0.10–0.16
-on ordinary questions and running 3–4x slower. Call `db.graph_search`
-when you know your traffic looks like that.
+**The graph leg is opt-in by name.** [`Index`](https://Karthik777.github.io/litesearch/api.html#index) does not expose it and `db.context()` defaults to
+`graph=False`. On ordinary queries it is negative in every cell, genre and flavour, monotonically
+worse as its weight rises. On the bridge set built to favour it, it buys roughly +0.04 target MRR
+and +0.12 hit@1 on one genre of three, while losing 0.10–0.16 on ordinary questions and running
+3–4x slower. Call `db.graph_search` when you know your traffic looks like that.
 
 ## Next Steps
 
-- **[examples/01_simple_rag.ipynb](examples/01_simple_rag.ipynb)** —
-  ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank
-- **[examples/02_tool_use.ipynb](examples/02_tool_use.ipynb)** — wire
-  litesearch into an LLM tool-use loop
-- **[api docs](https://Karthik777.github.io/litesearch/api.html)** —
-  `Index`, and what each default is worth
-- **[core docs](https://Karthik777.github.io/litesearch/core.html)** —
-  `database`, `get_store`, `search`, `rrf_merge`, `vec_search`
-- **[tree docs](https://Karthik777.github.io/litesearch/tree.html)** —
-  `add_dir`, `toc`, `read`, `sections`, `context`
-- **[vishalakshi](https://github.com/vedicreader/vishalakshi)** — a
-  litesearch-backed vault, and the first caller nominated to port onto
-  `Index`; the [api page](https://Karthik777.github.io/litesearch/api.html)
-  says what that port should test
+- **[examples/01_simple_rag.ipynb](examples/01_simple_rag.ipynb)** — ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank
+- **[examples/02_tool_use.ipynb](examples/02_tool_use.ipynb)** — wire litesearch into an LLM tool-use loop
+- **[api docs](https://Karthik777.github.io/litesearch/api.html)** — [`Index`](https://Karthik777.github.io/litesearch/api.html#index), and what each default is worth
+- **[core docs](https://Karthik777.github.io/litesearch/core.html)** — [`database`](https://Karthik777.github.io/litesearch/core.html#database), `get_store`, `search`, [`rrf_merge`](https://Karthik777.github.io/litesearch/core.html#rrf_merge), `vec_search`
+- **[tree docs](https://Karthik777.github.io/litesearch/tree.html)** — `add_dir`, `toc`, `read`, `sections`, `context`
+- **[vishalakshi](https://github.com/vedicreader/vishalakshi)** — a litesearch-backed vault, and the first caller nominated to port onto [`Index`](https://Karthik777.github.io/litesearch/api.html#index); see the [api page](07_api.ipynb) for what that port should test
 
 ## Acknowledgements
 
-A big thank you to [@yfedoseev](https://github.com/yfedoseev) for
-[pdf-oxide](https://github.com/yfedoseev/pdf-oxide), which powers the PDF
-extraction functionality in `litesearch.data`.
+A big thank you to [@yfedoseev](https://github.com/yfedoseev) for [pdf-oxide](https://github.com/yfedoseev/pdf-oxide), which powers the PDF extraction functionality in `litesearch.data`.
