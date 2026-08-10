@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.20
+release
+
 ## 0.1.19
 
 Performance across `graph`, `tree`, `core` and `sanskrit`. The question was whether [usearch],

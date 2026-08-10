@@ -59,7 +59,6 @@ def _onnx(name, md, dim, max_seq, late=True, note=''):
     lc = AutoLateChunkFastEncode(model_dict=md, max_seq_len=max_seq, dtype=DT) if late else None
     return Enc(name, dim, max_seq, fe.encode_document, fe.encode_query, lc, 'onnx', note)
 
-
 def _static(name, repo, dim, note=''):
     sm = static_embedder(repo)
     f = lambda ts: sm.encode(list(ts))

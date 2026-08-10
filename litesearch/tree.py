@@ -6,7 +6,7 @@ __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'PARSE_HEAVY', 'MIN_PARA
            'merge_spans']
 
 # %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
-from fastcore.all import Path, patch, first, L, AttrDict, ifnone, defaults, parallel
+from fastcore.all import Path, patch, first, L, chunked, AttrDict, ifnone, defaults, parallel
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import hash_record
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
 
-from .core import _in, _rid, _np_dtype, rrf_merge, process_content, write_txn
+from .core import _in, _rid, _np_dtype, rrf_merge, process_content, write_txn, db_lock
 from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
@@ -321,61 +321,42 @@ def add_doc(self:Database,
             meta_fn=None,           # (chunk text) -> dict of facets stored as the chunk's `metadata`
             defer:list=None         # collect chunks here instead of embedding and storing them
 ) -> dict:
-    '''Ingest one document: build its tree, chunk it per node, embed and store.
-
-    Chunks are embedded as `heading ⏎⏎ content` but **stored** as bare content, so retrieval sees
-    the context and the caller gets clean text back.
-
-    The ANN index is updated with *this document's* keys, not rebuilt. A full `rebuild_index` reads
-    every embedding blob in the store and reconstructs the whole HNSW graph, so doing it per
-    document makes ingesting a directory O(N²) — 400 documents took 112s that way against 16s with
-    one rebuild at the end. `index=False` skips the mirror entirely for callers batching their own
-    (`add_dir` does); the index is then stale until someone rebuilds it.'''
-    import json as _json
-    if isinstance(pages, str): pages = [(0, pages)]
-    pages = [(p, t or '') for p, t in pages]
-    g, src = self.get_tree(store, prefix, ann=self._tree_ann(store)), str(ifnone(source, title))
-    did = doc_id(src, title)
-    if first(g.docs(where=f'id={did!r}')):
-        if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
-        self.delete_doc(did, store, prefix)
-    tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
-    chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
-    counts = {}
-    for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
-    # doc row and node rows are one write. Separately they are two commits, and in WAL mode a
-    # commit is an fsync — paid per document, on the path that ingests a directory of them. The
-    # chunk write below opens its own transaction; `write_txn` is a no-op inside an open one, so
-    # nesting it here would just widen this into a single commit for the whole document.
-    with write_txn(self):
-        g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
-                           pages=(max(p for p, _ in pages)+1 if pages else 0),
-                           meta=_json.dumps(meta or {})), replace=True)
-        g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
-                                 parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
-                                 title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
-                                 summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
-                            for nd in tree], replace=True)
-    if chunks and defer is not None: defer.extend(chunks)
-    elif chunks:
-        store_chunks(g.store, chunks, emb_fn, with_heading)
-        if index and (m := self._ann_meta(store)):
-            ids = L(g.store(select='id', where=f'doc_id={did!r}')).itemgot('id')
-            if ids: g.store._sync_index(list(ids), [], _np_dtype.get(m['dtype'], np.float16))
-    return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
+    '''Ingest one document: build its tree, chunk it per node, embed and store.'''
+    import json
+    with db_lock(self):
+        if isinstance(pages, str): pages = [(0, pages)]
+        pages = [(p, t or '') for p, t in pages]
+        g, src = self.get_tree(store, prefix, ann=self._tree_ann(store)), str(ifnone(source, title))
+        did = doc_id(src, title)
+        if first(g.docs(where=f'id={did!r}')):
+            if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
+            self.delete_doc(did, store, prefix)
+        tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
+        chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
+        counts = {}
+        for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
+        with write_txn(self):
+            g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
+                               pages=(max(p for p, _ in pages)+1 if pages else 0),
+                               meta=json.dumps(meta or {})), replace=True)
+            g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
+                                     parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
+                                     title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
+                                     summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
+                                for nd in tree], replace=True)
+        if chunks and defer is not None: defer.extend(chunks)
+        elif chunks:
+            store_chunks(g.store, chunks, emb_fn, with_heading)
+            if index and (m := self._ann_meta(store)):
+                ids = L(g.store(select='id', where=f'doc_id={did!r}')).itemgot('id')
+                if ids: g.store._sync_index(list(ids), [], _np_dtype.get(m['dtype'], np.float16))
+        return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
 
 def store_chunks(store,                 # chunk store table
                  chunks,                # chunk dicts from `_node_chunks`, from one document or many
                  emb_fn=None,           # embedder: list[str] -> vectors
                  with_heading=True):    # embed each chunk together with its heading path
-    '''Embed a batch of chunks and upsert them. The batch may span documents, which is the point.
-
-    Chunks are embedded as `heading ⏎⏎ content` but **stored** as bare content, so retrieval sees
-    the context and the caller gets clean text back. The heading is paired with its chunk by
-    position rather than through a `{content: heading}` dict: that dict was rebuilt per document
-    and collapsed on duplicate content, so two chunks with the same text under different headings
-    were both embedded with whichever heading came last. Positional pairing is what makes the batch
-    safe to widen past one document, and it is also just correct.'''
+    '''Embed a batch of chunks and upsert them. The batch may span documents, which is the point.'''
     rows = [c for c in chunks if (c.get('content') or '').strip()]
     if not rows: return 0
     if emb_fn:
@@ -388,16 +369,15 @@ def store_chunks(store,                 # chunk store table
 @patch
 def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     'Remove a document, its nodes and its chunks, dropping just those keys from the ANN index.'
-    g = self.get_tree(store, prefix, ann=self._tree_ann(store))
-    m = self._ann_meta(store)
-    rm = L(g.store(select=_rid(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
-    # three tables, one transaction — otherwise a reader between the second and third commit sees
-    # a document whose nodes are gone, and a crash there leaves exactly that on disk
-    with write_txn(self):
-        g.store.delete_where(where=f'doc_id={did!r}')
-        g.nodes.delete_where(where=f'doc_id={did!r}')
-        g.docs.delete_where(where=f'id={did!r}')
-    if m and rm: g.store._sync_index([], list(rm), _np_dtype.get(m['dtype'], np.float16))
+    with db_lock(self):
+        g = self.get_tree(store, prefix, ann=self._tree_ann(store))
+        m = self._ann_meta(store)
+        rm = L(g.store(select=_rid(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
+        with write_txn(self):
+            g.store.delete_where(where=f'doc_id={did!r}')
+            g.nodes.delete_where(where=f'doc_id={did!r}')
+            g.docs.delete_where(where=f'id={did!r}')
+        if m and rm: g.store._sync_index([], list(rm), _np_dtype.get(m['dtype'], np.float16))
 
 
 # %% ../nbs/06_tree.ipynb #470e83335ade7f42
@@ -479,6 +459,7 @@ def _n_parse_workers(files, n_workers):
     heavy = sum(1 for p in files if p.suffix.lower() in PARSE_HEAVY)
     return 0 if heavy < MIN_PARALLEL_DOCS else defaults.cpus
 
+# %% ../nbs/06_tree.ipynb #3de848afd05c0b42
 @patch
 def add_dir(self:Database,
             dir,                    # directory to walk
@@ -489,35 +470,12 @@ def add_dir(self:Database,
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             **kw                    # forwarded to add_doc
 ) -> list:
-    '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.
-
-    A directory is a bulk load, so both indexes are built once for the walk rather than per file:
-    the FTS triggers are suspended by `bulk_load` and the ANN index is rebuilt at the end. Measured
-    over 400 markdown documents this is 16.0s against 112.2s, and the growth curve goes from
-    exponent 1.6 to 1.0 — which is the difference between a corpus that finishes and one that
-    does not.
-
-    Parsing runs on a process pool, writing does not, and the split is where it is because the two
-    halves are nothing alike. Over eight PDFs the parse is 3.55s of a 5.31s walk — two thirds, and
-    embarrassingly parallel. Over 150 markdown files the same "parse" is 2.7ms in total, so a pool
-    is pure loss and `n_workers=None` declines to start one: the choice is made on how many files
-    have a parse worth splitting, not on how many files there are. Writing stays in the parent
-    either way — there is one connection, one FTS index and one HNSW graph, and they are not
-    improved by being contended for.
-
-    Processes rather than threads: pdf-oxide does its work in Rust but never releases the GIL, so a
-    thread pool measured 0.76x on the equivalent code path in `data._parse_files`.'''
+    '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.'''
     exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
     files = [p for p in sorted(Path(dir).rglob('*')) if p.is_file() and p.suffix.lower() in exts]
     g = self.get_tree(store, prefix, ann=self._tree_ann(store))
-    # both are `add_file` parameters, not `add_doc` ones: popped here so the pooled branch, which
-    # goes straight to `_add_parsed`, does not forward them into `add_doc` and trip over them
     prof, outp = kw.pop('profile', None), kw.pop('out_path', None)
     nw = _n_parse_workers(files, n_workers)
-    # chunks from every document so far, embedded and written together. Per document the encoder
-    # was called once per ~20 chunks and the store was upserted once per document; both would
-    # rather see the whole directory. Flushed on a chunk count rather than at the end so a large
-    # directory does not hold its own text twice — once as chunks, once as embeddings.
     pend, emb_fn, wh = [], kw.get('emb_fn'), kw.get('with_heading', True)
     def flush(force=False):
         if pend and (force or len(pend) >= embed_batch):
@@ -527,24 +485,17 @@ def add_dir(self:Database,
     with g.store.bulk_load():
         if nw and nw > 1 and files:
             jobs = [(str(p), prof, str(outp or self.assets(p.stem))) for p in files]
-            for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False,
-                                                 progress=False)):
-                # `None` means that worker could not resolve the profile the parent asked for;
-                # re-read it here rather than let a different parser through unnoticed
-                out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw)
-                           if parsed is not None else
-                           self.add_file(p, store=store, prefix=prefix, index=False, profile=prof,
-                                         out_path=outp, **kw))
+            for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False, progress=False)):
+                if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
+                else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
                 flush()
         else:
             for p in files:
-                out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof,
-                                         out_path=outp, **kw))
+                out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
                 flush()
         flush(force=True)
     if self._ann_meta(store): g.store.rebuild_index()
     return out
-
 
 # %% ../nbs/06_tree.ipynb #d9507dc29ccaad76
 @patch
@@ -562,8 +513,8 @@ def toc(self:Database,
     # document made `toc()` cost a round trip per document to build a listing whose whole point is
     # that it is the cheap, vectorless way to see the corpus.
     by_doc, ids = {}, [d['id'] for d in docs]
-    for i in range(0, len(ids), 400):
-        for r in g.nodes(where=_in('doc_id', ids[i:i+400])): by_doc.setdefault(r['doc_id'], []).append(r)
+    for b in chunked(ids, 400):
+        for r in g.nodes(where=_in('doc_id', b)): by_doc.setdefault(r['doc_id'], []).append(r)
     out = []
     for d in docs:
         rows = sorted(by_doc.get(d['id'], []), key=lambda r: r['seq'])

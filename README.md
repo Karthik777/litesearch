@@ -423,10 +423,10 @@ Details that matter in practice:
 - **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
   clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
   IDF is what makes labels distinguish clusters from each other.
-`build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a
-choice rather than a fork in the library. [`litesearch.sanskrit.sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is one, for a
-script yake cannot tokenise. Extraction runs serially whenever `terms_fn` is set, because such
-callables usually close over state that does not pickle.
+  `build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a
+  choice rather than a fork in the library. [`litesearch.sanskrit.sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is one, for a
+  script yake cannot tokenise. Extraction runs serially whenever `terms_fn` is set, because such
+  callables usually close over state that does not pickle.
 
 ### When to use the graph leg
 
@@ -437,13 +437,13 @@ decided by the *query*, not by the corpus, and both directions are measured over
 
 | your queries look like | use | why |
 |----|----|----|
-| **known-item** — the wording you search for appears in the passage you want ("what does Article 12 say about withdrawal") | `db.search` / `db.context()` | hybrid wins by 15-20 points of p_mrr and is 2-4x faster; the graph leg reorders a list FTS had already got right, and costs more the higher `graph_w` goes: 0.8170 / 0.7395 / 0.6859 / 0.6463 at 0 / 0.25 / 0.5 / 1.0 |
-| **bridge** — the answer never uses your words and is reachable only through a shared entity ("what else relates to polonium", "what does this provision interact with") | `db.graph_search(..., graph_w=1.0)`, or `db.context(..., graph=True)` | significantly better in 7 of 9 paired comparisons, and better the *higher* `graph_w` goes (arXiv +0.0387 target MRR at 1.0, 95% CI \[+0.0110, +0.0694\]) |
+| **known-item** — the wording you search for appears in the passage you want (“what does Article 12 say about withdrawal”) | `db.search` / `db.context()` | hybrid wins by 15-20 points of p_mrr and is 2-4x faster; the graph leg reorders a list FTS had already got right, and costs more the higher `graph_w` goes: 0.8170 / 0.7395 / 0.6859 / 0.6463 at 0 / 0.25 / 0.5 / 1.0 |
+| **bridge** — the answer never uses your words and is reachable only through a shared entity (“what else relates to polonium”, “what does this provision interact with”) | `db.graph_search(..., graph_w=1.0)`, or `db.context(..., graph=True)` | significantly better in 7 of 9 paired comparisons, and better the *higher* `graph_w` goes (arXiv +0.0387 target MRR at 1.0, 95% CI \[+0.0110, +0.0694\]) |
 | **you do not know yet** | hybrid | it is the cheaper default and what most queries want; add the graph leg once you can point at queries it should be answering |
 
 `graph_w` is a dial rather than a switch: raising it lifts bridge targets and pushes the lexically
 obvious passage down, which is the trade in one number. And none of this applies to `clusters`,
-`peers`, `topic_nodes` or `graph_stats` — those read a corpus rather than rank it, and are worth
+`peers`, [`topic_nodes`](https://Karthik777.github.io/litesearch/graph.html#topic_nodes) or [`graph_stats`](https://Karthik777.github.io/litesearch/graph.html#graph_stats) — those read a corpus rather than rank it, and are worth
 having however you search.
 
 Concretely — five passages, and a query that names Marie Curie. Doc **B** never mentions her:
@@ -485,13 +485,10 @@ print('hybrid       ', hybrid)
 print('graph w=1.0  ', graph)
 ```
 
-    hybrid        ['A', 'D', 'C']
-    graph w=1.0   ['A', 'D', 'B']
-
 Doc **B** is reachable only as `Marie Curie → polonium → B`: it shares no word with the query, so
 FTS cannot see it and the vector leg has nothing to latch onto either. That is the shape of query
-the graph leg exists for, and the shape it is worth turning on for. Ask the same corpus *"what did
-Marie Curie isolate"* — a known-item question whose answer is written in doc A — and the graph leg
+the graph leg exists for, and the shape it is worth turning on for. Ask the same corpus *“what did
+Marie Curie isolate”* — a known-item question whose answer is written in doc A — and the graph leg
 has nothing to add, which is why it is off by default.
 
 ## PDF extraction
@@ -700,17 +697,17 @@ for r in rrf_merge(txt_r, img_r)[:6]:
     rrf=0.0167  Table 1: Maximum path lengths, per-layer complexity and minimum number
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-28-output-3.png)
+![](index_files/figure-commonmark/cell-29-output-3.png)
 
     rrf=0.0164  Table 4: The Transformer generalizes well to English constituency pars
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-28-output-5.png)
+![](index_files/figure-commonmark/cell-29-output-5.png)
 
     rrf=0.0161  Table 3: Variations on the Transformer architecture. Unlisted values a
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-28-output-7.png)
+![](index_files/figure-commonmark/cell-29-output-7.png)
 
 **Paired models** — `nomic_text_v15` + `nomic_vision_v15` share the same 768-dim space; use [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) and [`FastEncodeImage`](https://Karthik777.github.io/litesearch/utils.html#fastencodeimage) separately:
 
@@ -739,32 +736,32 @@ for r in rrf_merge(txt_r2, img_r2)[:6]:
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-29-output-2.png)
+![](index_files/figure-commonmark/cell-30-output-2.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-29-output-4.png)
+![](index_files/figure-commonmark/cell-30-output-4.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-29-output-6.png)
+![](index_files/figure-commonmark/cell-30-output-6.png)
 
     rrf=0.0167  Self-attention, sometimes called intra-attention is an attention mecha
     rrf=0.0167  page_3
 
-![](index_files/figure-commonmark/cell-29-output-8.png)
+![](index_files/figure-commonmark/cell-30-output-8.png)
 
     rrf=0.0164  Attention mechanisms have become an integral part of compelling sequen
     rrf=0.0164  page_2
 
-![](index_files/figure-commonmark/cell-29-output-10.png)
+![](index_files/figure-commonmark/cell-30-output-10.png)
 
     rrf=0.0161  2,[19]. Inall but a few cases27],[ however, such attention mechanisms
     rrf=0.0161  page_3
 
-![](index_files/figure-commonmark/cell-29-output-12.png)
+![](index_files/figure-commonmark/cell-30-output-12.png)
 
 ## Next Steps
 

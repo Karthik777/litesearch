@@ -130,10 +130,10 @@ class FastEncode:
 			print(f'Encoding setup errored out with exception: {ex}')
 			self.sess = None
 	def _load_tok(self):
-		cfg = json.load(open(os.path.join(self.md, "config.json")))
-		tok_cfg = json.load(open(os.path.join(self.md, "tokenizer_config.json")))
-		tok_map = json.load(open(os.path.join(self.md, "special_tokens_map.json")))
-		self.tok = Tokenizer.from_file(os.path.join(self.md, "tokenizer.json"))
+		cfg = (Path(self.md)/'config.json').read_json()
+		tok_cfg = (Path(self.md)/'tokenizer_config.json').read_json()
+		tok_map = (Path(self.md)/'special_tokens_map.json').read_json()
+		self.tok = Tokenizer.from_file(str(Path(self.md)/'tokenizer.json'))
 		pad_token = tok_cfg["pad_token"]
 		pad_id = ifnone(cfg.get("pad_token_id"), self.tok.token_to_id(pad_token) or 0)
 		self.tok.enable_padding(pad_id=pad_id, pad_token=pad_token)

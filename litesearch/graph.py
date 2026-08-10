@@ -5,14 +5,14 @@ __all__ = ['MIN_PARALLEL_CHUNKS', 'hash_embed', 'code_entities', 'prose_windows'
            'resolve_entities', 'cooccur_edges', 'ctfidf_labels', 'topic_nodes', 'rrf_all', 'graph_stats']
 
 # %% ../nbs/05_graph.ipynb #ab82e9d12af8898f
-from fastcore.all import Path, patch, merge, ifnone, first, L, AttrDict, defaults
+from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, store_attr, AttrDict, defaults
 from fastcore.parallel import ProcessPoolExecutor
 from fastlite import Database
 from apswutils.db import Table
-import ast, math, re, zlib
+from multiprocessing import get_context
+import ast, math, re, sys, zlib
 from functools import lru_cache
 import numpy as np
-
 from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn, upsert_all
 
 # %% ../nbs/05_graph.ipynb #e2556b625e937d53
@@ -42,6 +42,7 @@ _PRON = {'it','its','we','our','they','their','he','she','you','i','me','us','th
 _TOK = re.compile(r'[a-z0-9]+')
 _NUM = re.compile(r'\d+')
 
+# %% ../nbs/05_graph.ipynb #109cd07acfcb6b94
 def _norm(s):
     'Canonical surface form for a mention; None when the phrase is not entity-like.'
     if not s: return None
@@ -51,10 +52,6 @@ def _norm(s):
     if not (2 <= len(s) <= 60): return None
     if len(s.split()) > 5: return None
     if s.lower() in _PRON: return None
-    # any *letter*, in any script — not `[A-Za-z]`. The intent is to drop pure numbers and
-    # punctuation, but spelling it in ASCII silently rejected every non-Latin writing system:
-    # `धर्मक्षेत्रे` normalised to None, so `build_graph` on a Devanagari corpus produced an empty
-    # graph however good its term extraction was.
     if not any(c.isalpha() for c in s): return None
     return s.lower()
 
@@ -82,27 +79,18 @@ def _jac(a, b):
     u = len(A) + len(B) - len(A & B)
     return len(A & B) / u if u else 0.0
 
+# %% ../nbs/05_graph.ipynb #7710055a5e8346fe
 def _lex_ok(a, b, lex=0.34, cover=0.5):
-    '''Lexical guard on a proposed merge.
-
-    Ordered by what actually decides. The token overlap settles all but a handful of candidate
-    pairs and costs two cached frozensets; the digit and acronym tests allocate four throwaway
-    objects per call and can only ever *veto* or *rescue* a pair the tokens have already ruled on.
-    Running them first meant paying for them on the ~99% of pairs the tokens reject outright — 300k
-    `_acr` calls and 300k `findall`s per resolve, to change 900 answers. Same answer on every pair;
-    the expensive tests just run on far fewer of them.'''
+    '''Lexical guard on a proposed merge.'''
     if a == b: return True
     A, B = _toks(a), _toks(b)
     ok = False
     if A and B:
         inter = len(A & B)
-        # union without building it: |A|+|B|-|A&B|, and A,B are non-empty so it cannot be zero
         ok = ((inter == min(len(A), len(B)) and inter/max(len(A), len(B)) >= cover)
               or inter/(len(A) + len(B) - inter) >= lex)
-    # an acronym pair shares no tokens by construction, so it is only reachable once tokens fail
     if not ok and not (_acr(a) == b.lower() or _acr(b) == a.lower()): return False
     return _nums(a) == _nums(b)
-
 
 # %% ../nbs/05_graph.ipynb #eecb2932441a0d19
 def hash_embed(texts,            # iterable of strings
@@ -255,22 +243,26 @@ def _prose_job(txt):
     fork would have to keep consistent.'''
     return [[(s, k) for s, k in w] for w in prose_windows(txt)]
 
+def _pool(nw):
+    '''A `ProcessPoolExecutor` started the way `fastcore.parallel` starts one.
+
+    fork, not spawn, on darwin. A spawned worker unpickles the job by module and name, and under
+    nbdev `_prose_job` is defined in the notebook's `__main__`, which the worker has no copy of —
+    so every worker died on unpickle. Only text crosses the boundary and only tuples come back,
+    so there is nothing here a fork has to keep consistent.'''
+    kw = dict(mp_context=get_context('fork')) if sys.platform == 'darwin' else {}
+    return ProcessPoolExecutor(nw, **kw)
+
 def _n_workers(n, n_workers):
     'Resolve `n_workers`: None picks by size, 0 stays serial, anything else is taken literally.'
     if n_workers is not None: return n_workers
     return 0 if n < MIN_PARALLEL_CHUNKS else defaults.cpus
 
+# %% ../nbs/05_graph.ipynb #bd12970f219d8213
 class _WindowStore:
-    '''Co-occurrence windows kept in a SQLite table instead of a python list.
-
-    `_pmi_edges` already walks its windows twice — once to count entities, once to count pairs, and
-    it has to be twice because the hub cut-off is not known until the first pass finishes. That is
-    the only thing it needs from a list, so anything with `__len__` and a re-iterable `__iter__`
-    will do, and a table costs a bounded amount of memory instead of holding every window of the
-    corpus at once. Windows are the part of `build_graph` that grows without limit: entity
-    vocabulary saturates, mentions are flushed per batch, windows are one per sentence forever.'''
+    '''Co-occurrence windows kept in a SQLite table instead of a python list.'''
     def __init__(self, db, name):
-        self.db, self.name, self.n, self._w = db, name, 0, 0
+        store_attr(); self.n, self._w = 0, 0
         db.conn.execute(f'create table if not exists {name} (w integer, e text)')
         db.conn.execute(f'delete from {name}')
     def extend(self, wins):
@@ -282,12 +274,7 @@ class _WindowStore:
         'entity -> windows containing it. Bounded by vocabulary, which saturates; safe in memory.'
         return dict(self.db.conn.execute(f'select e, count(*) from {self.name} group by e'))
     def pair_counts(self, hub, min_n):
-        """Co-occurrence count per unordered pair, aggregated on disk.
-
-        The last unbounded structure in the build. Windows are one per sentence and pairs are
-        quadratic in window size, so the dict `_pmi_edges` builds tracks the corpus even after the
-        windows themselves stop being held — grouping in SQLite spills to a temp b-tree instead of
-        to RSS, and `min_n` is applied by the same pass rather than after it."""
+        """Co-occurrence count per unordered pair, aggregated on disk."""
         c = self.db.conn
         c.execute(f'create index if not exists {self.name}_w on {self.name}(w)')
         c.execute(f'create temp table if not exists {self.name}_hub (e text primary key)')
@@ -371,23 +358,12 @@ def build_graph(db,                  # Database with a chunk store
     prose_q, pool = [], None
     def prose_wins():
         '''Windows per queued prose chunk, over a process pool once there are enough to pay for one.
-
-        Extraction is 88% of a build and is a pure function of the chunk text, so this is a map
-        with a cheap serial reduce after it. Processes, not threads: yake is python and holds the
-        GIL end to end, so a thread pool contends rather than overlaps.
-
-        The pool is opened once per *call*, not once per drain. `parallel` opens and closes a
-        `ProcessPoolExecutor` around every invocation and `drain_prose` runs once per `batch`, so
-        the two arguments that exist to make a large corpus finish were each making the other
-        worse: 2,000 chunks at `batch=200` spawned forty workers to do the work of four, and spent
-        7.7s extracting what one pool extracts in 5.1s.
-
         Order is preserved by both pools, and the reduce depends on it: `ents.setdefault` keeps the
         `kind` of an entity's *first* mention, so a reordered stream would relabel entities.'''
         nonlocal pool
         nw = 0 if terms_fn is not None else _n_workers(len(prose_q), n_workers)
         if nw and nw > 1:
-            if pool is None: pool = ProcessPoolExecutor(nw)
+            if pool is None: pool = _pool(nw)
             # both sides materialised: `drain_prose` clears the queue these are drawn from
             cids, txts = [c for c, _ in prose_q], [t for _, t in prose_q]
             return zip(cids, pool.map(_prose_job, txts))
@@ -405,9 +381,6 @@ def build_graph(db,                  # Database with a chunk store
         prose_q.clear()
 
     n_seen = 0
-    # iterated, not `L(chunks)`: wrapping the input in an L materialises it, so a caller who hands in
-    # a generator to keep a corpus off the heap had it read into a list before the first chunk was
-    # touched. With this, `batch` plus a generator means the corpus never exists in memory at once.
     try:
         for c in ([chunks] if isinstance(chunks, dict) else chunks):
             txt = c.get('content')
@@ -419,31 +392,37 @@ def build_graph(db,                  # Database with a chunk store
                 if did: men(cid, did, dname)
                 w = {did} if did else set()
                 for nm in calls:
-                    i = ent(nm, 'symbol'); men(cid, i, nm); edge(did, i, 'calls'); w.add(i)
+                    i = ent(nm, 'symbol')
+                    men(cid, i, nm)
+                    edge(did, i, 'calls')
+                    w.add(i)
                 for nm in imps:
-                    i = ent(nm, 'module'); men(cid, i, nm); edge(did, i, 'imports'); w.add(i)
+                    i = ent(nm, 'module')
+                    men(cid, i, nm)
+                    edge(did, i, 'imports')
+                    w.add(i)
                 if len(w) > 1: add_wins([w - {None}])
             elif prose: prose_q.append((cid, txt))
             n_seen += 1
             if batch and n_seen % batch == 0:
-                drain_prose(); wins.extend(pend); pend.clear(); flush_mentions()
-
+                drain_prose()
+                wins.extend(pend)
+                pend.clear()
+                flush_mentions()
         drain_prose()
     finally:
         if pool is not None: pool.shutdown()
     if batch: wins.extend(pend); pend.clear()
-
     rows = list(ents.values())
     if cooc and len(wins):
-        for e in _pmi_edges(wins, min_n, min_npmi, max_df, max_degree):
-            edges[(e['src'], e['dst'], e['rel'])] = e
+        for e in _pmi_edges(wins, min_n, min_npmi, max_df, max_degree): edges[(e['src'], e['dst'], e['rel'])] = e
     n_wins = len(wins)
     if batch: wins.drop()
     with write_txn(db):
         if rows:
             if emb_fn: process_content(g.entities, rows, embed=True, emb_fn=emb_fn)
-            else:      g.entities.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
-        if mens:  upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
+            else: g.entities.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
+        if mens: upsert_all(g.mentions, mens.values(), ('chunk_id','entity_id'))
         if edges: upsert_all(g.edges, edges.values(), ('src','dst','rel'))
     if emb_fn and rows: g.entities.rebuild_index()
     return dict(entities=len(rows), mentions=first(db.q(f'select count(*) c from {g.mentions.name}'))['c'],
@@ -546,13 +525,6 @@ def resolve_entities(db,                # Database
         for a, b in _lexical_pairs(name, max_group):
             if _lex_ok(name[a], name[b], lex) and _uf_union(par, rank, a, b, name, guard, members): lex_m += 1
     upd = [(_uf_find(par, i), i) for i in par]
-    # Only the rows whose canon actually *moves* are written, and they are written inside one
-    # transaction. `canon` is not an FTS column, but apswutils' AFTER UPDATE trigger fires on any
-    # update to the row, so every statement here re-tokenised `content` into the FTS index — and
-    # outside a transaction apsw commits each statement, which in WAL mode is an fsync per entity.
-    # 5,650 entities, 2,056 of them actually merged: 5,650 fsync'd reindexes to record 2,056 facts.
-    # Compared against the *stored* canon rather than against the id, so a re-resolve that undoes a
-    # merge still writes the row back — skipping `c == i` alone would leave a stale canon behind.
     was = {r['id']: r['canon'] for r in rows}
     chg = [(c, i) for c, i in upd if c != was.get(i)]
     if chg:
@@ -577,9 +549,6 @@ def _collapse_edges(db, g, canon):
         k = (s, d, r['rel'])
         a = agg.setdefault(k, dict(src=s, dst=d, rel=r['rel'], weight=0.0, n=0))
         a['weight'] = max(a['weight'], r['weight'] or 0.0); a['n'] += (r['n'] or 0)
-    # one transaction for the delete and the reinsert: apswutils commits per insert batch, so the
-    # rewrite paid an fsync per batch on top of leaving the table briefly empty for a concurrent
-    # reader. Both halves are now the same write.
     with write_txn(db):
         g.edges.delete_where()
         upsert_all(g.edges, agg.values(), ('src','dst','rel'))
@@ -758,8 +727,8 @@ def _member_rows(self:Table, keys, columns=None):
     if not keys: return {}
     cols = list(dict.fromkeys([c for c in (columns or []) if c != 'rowid'] + ['content']))
     sel, out = ','.join(cols + [_rid()]), {}
-    for i in range(0, len(keys), 400):
-        for r in self.db.q(f'select {sel} from {self.name} where {_in("rowid", keys[i:i+400])}'): out[r['rowid']] = r
+    for b in chunked(keys, 400):
+        for r in self.db.q(f'select {sel} from {self.name} where {_in("rowid", b)}'): out[r['rowid']] = r
     return out
 
 @patch
@@ -835,8 +804,7 @@ def _adjacency(g, nodes, hops=2, max_nodes=4000):
         if not frontier or len(seen) >= max_nodes: break
         fl = list(frontier)
         rows = []
-        for i in range(0, len(fl), 400):
-            b = fl[i:i+400]
+        for b in chunked(fl, 400):
             rows += con.execute(f"select src, dst, weight from {tbl} "
                                 f"where {_in('src', b)} OR {_in('dst', b)}").fetchall()
         nxt = set()
@@ -909,19 +877,14 @@ def _canon_mentions(g,                # graph tables from `get_graph`
                     vals,             # values to filter on
                     use_canon=True,   # resolve entity_id to its canonical id
                     batch=400):
-    '''`(chunk_id, entity_id)` for the matching mentions, with `entity_id` already canonicalised.
-
-    The canonical id comes from a join on the mentions being read, not from a dict of the whole
-    entity table. `coalesce(nullif(...))` reproduces `canon.get(eid, eid)` over `{id: canon or id}`
-    exactly: a missing entity, a null canon and an empty canon all fall back to the mention's own
-    entity_id.'''
+    '''`(chunk_id, entity_id)` for the matching mentions, with `entity_id` already canonicalised.'''
     con, mn, en = g.mentions.db.conn, g.mentions.name, g.entities.name
     sel = (f'select m.chunk_id, coalesce(nullif(e.canon, \'\'), m.entity_id) from {mn} m '
            f'left join {en} e on e.id = m.entity_id') if use_canon else \
           f'select m.chunk_id, m.entity_id from {mn} m'
     out = []
-    for i in range(0, len(vals), batch):
-        out += con.execute(f"{sel} where {_in('m.'+col, vals[i:i+batch])}").fetchall()
+    for b in chunked(vals, batch):
+        out += con.execute(f"{sel} where {_in('m.'+col, b)}").fetchall()
     return out
 
 # %% ../nbs/05_graph.ipynb #fba9515fca9c5b56

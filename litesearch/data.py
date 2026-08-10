@@ -287,8 +287,8 @@ def file_parse(p:Path=None,  # path to a code file
     def meta_(): return dict(path=p, uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
     if p.suffix == '.pdf': return PdfDocument(p).pdf_chunks().map(lambda c: dict(content=c[2], metadata=meta_()))
     fn = lambda c: dict(content=c,metadata=meta_())
-    if p.suffix  == '.md': return chunk_markdown(p.read_text(encoding='utf-8')).map(fn)
-    if p.suffix == '.txt': return chunk_texts(p.read_text(encoding='utf-8')).map(fn)
+    if p.suffix  == '.md': return chunk_markdown(p.read_text(errors='replace')).map(fn)
+    if p.suffix == '.txt': return chunk_texts(p.read_text(errors='replace')).map(fn)
     return L()
 
 
