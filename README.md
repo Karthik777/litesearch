@@ -411,6 +411,23 @@ the query — only an entity path.
 | `db.graph_search(q, emb)` | Hybrid search + PPR graph leg, fused with RRF |
 | `hash_embed(texts)` | Model-free char-n-gram embedder (entity names, offline/CI) |
 
+Details that matter in practice:
+
+- **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
+  chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
+  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
+  come from `apsw.unicode.sentence_iter`.
+- **Resolution must not touch exact identifiers.** [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) leaves `symbol`/`module`/
+  `topic` kinds alone, and [`_toks`](https://Karthik777.github.io/litesearch/graph.html#_toks) uses UAX#29 segmentation so `fts_search` never decomposes into
+  `{fts, search}` and collapses into `search`.
+- **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
+  clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
+  IDF is what makes labels distinguish clusters from each other.
+`build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a
+choice rather than a fork in the library. [`litesearch.sanskrit.sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is one, for a
+script yake cannot tokenise. Extraction runs serially whenever `terms_fn` is set, because such
+callables usually close over state that does not pickle.
+
 ### When to use the graph leg
 
 The graph leg is a real capability with a narrow domain, so it is **opt-in**: `db.context()`
@@ -429,56 +446,53 @@ obvious passage down, which is the trade in one number. And none of this applies
 `peers`, `topic_nodes` or `graph_stats` — those read a corpus rather than rank it, and are worth
 having however you search.
 
-Details that matter in practice:
+Concretely — five passages, and a query that names Marie Curie. Doc **B** never mentions her:
 
-- **Co-occurrence needs a sentence window.** On the *Attention Is All You Need* PDF, page-sized
-  chunks give 846 edges of near-clique noise; sentence windows give 75 meaningful ones, and the
-  top nodes go from `section`/`work`/`input` to `wmt`/`bleu`/`transformer`/`decoder`. Sentences
-  come from `apsw.unicode.sentence_iter`.
-- **Resolution must not touch exact identifiers.** [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) leaves `symbol`/`module`/
-  `topic` kinds alone, and [`_toks`](https://Karthik777.github.io/litesearch/graph.html#_toks) uses UAX#29 segmentation so `fts_search` never decomposes into
-  `{fts, search}` and collapses into `search`.
-- **Topic labels are c-TF-IDF, not keyphrases.** Term frequency in a cluster weighted by IDF across
-  clusters. Plain frequency names every cluster after the same corpus-wide words; the cross-cluster
-  IDF is what makes labels distinguish clusters from each other.
-- **Default to `graph_w=0`.** Across 351 known-item queries on three prose corpora the graph leg
-  lost at every weight, and it costs 55–107ms against 8–13ms. Build the graph for context assembly
-  — pulling callers/callees or co-mentioned entities of a hit — rather than for ranking.
+``` python
+import re
+from litesearch import build_graph, resolve_entities, hash_embed
 
-### Choosing the prose extractor
+DOCS = {'A': 'Marie Curie isolated polonium in 1898. Marie Curie worked in Paris.',
+        'B': 'Polonium is intensely radioactive. Polonium decays by alpha emission.',
+        'C': 'Alpha emission was studied by Ernest Rutherford at Manchester.',
+        'D': 'The rainfall in Bergen is heavy. Bergen has a maritime climate.',
+        'E': 'Cricket is played with a bat. The bat is made of willow wood.'}
 
-yake is the default, and it is a *keyphrase* extractor doing an *entity* extractor’s job. It emits
-overlapping sub-phrases of one span (`marie curie isolated`, `curie isolated polonium`,
-`isolated polonium`, `polonium`), so a chunk naming a character and another chunk naming the same
-character often share no node at all — which is the graph’s only bridge. [`resolve_entities`](https://Karthik777.github.io/litesearch/graph.html#resolve_entities) keeps
-every merged group a **clique** under the lexical guard, which stops the ladder from collapsing
-`marie curie` into `polonium`, but it cannot invent the shared node yake never produced.
+# Proper nouns and long words, each as its own term. yake is a *keyphrase* extractor: on doc A it
+# emits `isolated polonium` and `Curie isolated polonium` but never bare `polonium`, so A and B
+# would share no node and there would be no bridge to walk. Hence `terms_fn`.
+_TERM = re.compile(r'[A-Z][a-z]+(?: [A-Z][a-z]+)*|\b[a-z]{6,}\b')
+g_terms = lambda t, topk=12: list(dict.fromkeys(_TERM.findall(t)))[:topk]
+g_emb = lambda ts, **kw: hash_embed(ts, 256)
 
-Measured on 961 chunks of *Pride and Prejudice*, counting chunk pairs that name the same character
-and share a canonical entity:
+g_db = database(); g_st = g_db.get_store(hash=True, ann=True)
+g_st.insert_all([dict(content=v, metadata=k, embedding=e.tobytes())
+                 for (k, v), e in zip(DOCS.items(), g_emb(list(DOCS.values())))],
+                upsert=True, hash_id='id', hash_id_columns=['content'])
+g_st.rebuild_index()
+# `select='id, content'` matters: build_graph keys a mention on chunk['id'] and falls back to
+# hashing the content alone, which is the wrong id for any store that hashes over more columns.
+# min_n/min_npmi/max_df are relaxed only because five documents cannot support the real thresholds.
+build_graph(g_db, list(g_st(select='id, content')), terms_fn=g_terms, emb_fn=g_emb,
+            min_n=1, min_npmi=-1.0, max_df=1.0)
+resolve_entities(g_db)
 
-| extractor                 | build | shared-entity rate | `Elizabeth` resolves to |
-|---------------------------|-------|--------------------|-------------------------|
-| yake (default)            | 1.5s  | 27.2%              | 101 entities            |
-| proper-noun regex         | 0.3s  | 89.2%              | 7 entities              |
-| spaCy `noun_chunks` + NER | 22.5s | 97.2%              | 32 entities             |
+q = 'Marie Curie'; qv = g_emb([q])[0].tobytes()
+docs_of = lambda hits: [h['metadata'] for h in (hits or [])]
+hybrid = docs_of(g_db.search(q, qv, columns=['metadata'], limit=3))
+graph  = docs_of(g_db.graph_search(q, qv, columns=['metadata'], limit=3, graph_w=1.0, seed_n=2))
+print('hybrid       ', hybrid)
+print('graph w=1.0  ', graph)
+```
 
-spaCy was a dependency and is not any more: it costs 15x the build for a graph leg that is off by
-default, and on the retrieval eval it changed nothing. The reason once given for that — "PPR mass
-lands on topic nodes rather than on extracted entities" — turned out to be a bug in the eval
-harness rather than a fact about the graph: `build_graph` was being handed chunks without their
-`id`, so every keyphrase mention pointed at a hash no chunk had and only the topic nodes stayed
-connected. With that fixed the extractor does reach the walk, and it still changes nothing
-measurable: yake, `yake-rust` and `rake-nltk` are statistically indistinguishable on retrieval
-across three genres and 1,755 query-flavour pairs, all nine paired comparisons straddling zero
-(`python -m evals.extractor_sig`). `yake-rust` is 6.6x faster per chunk and releases the GIL, so it
-is the swap to make if extraction is your bottleneck. If you want entity-dense prose to bridge, a proper-noun pass gets most
-of the way at a fraction of the cost.
+    hybrid        ['A', 'D', 'C']
+    graph w=1.0   ['A', 'D', 'B']
 
-`build_graph(..., terms_fn=...)` takes any `(text, topk) -> terms` callable, so the extractor is a
-choice rather than a fork in the library. [`litesearch.sanskrit.sanskrit_terms()`](https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_terms) is one, for a
-script yake cannot tokenise. Extraction runs serially whenever `terms_fn` is set, because such
-callables usually close over state that does not pickle.
+Doc **B** is reachable only as `Marie Curie → polonium → B`: it shares no word with the query, so
+FTS cannot see it and the vector leg has nothing to latch onto either. That is the shape of query
+the graph leg exists for, and the shape it is worth turning on for. Ask the same corpus *"what did
+Marie Curie isolate"* — a known-item question whose answer is written in doc A — and the graph leg
+has nothing to add, which is why it is off by default.
 
 ## PDF extraction
 
