@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.26
+release
+
 ## 0.1.25
 
 `skip_folder_re` skips generated directories.
