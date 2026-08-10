@@ -1,5 +1,50 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.23
+
+`Index` — one route in, so that nobody has to weigh six tradeoffs to search a folder.
+
+The library had grown four ways to answer the same question, and picking between them meant
+knowing what `evals/` had already decided. `litesearch.api.Index` decides it: static
+`potion-retrieval-32M` (the spread across four encoders is 0.018–0.046, and the static one *wins*
+one genre while indexing ~1,700x cheaper), float16 to match the store, 512-character chunks
+(+0.06 to +0.12 over page-sized), `pre()` on the FTS leg (+0.016 to +0.093), an HNSW vector leg
+(−0.005 for a large speedup), and a document tree built unconditionally because its effect on
+*ranking* is a wash (−0.052 to +0.011) and `toc`/`read`/`sections`/`context` are worth having for
+free.
+
+```python
+ix = Index('kb.db'); ix.add('docs/'); ix.search('how does batching work')
+```
+
+One decision is left to the caller, because it is the only one the evaluation says is worth
+making: `rerank=True`, worth +0.026 to +0.077 weighted MRR and positive in all twelve paired
+cells, at roughly 10x the query latency. It fetches 30 candidates before the cross-encoder sees
+them — reranking ten only reorders ten, and the measured gain comes from thirty.
+
+Six methods: `add`, `add_code`, `search`, `sections`, `read`, `toc`, plus `context`. `Index.db` is
+the `database()` you would have written by hand, so nothing is walled off and there is no
+migration.
+
+Nothing was removed from `core`, `data`, `utils`, `tree`, `graph` or `sanskrit`; every existing
+import still resolves. What shrank is the documentation surface. `nbs/index.ipynb` was a 61-cell
+tour that re-documented each module beside its own page; it is now a 22-cell front door — two
+routes, the measured ladder that says which knobs are worth turning, and links out. The README
+went from 776 lines to ~250 with nothing lost, since every dropped section already had a page.
+
+The ladder itself is now in one table instead of scattered across six notebooks. Above the line
+and on by default: `pre()`, 512-char chunks, ANN. Left to you: rerank. Below the line and staying
+off: the tree *for ranking*, heading prefixes, deeper fanout without a reranker, late chunking
+(−0.033 to −0.053), and the entity graph leg (−0.070 to −0.160 on ordinary queries, opt-in by name
+only). `python -m evals.decide` reproduces all of it.
+
+Two findings worth stating outside the table. Keyword-only retrieval with `pre()` beats hybrid in
+all 24 paired cells on the main query set — an artifact of that set, where every query is a lexical
+transformation of the sentence it targets; `evals/multihop.py` builds the corrective and there the
+vector leg reaches targets FTS cannot score at all. And the largest measured retrieval win in the
+repository is not an embedding at all: the `sanskrit` FTS5 tokenizer's ASCII fold gives 1.000
+Devanagari→verse recall for *every* encoder tested, which is why it is on for every store.
+
 ## 0.1.22
 vishalakshi support
 

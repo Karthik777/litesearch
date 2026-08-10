@@ -2,6 +2,7 @@ website:
   sidebar:
     contents:
       - index.ipynb
+      - 07_api.ipynb
       - 00_postfix.ipynb
       - 01_core.ipynb
       - 02_data.ipynb

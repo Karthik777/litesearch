@@ -19,52 +19,55 @@ the short version for getting work done.
   fallback if kosha setup fails.
 - **Docs and PDFs** → litesearch, natively.
 
-## Quickstart
+## Quickstart — use `Index` unless you need otherwise
 
-Default to a **static embedder**: ~1,700x cheaper to index than a transformer and within 0.007 MRR
-of the best encoder measured.
+`Index` picks the encoder, dtype, chunk size, retrieval strategy and tree for you. Every one of
+those is a measured default, not a taste; the two tables at the bottom say what each is worth.
+
+```python
+from litesearch import Index
+
+ix = Index('.claude/index.db')          # persistent, reusable across sessions
+ix.add('docs/')                         # dir, file, string, list of strings, or {title: text}
+ix.search('how does get_store create FTS triggers', limit=10)
+```
+
+Hits carry `content`, `heading` (a breadcrumb), `node_id`, `page` and `doc_id`. Re-adding the same
+source is a no-op — the store is content-addressed.
+
+```python
+ix.search(q, rerank=True)               # +0.026 to +0.077 MRR, ~10x latency, 4 MB model
+ix.sections(q, limit=3)                 # ranked sections, each with a read() handle
+ix.toc(); ix.read('a1b2c3d4#12')        # navigate structure, no embeddings computed
+ix.context(q)                           # sections + what they connect to, composed for a prompt
+ix.add_code('src')                      # AST path: module > class > function, not headings
+```
+
+`sections()` for topics, `search()` for facts. `toc()` + `read()` costs no embedding at all — use it
+when you already know where to look. The tree is a wash for *ranking* (−0.052 to +0.011) and is
+built anyway, because navigation is what it is for. For source code, prefer `kosha`.
+
+Point several projects at one db path for a shared cross-repo index.
+
+## When `Index` is not enough (`database()`)
+
+Drop to the layer underneath for your own columns, SQL, joins, a different encoder, or float32
+vectors. `ix.db` *is* that object, so there is no migration.
 
 ```python
 from litesearch import database
 from litesearch.utils import static_retrieval_embedder, doc_encoder, query_encoder
-from litesearch.data import dir2chunks
 
-enc = static_retrieval_embedder()
+enc = static_retrieval_embedder()       # ~1,700x cheaper to index, within 0.046 MRR of a 300M model
 emb, qemb = doc_encoder(enc), query_encoder(enc)
-db = database('.claude/index.db')           # persistent, reusable across sessions
-store = db.get_store(hash=True, ann=True)   # content-addressed: re-inserting is a no-op
-
-chunks = dir2chunks('src', types='py,ipynb,md')
-store.insert_all([dict(content=c['content'], metadata=str(c['metadata']),
-                       embedding=e.tobytes())
-                  for c, e in zip(chunks, emb([c['content'] for c in chunks]))],
-                 upsert=True, hash_id='id', hash_id_columns=['content'])
-store.rebuild_index()
-
-q = 'how does get_store create FTS triggers'
+db = database('.claude/index.db')
+store = db.get_store(hash=True, ann=True, project=str)   # **cols adds filterable columns
+...
 hits = db.search(q, qemb([q])[0].tobytes(), columns=['content', 'metadata'], limit=10)
 ```
 
 `dtype` must match what you inserted — `StaticModel.encode` gives float32, `FastEncode` float16.
-Mismatch silently returns rowid order, not distances.
-
-Point several projects at one db path for a shared cross-repo index.
-
-## Documents with structure (`litesearch.tree`)
-
-For books, reports, papers, doc sites — where "which chapter" beats "which 400 characters".
-
-```python
-db.get_tree('store')
-db.add_dir('books/', emb_fn=emb)        # pdf, md, txt, rst, ipynb, xml, htm
-db.doc_search(q, qv, limit=5)           # hits carry a breadcrumb + node_id
-db.sections(q, qv, limit=3)             # ranked sections, each with a read() handle
-db.toc('report'); db.read('a1b2c3d4#12')
-```
-
-`sections()` for topics, `doc_search()` for facts. `toc()` + `read()` costs no embedding at all —
-use it when you already know where to look. The tree layer is a wash for *ranking*; use it for
-navigation. Source code does not belong here — that is `kosha`.
+Mismatch silently returns rowid order, not distances. This is the trap `Index` exists to remove.
 
 ## Knowledge graph (no LLM)
 
@@ -127,6 +130,11 @@ call that assembles a whole answer is where you set them.
 
 | Function | Description |
 |---|---|
+| `Index(path)` | The front door: encoder, dtype, chunking, tree and strategy all decided |
+| `ix.add(src)` / `ix.add_code(src)` | Ingest documents/text, or source code via the AST |
+| `ix.search(q, rerank=)` | Hybrid search; `rerank=True` is the one lever worth a decision |
+| `ix.sections(q)` / `ix.read(nid)` / `ix.toc()` / `ix.context(q)` | Section ranking, assembly, navigation |
+| `ix.db` | The `database()` underneath — everything below is still reachable |
 | `database(path)` | Open/create SQLite + usearch + FTS5 tokenizers |
 | `db.get_store(name, **cols)` | FTS5 + vector table; `**cols` adds typed, filterable columns |
 | `db.search(q, emb, ...)` | Hybrid FTS + vector with RRF |
@@ -140,15 +148,16 @@ call that assembles a whole answer is where you set them.
 | `build_graph(db, chunks, terms_fn=)` | Entities/mentions/edges; swap the prose extractor |
 | `resolve_entities(db)` / `topic_nodes(db)` | Merge duplicates; labelled topic nodes |
 | `db.graph_search(q, emb)` | Hybrid + personalized-PageRank leg |
+| `pre(q)` | Preprocess an FTS query: keywords, wildcards, OR |
 
-**Graph leg: opt-in, and query-dependent.** `db.context()` defaults to `graph=False`.
+**Graph leg: opt-in, and query-dependent.** `Index` does not expose it; `db.context()` defaults to
+`graph=False`.
 Use hybrid (`db.search`) for **known-item** queries — the words you search for appear in the
 passage you want; the graph leg costs 15-20 points of p_mrr there and 2-4x the latency, worse the
 higher `graph_w` goes. Use `db.graph_search(..., graph_w=1.0)` for **bridge** queries — the answer
 never uses your words and is reachable only through a shared entity; measured significantly better
 in 7 of 9 paired comparisons, and better the higher `graph_w` goes. When unsure, start with hybrid.
 `clusters` / `peers` / `topic_nodes` are for reading a corpus, not ranking it, and are unaffected.
-| `pre(q)` | Preprocess an FTS query: keywords, wildcards, OR |
 
 ## Installing this skill
 
