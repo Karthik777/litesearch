@@ -1,5 +1,21 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.25
+
+`skip_folder_re` skips generated directories.
+
+Indexing an nbdev repo filed every notebook three times. nbdev keeps a processed copy of each one
+in `_proc` and a rendered one in `_docs`, and the default skip list covered `docs` but neither of
+those, so `dir2files` walked all three. The corpus came back inflated and every topic split across
+documents that were the same document — visible as three entries titled `index` under one topic.
+
+Added: `_proc`, `_docs`, `_site`, `_site_libs`, `node_modules`, `__pycache__`. The last one also
+stops `pkg2files` handing back the bytecode beside every module for the chunker to throw away.
+
+This changes what `dir2files` and `pkg2files` return by default. Pass `skip_folder_re=` to get the
+old behaviour. Found by vishalakshi, the 0.1.23 port, when it put a topic-to-document listing on
+its front page and the same document appeared three times.
+
 ## 0.1.24
 
 Two additions, both asked for by the vishalakshi port that 0.1.23 nominated.
