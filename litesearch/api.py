@@ -29,8 +29,6 @@ class Index:
                  db=None,             # an open Database to share, for several corpora in one file
                  ):
         self.path, self.name, self.ann = str(path), name, ann
-        # `db` is what makes several `Index`es over one file possible: they must share the
-        # connection, not just the path. `database(':memory:')` twice is two different databases.
         self.db = db if db is not None else database(path)
         self.encoder = static_embedder() if encoder is None else encoder
         self._doc, self._qry = doc_encoder(self.encoder), query_encoder(self.encoder)

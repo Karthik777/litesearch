@@ -451,11 +451,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
 
 
 # %% ../nbs/01_core.ipynb #571724f3bc9bcf44
-# Reranking ten candidates only reorders ten; the measured +0.026 to +0.077 comes from thirty. Any
-# caller that reranks fans out to at least this many first, so the number lives beside the reranker.
-RERANK_FANOUT = 30
-
-_RERANKERS = {}
+RERANK_FANOUT, _RERANKERS = 30, {}
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
     from flashrank import Ranker
