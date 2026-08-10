@@ -2,19 +2,19 @@
  {
   "genre": "regulatory",
   "extractor": "yake",
-  "build_s": 27.3,
+  "build_s": 19.4,
   "entities": 15301,
   "mentions": 35422,
   "edges": 12551,
   "windows": 5629,
   "resolved": {
-   "merged": 6482,
-   "by_ann": 3397,
-   "by_lexical": 3085,
+   "merged": 6481,
+   "by_ann": 3400,
+   "by_lexical": 3081,
    "edges": 9639,
    "entities": 15301,
    "resolvable": 15301,
-   "canonical": 8819
+   "canonical": 8820
   },
   "topics": {
    "topics": 239,
@@ -22,7 +22,7 @@
   },
   "stats": {
    "entities": 15539,
-   "canonical": 9057,
+   "canonical": 9058,
    "mentions": 38986,
    "edges": 9639,
    "top_degree": [
@@ -82,19 +82,19 @@
  {
   "genre": "regulatory",
   "extractor": "yake-rust",
-  "build_s": 12.2,
+  "build_s": 6.1,
   "entities": 14357,
   "mentions": 35196,
   "edges": 13294,
   "windows": 5472,
   "resolved": {
-   "merged": 6099,
-   "by_ann": 3224,
-   "by_lexical": 2875,
+   "merged": 6101,
+   "by_ann": 3225,
+   "by_lexical": 2876,
    "edges": 10248,
    "entities": 14357,
    "resolvable": 14357,
-   "canonical": 8258
+   "canonical": 8256
   },
   "topics": {
    "topics": 239,
@@ -102,7 +102,7 @@
   },
   "stats": {
    "entities": 14595,
-   "canonical": 8496,
+   "canonical": 8494,
    "mentions": 38760,
    "edges": 10248,
    "top_degree": [
@@ -162,19 +162,19 @@
  {
   "genre": "regulatory",
   "extractor": "rake-nltk",
-  "build_s": 7.8,
+  "build_s": 4.9,
   "entities": 11216,
   "mentions": 29320,
   "edges": 7559,
   "windows": 5730,
   "resolved": {
-   "merged": 3169,
-   "by_ann": 2166,
-   "by_lexical": 1003,
+   "merged": 3168,
+   "by_ann": 2169,
+   "by_lexical": 999,
    "edges": 7213,
    "entities": 11216,
    "resolvable": 11216,
-   "canonical": 8047
+   "canonical": 8048
   },
   "topics": {
    "topics": 239,
@@ -182,7 +182,7 @@
   },
   "stats": {
    "entities": 11454,
-   "canonical": 8285,
+   "canonical": 8286,
    "mentions": 32884,
    "edges": 7213,
    "top_degree": [
@@ -194,7 +194,7 @@
     {
      "content": "member states",
      "kind": "keyphrase",
-     "d": 74
+     "d": 72
     },
     {
      "content": "taxable persons",
@@ -235,6 +235,486 @@
      "content": "referred",
      "kind": "keyphrase",
      "d": 37
+    }
+   ]
+  }
+ },
+ {
+  "genre": "arxiv",
+  "extractor": "yake",
+  "build_s": 14.2,
+  "entities": 14053,
+  "mentions": 25449,
+  "edges": 5610,
+  "windows": 4591,
+  "resolved": {
+   "merged": 5021,
+   "by_ann": 2894,
+   "by_lexical": 2127,
+   "edges": 4512,
+   "entities": 14053,
+   "resolvable": 14053,
+   "canonical": 9032
+  },
+  "topics": {
+   "topics": 155,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 14208,
+   "canonical": 9187,
+   "mentions": 27818,
+   "edges": 4512,
+   "top_degree": [
+    {
+     "content": "graph",
+     "kind": "keyphrase",
+     "d": 40
+    },
+    {
+     "content": "density",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "distance",
+     "kind": "keyphrase",
+     "d": 34
+    },
+    {
+     "content": "model",
+     "kind": "keyphrase",
+     "d": 32
+    },
+    {
+     "content": "signed",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "answer",
+     "kind": "keyphrase",
+     "d": 28
+    },
+    {
+     "content": "table",
+     "kind": "keyphrase",
+     "d": 26
+    },
+    {
+     "content": "figure",
+     "kind": "keyphrase",
+     "d": 25
+    },
+    {
+     "content": "instruction",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "section",
+     "kind": "keyphrase",
+     "d": 23
+    }
+   ]
+  }
+ },
+ {
+  "genre": "arxiv",
+  "extractor": "yake-rust",
+  "build_s": 5.5,
+  "entities": 13897,
+  "mentions": 25701,
+  "edges": 5899,
+  "windows": 4705,
+  "resolved": {
+   "merged": 4975,
+   "by_ann": 2869,
+   "by_lexical": 2106,
+   "edges": 4735,
+   "entities": 13897,
+   "resolvable": 13897,
+   "canonical": 8922
+  },
+  "topics": {
+   "topics": 155,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 14052,
+   "canonical": 9077,
+   "mentions": 28070,
+   "edges": 4735,
+   "top_degree": [
+    {
+     "content": "graph",
+     "kind": "keyphrase",
+     "d": 40
+    },
+    {
+     "content": "density",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "distance",
+     "kind": "keyphrase",
+     "d": 36
+    },
+    {
+     "content": "model",
+     "kind": "keyphrase",
+     "d": 31
+    },
+    {
+     "content": "answer",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "signed",
+     "kind": "keyphrase",
+     "d": 29
+    },
+    {
+     "content": "table",
+     "kind": "keyphrase",
+     "d": 27
+    },
+    {
+     "content": "models",
+     "kind": "keyphrase",
+     "d": 26
+    },
+    {
+     "content": "question",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "section",
+     "kind": "keyphrase",
+     "d": 23
+    }
+   ]
+  }
+ },
+ {
+  "genre": "arxiv",
+  "extractor": "rake-nltk",
+  "build_s": 4.0,
+  "entities": 10707,
+  "mentions": 16486,
+  "edges": 1411,
+  "windows": 3941,
+  "resolved": {
+   "merged": 2324,
+   "by_ann": 1513,
+   "by_lexical": 811,
+   "edges": 1396,
+   "entities": 10707,
+   "resolvable": 10707,
+   "canonical": 8383
+  },
+  "topics": {
+   "topics": 155,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 10862,
+   "canonical": 8538,
+   "mentions": 18855,
+   "edges": 1396,
+   "top_degree": [
+    {
+     "content": "self",
+     "kind": "keyphrase",
+     "d": 17
+    },
+    {
+     "content": "tau yih",
+     "kind": "keyphrase",
+     "d": 15
+    },
+    {
+     "content": "tuning",
+     "kind": "keyphrase",
+     "d": 15
+    },
+    {
+     "content": "answer",
+     "kind": "keyphrase",
+     "d": 13
+    },
+    {
+     "content": "domain question answering",
+     "kind": "keyphrase",
+     "d": 13
+    },
+    {
+     "content": "question",
+     "kind": "keyphrase",
+     "d": 13
+    },
+    {
+     "content": "org",
+     "kind": "keyphrase",
+     "d": 10
+    },
+    {
+     "content": "jason weston",
+     "kind": "keyphrase",
+     "d": 10
+    },
+    {
+     "content": "work",
+     "kind": "keyphrase",
+     "d": 10
+    },
+    {
+     "content": "wei chang",
+     "kind": "keyphrase",
+     "d": 9
+    }
+   ]
+  }
+ },
+ {
+  "genre": "astrology",
+  "extractor": "yake",
+  "build_s": 41.8,
+  "entities": 33480,
+  "mentions": 52165,
+  "edges": 3392,
+  "windows": 15613,
+  "resolved": {
+   "merged": 11032,
+   "by_ann": 4459,
+   "by_lexical": 6573,
+   "edges": 3020,
+   "entities": 33480,
+   "resolvable": 33480,
+   "canonical": 22448
+  },
+  "topics": {
+   "topics": 302,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 33782,
+   "canonical": 22750,
+   "mentions": 57187,
+   "edges": 3020,
+   "top_degree": [
+    {
+     "content": "moon",
+     "kind": "keyphrase",
+     "d": 35
+    },
+    {
+     "content": "earth",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "hour",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "time",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "venus",
+     "kind": "keyphrase",
+     "d": 22
+    },
+    {
+     "content": "gemini",
+     "kind": "keyphrase",
+     "d": 20
+    },
+    {
+     "content": "signs",
+     "kind": "keyphrase",
+     "d": 20
+    },
+    {
+     "content": "saturn",
+     "kind": "keyphrase",
+     "d": 18
+    },
+    {
+     "content": "star",
+     "kind": "keyphrase",
+     "d": 17
+    },
+    {
+     "content": "libra",
+     "kind": "keyphrase",
+     "d": 16
+    }
+   ]
+  }
+ },
+ {
+  "genre": "astrology",
+  "extractor": "yake-rust",
+  "build_s": 14.0,
+  "entities": 33326,
+  "mentions": 52447,
+  "edges": 3468,
+  "windows": 15740,
+  "resolved": {
+   "merged": 11006,
+   "by_ann": 4432,
+   "by_lexical": 6574,
+   "edges": 3095,
+   "entities": 33326,
+   "resolvable": 33326,
+   "canonical": 22320
+  },
+  "topics": {
+   "topics": 302,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 33628,
+   "canonical": 22622,
+   "mentions": 57469,
+   "edges": 3095,
+   "top_degree": [
+    {
+     "content": "moon",
+     "kind": "keyphrase",
+     "d": 34
+    },
+    {
+     "content": "earth",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "hour",
+     "kind": "keyphrase",
+     "d": 29
+    },
+    {
+     "content": "time",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "venus",
+     "kind": "keyphrase",
+     "d": 23
+    },
+    {
+     "content": "gemini",
+     "kind": "keyphrase",
+     "d": 22
+    },
+    {
+     "content": "cards",
+     "kind": "keyphrase",
+     "d": 17
+    },
+    {
+     "content": "signs",
+     "kind": "keyphrase",
+     "d": 17
+    },
+    {
+     "content": "libra",
+     "kind": "keyphrase",
+     "d": 16
+    },
+    {
+     "content": "saturn",
+     "kind": "keyphrase",
+     "d": 16
+    }
+   ]
+  }
+ },
+ {
+  "genre": "astrology",
+  "extractor": "rake-nltk",
+  "build_s": 11.8,
+  "entities": 29490,
+  "mentions": 47101,
+  "edges": 851,
+  "windows": 15668,
+  "resolved": {
+   "merged": 4826,
+   "by_ann": 3190,
+   "by_lexical": 1636,
+   "edges": 837,
+   "entities": 29490,
+   "resolvable": 29490,
+   "canonical": 24664
+  },
+  "topics": {
+   "topics": 302,
+   "method": "usearch"
+  },
+  "stats": {
+   "entities": 29792,
+   "canonical": 24966,
+   "mentions": 52123,
+   "edges": 837,
+   "top_degree": [
+    {
+     "content": "zodiac",
+     "kind": "keyphrase",
+     "d": 15
+    },
+    {
+     "content": "time",
+     "kind": "keyphrase",
+     "d": 13
+    },
+    {
+     "content": "moon",
+     "kind": "keyphrase",
+     "d": 13
+    },
+    {
+     "content": "venus",
+     "kind": "keyphrase",
+     "d": 12
+    },
+    {
+     "content": "may",
+     "kind": "keyphrase",
+     "d": 10
+    },
+    {
+     "content": "saturn",
+     "kind": "keyphrase",
+     "d": 9
+    },
+    {
+     "content": "signs",
+     "kind": "keyphrase",
+     "d": 9
+    },
+    {
+     "content": "table",
+     "kind": "keyphrase",
+     "d": 8
+    },
+    {
+     "content": "worn",
+     "kind": "keyphrase",
+     "d": 7
+    },
+    {
+     "content": "star",
+     "kind": "keyphrase",
+     "d": 7
     }
    ]
   }

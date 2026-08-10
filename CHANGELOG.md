@@ -25,6 +25,16 @@ the eval PDF corpus. See the first entry under Fixed.
 
 ### Fixed
 
+- **The eval harness's keyphrase graph was never connected to the store.** `build_graph` keys a
+  mention on `chunk['id']` and falls back to `_slug(content)` when there is none; a **tree** store
+  hashes its ids over `node_id` *and* `content`, and `run.build_graphs` selected only `content`. On
+  regulation, 0 of 34,891 mentions referenced a chunk that exists. `topic_nodes` writes its mentions
+  against real store ids, so the topics stayed connected while the keyphrase half did not — which is
+  the entire basis of `eval_graph`'s claim that "the topics are the whole graph leg: they carry 100%
+  of the PPR mass, which is why swapping the extractor moved nothing." That was this bug. With `id`
+  selected the graph leg actually fires: query latency goes from ~18ms (silently falling through to
+  hybrid) to ~65ms, and removing the topic nodes costs 0.003–0.015 p_mrr rather than everything.
+  `evals/results/graph.json` was produced by the broken path and is regenerated.
 - **`resolve_entities` is reproducible.** Two resolves of the *same database* in two processes came
   back with different partitions and merge counts drifting over a range of three. It is not HNSW,
   which is what it looks like and what the 0.1.17 notes assumed — `verify_ann_probe` shows the ANN
@@ -118,6 +128,16 @@ the eval PDF corpus. See the first entry under Fixed.
 
 ### New
 
+- **`evals/extractor_eval.py` and `evals/extractor_sig.py`** — does the keyphrase extractor change
+  *retrieval*, not just the stopwatch. Each genre's tree store is cloned so chunks, embeddings and
+  the ANN index are held fixed and the graph is rebuilt over the identical store once per extractor;
+  `extractor_sig` then keeps the per-query reciprocal ranks and bootstraps the paired difference.
+  Across 3 genres and 1,755 query-flavour pairs, **all nine pairwise comparisons straddle zero** —
+  yake, yake-rust and rake-nltk are statistically indistinguishable on retrieval. So `yake-rust`'s
+  6.6x is free, and rake-nltk matching at 21.6% term overlap says the walk is not discriminating on
+  keyphrases. The larger finding is in the baseline row: **plain hybrid beats every graph
+  configuration** by 15–20 points of p_mrr at `graph_w=0.5` on all three genres, at a third of the
+  latency. Nothing is swapped; `terms_fn` remains the seam and the default is unchanged.
 - **`evals/ingest_bench.py embatch`** — what the encoder gains from being handed the whole
   directory instead of one document, swept over batch size, because the answer is a property of the
   encoder rather than of litesearch.

@@ -2,81 +2,81 @@
  "regulatory__bge-small": {
   "genre": "regulatory",
   "encoder": "bge-small",
-  "entities": 11254,
-  "mentions": 39307,
-  "edges": 13026,
-  "windows": 4700,
+  "entities": 15301,
+  "mentions": 35422,
+  "edges": 12551,
+  "windows": 5629,
   "resolved": {
-   "merged": 7093,
-   "by_ann": 3525,
-   "by_lexical": 3568,
-   "edges": 3301,
-   "entities": 11254,
-   "resolvable": 11254,
-   "canonical": 4161
+   "merged": 6481,
+   "by_ann": 3400,
+   "by_lexical": 3081,
+   "edges": 9639,
+   "entities": 15301,
+   "resolvable": 15301,
+   "canonical": 8820
   },
   "topics": {
-   "topics": 193,
+   "topics": 239,
    "method": "usearch"
   },
-  "t_graph": 175.1,
-  "t_resolve": 25.2,
-  "t_topics": 6.7,
+  "t_graph": 9.8,
+  "t_resolve": 3.5,
+  "t_topics": 0.4,
   "stats": {
-   "entities": 11445,
-   "canonical": 4352,
-   "mentions": 42715,
-   "edges": 3301,
+   "entities": 15539,
+   "canonical": 9058,
+   "mentions": 38986,
+   "edges": 9639,
    "top_degree": [
     {
+     "content": "taxable",
+     "kind": "keyphrase",
+     "d": 54
+    },
+    {
+     "content": "taxable person",
+     "kind": "keyphrase",
+     "d": 50
+    },
+    {
+     "content": "reduced rates",
+     "kind": "keyphrase",
+     "d": 46
+    },
+    {
+     "content": "council",
+     "kind": "keyphrase",
+     "d": 45
+    },
+    {
+     "content": "regulation",
+     "kind": "keyphrase",
+     "d": 43
+    },
+    {
      "content": "goods",
-     "kind": "term",
-     "d": 972
+     "kind": "keyphrase",
+     "d": 41
     },
     {
-     "content": "right",
-     "kind": "term",
+     "content": "member state concerned",
+     "kind": "keyphrase",
+     "d": 39
+    },
+    {
+     "content": "supplies of goods",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "investment",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "transactions",
+     "kind": "keyphrase",
      "d": 37
-    },
-    {
-     "content": "oj l",
-     "kind": "term",
-     "d": 32
-    },
-    {
-     "content": "ec",
-     "kind": "org",
-     "d": 22
-    },
-    {
-     "content": "passengers",
-     "kind": "term",
-     "d": 18
-    },
-    {
-     "content": "oj",
-     "kind": "term",
-     "d": 18
-    },
-    {
-     "content": "funds",
-     "kind": "term",
-     "d": 17
-    },
-    {
-     "content": "eng",
-     "kind": "term",
-     "d": 17
-    },
-    {
-     "content": "supplier",
-     "kind": "term",
-     "d": 17
-    },
-    {
-     "content": "points",
-     "kind": "term",
-     "d": 15
     }
    ]
   }
@@ -84,81 +84,81 @@
  "arxiv__bge-small": {
   "genre": "arxiv",
   "encoder": "bge-small",
-  "entities": 13938,
-  "mentions": 28261,
-  "edges": 4869,
-  "windows": 5615,
+  "entities": 14053,
+  "mentions": 25449,
+  "edges": 5610,
+  "windows": 4591,
   "resolved": {
-   "merged": 7557,
-   "by_ann": 3426,
-   "by_lexical": 4131,
-   "edges": 2364,
-   "entities": 13938,
-   "resolvable": 13938,
-   "canonical": 6381
+   "merged": 5020,
+   "by_ann": 2892,
+   "by_lexical": 2128,
+   "edges": 4520,
+   "entities": 14053,
+   "resolvable": 14053,
+   "canonical": 9033
   },
   "topics": {
-   "topics": 127,
+   "topics": 155,
    "method": "usearch"
   },
-  "t_graph": 151.0,
-  "t_resolve": 28.3,
-  "t_topics": 4.5,
+  "t_graph": 8.0,
+  "t_resolve": 2.7,
+  "t_topics": 0.3,
   "stats": {
-   "entities": 14065,
-   "canonical": 6508,
-   "mentions": 30627,
-   "edges": 2364,
+   "entities": 14208,
+   "canonical": 9188,
+   "mentions": 27818,
+   "edges": 4520,
    "top_degree": [
     {
+     "content": "graph",
+     "kind": "keyphrase",
+     "d": 40
+    },
+    {
+     "content": "density",
+     "kind": "keyphrase",
+     "d": 38
+    },
+    {
+     "content": "distance",
+     "kind": "keyphrase",
+     "d": 34
+    },
+    {
      "content": "model",
-     "kind": "term",
-     "d": 319
+     "kind": "keyphrase",
+     "d": 32
     },
     {
-     "content": "wang",
-     "kind": "org",
-     "d": 105
-    },
-    {
-     "content": "michael collins",
-     "kind": "person",
-     "d": 42
-    },
-    {
-     "content": "al",
-     "kind": "term",
-     "d": 31
-    },
-    {
-     "content": "et",
-     "kind": "term",
-     "d": 27
-    },
-    {
-     "content": "proceedings",
-     "kind": "term",
-     "d": 24
-    },
-    {
-     "content": "dm",
-     "kind": "term",
-     "d": 22
-    },
-    {
-     "content": "figure",
-     "kind": "term",
-     "d": 22
+     "content": "signed",
+     "kind": "keyphrase",
+     "d": 30
     },
     {
      "content": "answer",
-     "kind": "term",
-     "d": 18
+     "kind": "keyphrase",
+     "d": 29
     },
     {
-     "content": "danielle epstein",
-     "kind": "person",
-     "d": 17
+     "content": "table",
+     "kind": "keyphrase",
+     "d": 26
+    },
+    {
+     "content": "figure",
+     "kind": "keyphrase",
+     "d": 25
+    },
+    {
+     "content": "instruction",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "section",
+     "kind": "keyphrase",
+     "d": 23
     }
    ]
   }
@@ -166,81 +166,81 @@
  "astrology__bge-small": {
   "genre": "astrology",
   "encoder": "bge-small",
-  "entities": 32467,
-  "mentions": 83526,
-  "edges": 13845,
-  "windows": 13292,
+  "entities": 33480,
+  "mentions": 52165,
+  "edges": 3392,
+  "windows": 15613,
   "resolved": {
-   "merged": 19774,
-   "by_ann": 8606,
-   "by_lexical": 11168,
-   "edges": 2832,
-   "entities": 32467,
-   "resolvable": 32467,
-   "canonical": 12693
+   "merged": 11033,
+   "by_ann": 4459,
+   "by_lexical": 6574,
+   "edges": 3020,
+   "entities": 33480,
+   "resolvable": 33480,
+   "canonical": 22447
   },
   "topics": {
-   "topics": 266,
+   "topics": 302,
    "method": "usearch"
   },
-  "t_graph": 359.3,
-  "t_resolve": 64.8,
-  "t_topics": 9.2,
+  "t_graph": 19.4,
+  "t_resolve": 7.1,
+  "t_topics": 0.6,
   "stats": {
-   "entities": 32733,
-   "canonical": 12959,
-   "mentions": 88545,
-   "edges": 2832,
+   "entities": 33782,
+   "canonical": 22749,
+   "mentions": 57187,
+   "edges": 3020,
    "top_degree": [
     {
-     "content": "sun",
-     "kind": "org",
-     "d": 390
+     "content": "moon",
+     "kind": "keyphrase",
+     "d": 35
     },
     {
-     "content": "abraxas",
-     "kind": "term",
-     "d": 25
+     "content": "earth",
+     "kind": "keyphrase",
+     "d": 30
     },
     {
-     "content": "ota-fu-ku",
-     "kind": "term",
+     "content": "hour",
+     "kind": "keyphrase",
+     "d": 30
+    },
+    {
+     "content": "time",
+     "kind": "keyphrase",
+     "d": 24
+    },
+    {
+     "content": "venus",
+     "kind": "keyphrase",
+     "d": 22
+    },
+    {
+     "content": "gemini",
+     "kind": "keyphrase",
+     "d": 20
+    },
+    {
+     "content": "signs",
+     "kind": "keyphrase",
+     "d": 20
+    },
+    {
+     "content": "saturn",
+     "kind": "keyphrase",
+     "d": 18
+    },
+    {
+     "content": "star",
+     "kind": "keyphrase",
      "d": 17
     },
     {
-     "content": "buddha",
-     "kind": "term",
-     "d": 17
-    },
-    {
-     "content": "qualities",
-     "kind": "term",
-     "d": 17
-    },
-    {
-     "content": "millet",
-     "kind": "person",
+     "content": "libra",
+     "kind": "keyphrase",
      "d": 16
-    },
-    {
-     "content": "ise",
-     "kind": "term",
-     "d": 15
-    },
-    {
-     "content": "jochebed",
-     "kind": "term",
-     "d": 14
-    },
-    {
-     "content": "fan",
-     "kind": "term",
-     "d": 14
-    },
-    {
-     "content": "yucatan",
-     "kind": "gpe",
-     "d": 13
     }
    ]
   }

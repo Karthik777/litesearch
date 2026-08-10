@@ -115,6 +115,13 @@ def build_for(genre, name, fn, force=False):
     db = database(str(dst))
     n_st, n_ix = first(db.q('select count(*) c from store'))['c'], db.get_index('store').size
     assert n_st == n_ix, f'{dst.stem}: clone has {n_st} chunks but an index of {n_ix} — copy is wrong'
+    # `run.build_graphs` writes its graph into the tree store itself, so a clone can arrive with one
+    # already in it and `build_graph` would add to it rather than replace it — every extractor would
+    # then be measured on top of yake's graph. Dropped so the clone starts from chunks alone.
+    for t in ('entities', 'mentions', 'edges', 'entities_fts'):
+        db.conn.execute(f'drop table if exists {t}')
+    db.ann_indices.pop('entities', None)
+    db.conn.execute("delete from usearch_indices where name='entities'")
     # `id`, not just `content`: `build_graph` keys mentions on `chunk['id']` and falls back to
     # `_slug(content)`, but a tree store hashes ids over `node_id` *and* `content`, so the fallback
     # matched nothing and the keyphrase graph was fully disconnected from the store

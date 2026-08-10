@@ -25,6 +25,10 @@ python -m evals.ingest_bench kw                      # keyphrase extractors, spe
                                                      #   (pip install yake-rust rake-nltk rakun2)
 python -m evals.ingest_bench embatch                 # encoder gain from batching across documents
 python -m evals.ingest_bench verify
+
+python -m evals.run build_tree && python -m evals.run build_graph
+python -m evals.extractor_eval                       # extractor -> retrieval, 3 genres
+python -m evals.extractor_sig                        # paired bootstrap over per-query RR
 ```
 
 ## Headline
@@ -329,6 +333,95 @@ Yes — `yake-rust`, and it is the same algorithm. `python -m evals.ingest_bench
 | rake-nltk | 0.20s | 0.5ms | 0.61s | no | 21.6% |
 | rakun2 | 1.70s | 4.2ms | 2.42s | no | 23.9% |
 
+`yake-rust` is **6.6x faster per call** and scales on *threads* (0.46s → 0.16s on four), so it would
+not need the process pool `build_graph` carries for extraction — no fork, no pickling, no
+`MIN_PARALLEL_CHUNKS` threshold. The two pure-python candidates both go *slower* on threads, which
+is the GIL showing up exactly where it should.
+
+### And does the extractor change retrieval? No — measured, not assumed
+
+Speed and term overlap say nothing about answer quality, so `evals/extractor_eval.py` scores it:
+each genre's tree store is cloned so chunks, embeddings and the ANN index are held fixed, and the
+graph is rebuilt over the identical store once per extractor. 120 known-item queries per genre,
+five flavours, `graph_w=0.5`.
+
+p_mrr, averaged over flavours:
+
+| | regulatory | arxiv | astrology |
+|---|---|---|---|
+| **hybrid, no graph leg** | **0.8170** | **0.7692** | **0.6767** |
+| hybrid on a clone (control) | 0.8170 | 0.7692 | 0.6767 |
+| yake + topics | 0.6859 | 0.5727 | 0.5006 |
+| yake-rust + topics | 0.6914 | 0.5646 | 0.4976 |
+| rake-nltk + topics | 0.6706 | 0.5684 | 0.5009 |
+| yake, no topics | 0.6827 | 0.5580 | 0.4995 |
+| yake-rust, no topics | 0.6789 | 0.5498 | 0.4972 |
+| rake-nltk, no topics | 0.6652 | 0.5422 | 0.4939 |
+
+The spread between extractors is 2–3 points and it changes sign across genres — yake-rust leads on
+regulation, yake on arXiv, rake-nltk on astrology. That is the shape of noise, so
+`evals/extractor_sig.py` keeps the per-query reciprocal ranks and bootstraps the paired difference
+over 10,000 resamples (paired because every extractor answers the identical queries over identical
+chunks, and between-query variance dwarfs between-extractor variance):
+
+| genre | comparison | difference | 95% CI | p |
+|---|---|---|---|---|
+| regulatory | yake − yake-rust | +0.0038 | [−0.0111, +0.0184] | 0.62 |
+| regulatory | yake − rake-nltk | +0.0174 | [−0.0094, +0.0446] | 0.19 |
+| arxiv | yake − yake-rust | +0.0081 | [−0.0055, +0.0224] | 0.25 |
+| arxiv | yake − rake-nltk | +0.0158 | [−0.0156, +0.0463] | 0.31 |
+| astrology | yake − yake-rust | +0.0023 | [−0.0055, +0.0100] | 0.56 |
+| astrology | yake − rake-nltk | +0.0055 | [−0.0201, +0.0313] | 0.66 |
+
+**All nine comparisons straddle zero.** Over 1,755 query-flavour pairs, no extractor is
+distinguishable from another. yake is nominally ahead in every genre and never significantly.
+
+Two things follow. **`yake-rust` is a free 6.6x** — same retrieval, and it retires the process pool.
+And rake-nltk being indistinguishable at 21.6% term overlap says something less comfortable about
+the graph leg: if the keyphrases can be almost entirely different and the answers do not move, the
+walk is not discriminating on them.
+
+### The graph leg loses to plain hybrid on all three genres
+
+The row that matters in that table is the first one. Hybrid with no graph leg beats every graph
+configuration by 15 points on regulation, 20 on arXiv and 18 on astrology, and by more on
+`paraphrase` (regulatory 0.9595 against 0.8468 for the best graph run). It is also 3–4x faster.
+
+This contradicts the checked-in `evals/results/graph.json`, which shows 0.98 for the regulatory
+graph leg. Those numbers were produced by the broken path described below and should not be
+trusted; they are regenerated.
+
+Nothing is swapped on the strength of this: `build_graph(terms_fn=...)` is the seam, the default is
+unchanged, and the finding that wants acting on is about `graph_w`, not about extractors.
+
+### The bug that made all of this look like a null result
+
+`build_graph` keys a mention on `chunk['id']` and falls back to `_slug(content)` when the chunk
+dict has none. A **tree** store hashes its ids over `node_id` *and* `content`, so that fallback
+produces ids matching nothing — and `run.build_graphs` selected only `content`. On regulation, **0
+of 34,891 mentions referenced a chunk that exists.** `topic_nodes` writes its mentions against real
+store ids, so the topics stayed connected while the keyphrase half did not, which is the entire
+basis of `eval_graph`'s claim that *"the topics are the whole graph leg: they carry 100% of the PPR
+mass, which is why swapping the extractor moved nothing."* That was this bug. With `id` selected,
+query latency goes from ~18ms — silently falling through to hybrid — to ~65ms, and removing the
+topics now costs 0.003–0.015 p_mrr rather than everything.
+
+`extractor_eval` had its own version of the same trap. `shutil.copy` of the `.db` dropped the
+un-checkpointed WAL (2,283 of 3,579 chunks) and left the usearch sidecar path — which is absolute
+and stored *inside* the database — pointing at the original's index, so every clone shared one
+3,579-key index over a 2,283-row table. Both bugs presented identically: three visibly different
+graphs scoring the same to four decimal places, which reads as a null result rather than as a
+broken harness. `clone_store` now checkpoints, copies the sidecar and repoints the registry;
+`build_for` asserts chunk count equals index size and drops any pre-existing graph; and the eval
+carries a hybrid-on-a-clone control row that must match hybrid on the original exactly. It does.
+
+| extractor | serial | per chunk | 4 threads | GIL-free? | agrees with yake |
+|---|---|---|---|---|---|
+| yake (shipped) | 3.02s | 7.5ms | 7.16s | no | — |
+| **yake-rust** | **0.46s** | **1.1ms** | **0.16s** | **yes** | 66.5% |
+| rake-nltk | 0.20s | 0.5ms | 0.61s | no | 21.6% |
+| rakun2 | 1.70s | 4.2ms | 2.42s | no | 23.9% |
+
 `yake-rust` is **6.6x faster per call** and scales on *threads* (0.46s → 0.16s on four), so it
 would not need the process pool `build_graph` currently carries for extraction — no fork, no
 pickling, no `MIN_PARALLEL_CHUNKS` threshold. The two pure-python candidates both go *slower* on
@@ -349,9 +442,14 @@ Nothing is swapped: `build_graph(terms_fn=...)` is the seam for it, and the defa
   is ~99% of `prose_windows` and scales 3.5x on 4 cores. Nothing in litesearch's own code is
   material next to it; the next real gain is a faster keyphrase extractor, not a faster reduce.
 - ~~**Mentions and edges still go through `insert_all`.**~~ Fixed — `core.upsert_all`.
-- **Extraction is still the ceiling on `build_graph`.** `yake-rust` is 6.6x per call and releases
-  the GIL, so the process pool could become a thread pool; it needs a retrieval eval first, because
-  it agrees with the shipped yake on 66.5% of terms.
+- **`yake-rust` is now evidence-backed but not adopted.** 6.6x per call, GIL-free, and
+  indistinguishable from the shipped yake on retrieval across three genres. Swapping it would
+  retire the extraction process pool. Left as a decision rather than taken, because it adds a
+  compiled dependency and the default extractor is a user-visible choice.
+- **The graph leg loses to plain hybrid on all three eval genres**, by 15–20 points of p_mrr at
+  `graph_w=0.5`, while costing 3–4x the latency. That is the finding worth acting on and it is not
+  a performance question — `graph_w` wants sweeping down, and `eval_graph` already runs 0.25/0.5/1.0
+  if the weight is the whole story.
 - **The ANN rebuild and the FTS rebuild are now the two biggest slices of `add_dir`** — 1.47s and
   1.03s of 4.31s with a static encoder. Both are once-per-walk and both are doing real work
   (`usearch.compiled.add_many` builds the HNSW graph); neither is obviously wrong, and neither has
