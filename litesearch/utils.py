@@ -4,9 +4,8 @@
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
            'static_code_embedder', 'static_retrieval_embedder', 'static_science_embedder', 'static_embedder',
-           'download_model', 'FastEncode', 'LateChunkFastEncode', 'LongLateChunkFastEncode', 'AutoLateChunkFastEncode',
-           'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts',
-           'encode_pdf_images']
+           'download_model', 'FastEncode', 'doc_encoder', 'query_encoder', 'FastEncodeImage', 'FastEncodeMultimodal',
+           'encode_pdf_texts', 'encode_pdf_images']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first

@@ -38,6 +38,19 @@ off: the tree *for ranking*, heading prefixes, deeper fanout without a reranker,
 (−0.033 to −0.053), and the entity graph leg (−0.070 to −0.160 on ordinary queries, opt-in by name
 only). `python -m evals.decide` reproduces all of it.
 
+**Late chunking is now `exporti`.** The three classes stay compiled into `litesearch.utils` and
+importable by name, but leave `__all__`, so `from litesearch import *` no longer offers them and
+they carry no docs page. Not deleted: `evals/encoders.py` imports `AutoLateChunkFastEncode` and
+`evals/run.py build_late` still builds the arm, which is what keeps it cheap to re-ask the question
+on a corpus with longer-range coreference than legislation, papers or a treatise on astrology.
+
+**vishalakshi is the nominated first caller.** It builds a litesearch-backed vault, and porting it
+onto `Index` is a better test of "did this remove decisions" than any example in the notebook. The
+api page lists the three things that port should answer — whether `add` covers its hand-rolled
+ingest, whether `Index`'s English-tuned default encoder should follow the profile instead of the
+constructor (a Sanskrit vault wants `encoder=static_embedder()`), and whether its read path belongs
+on `context`/`read` rather than `search`.
+
 Two findings worth stating outside the table. Keyword-only retrieval with `pre()` beats hybrid in
 all 24 paired cells on the main query set — an artifact of that set, where every query is a lexical
 transformation of the sentence it targets; `evals/multihop.py` builds the corrective and there the

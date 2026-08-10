@@ -179,7 +179,7 @@ everything below it is off, and stays off:
 | document tree, for *ranking* | −0.052 → +0.011 | a wash. Built anyway, for `toc`/`read`/`sections` |
 | heading prefix on the chunk | ±0.02, sign flips by genre | a wash |
 | deeper candidate fanout alone | −0.014 → −0.068 | fanout pays only *with* a reranker |
-| late chunking | −0.033 → −0.053 | not wired in |
+| late chunking | −0.033 → −0.053 | `exporti`: in the module, out of `__all__` |
 | entity graph leg | **−0.070 → −0.160** | opt-in by name only; see below |
 
 Three findings worth more than their line in the table:
@@ -247,6 +247,10 @@ when you know your traffic looks like that.
   `database`, `get_store`, `search`, `rrf_merge`, `vec_search`
 - **[tree docs](https://Karthik777.github.io/litesearch/tree.html)** —
   `add_dir`, `toc`, `read`, `sections`, `context`
+- **[vishalakshi](https://github.com/vedicreader/vishalakshi)** — a
+  litesearch-backed vault, and the first caller nominated to port onto
+  `Index`; the [api page](https://Karthik777.github.io/litesearch/api.html)
+  says what that port should test
 
 ## Acknowledgements
 
