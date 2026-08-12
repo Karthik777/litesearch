@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.27
+db name fix
+
 ## 0.1.26
 release
 

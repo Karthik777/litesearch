@@ -258,7 +258,7 @@ def vec_search(self: Table,
     sel_cols = [f'{c} as {c}' if c == 'rowid' else c for c in columns] if columns else ['*']
     sel = ','.join(sel_cols) + f', {dist} as _dist'
     wh = f'{emb_col} is not null' + (f' AND {where}' if where else '')
-    rows = self.db.q(f'SELECT {sel} FROM {self.name} WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
+    rows = self.db.q(f'SELECT {sel} FROM [{self.name}] WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
                 dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
     return _dtype_check(self, dtype, rows)
 
@@ -286,7 +286,7 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
     cols = [c for c in (columns or []) if c != 'rowid']
     sel = ','.join(cols + [_rid()]) if cols else '*, %s'%_rid()
     wh = f'where {_in("rowid", keys)}' + (f' AND {where}' if where else '')
-    rows = self.db.q(f'select {sel} from {self.name} {wh}', where_args or None)
+    rows = self.db.q(f'select {sel} from [{self.name}] {wh}', where_args or None)
     for r in rows: r['_dist'] = dist.get(r['rowid'])
     return sorted(rows, key=lambda r: ord.get(r['rowid'],1e10))[:limit]
 
