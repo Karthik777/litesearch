@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.28
+cache static encoder
+
 ## 0.1.27
 db name fix
 

@@ -11,6 +11,7 @@ __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embed
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
 from fastcore.parallel import parallel as fc_parallel
 import json, os, warnings
+from functools import cache
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer, AddedToken
@@ -43,7 +44,10 @@ siglip2_so400m  = AttrDict(model='onnx-community/siglip2-so400m-patch16-512-ONNX
 bge_instr = AttrDict(document="{text}",query="{text}")
 bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quantized.onnx',prompt=bge_instr, tti=True)
 
-def static_embedder(model_nm='minishlab/potion-multilingual-128M'): return StaticModel.from_pretrained(model_nm, force_download=False)
+@cache
+def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
+    'Shared per name; potion-multilingual-128M alone is ~500MB of embeddings and every caller would load its own.'
+    return StaticModel.from_pretrained(model_nm, force_download=False)
 
 static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M-v2')
 static_retrieval_embedder = bind(static_embedder, model_nm='minishlab/potion-retrieval-32M')
