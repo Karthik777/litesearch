@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.31
+flashrank is optional
+
 ## 0.1.30
 make onnx optional
 
