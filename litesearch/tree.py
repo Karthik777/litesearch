@@ -15,7 +15,7 @@ import re, tempfile
 import numpy as np
 
 from .core import (_in, _rid, _np_dtype, rrf_merge, process_content, write_txn, db_lock,
-        rerank_hits, RERANK_FANOUT)
+        rerank_hits, retry_schema, RERANK_FANOUT)
 from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
@@ -246,8 +246,7 @@ def get_tree(self:Database,
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     dt, nt = f'{p}docs', f'{p}nodes'
     key = ('tree', store, p, bool(ann))
-    if key in self.ensured:
-        return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=self.t[store], prefix=p)
+    if key in self.ensured: return self.ensured[key]
     st = self.get_store(store, hash=True, ann=ann, doc_id=str, node_id=str, page=int, heading=str, **kw)
     with write_txn(self):
         self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
@@ -256,8 +255,8 @@ def get_tree(self:Database,
                           page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
         for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
             self.t[t].create_index([c], if_not_exists=True)
-    self.ensured.add(key)
-    return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
+    self.ensured[key] = AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
+    return self.ensured[key]
 
 # %% ../nbs/06_tree.ipynb #538721312f0bb5f
 MIN_CHUNK = 40
@@ -560,6 +559,7 @@ def breadcrumb(self:Database, node_id:str, store:str='store', prefix:str=None, s
     return sep.join(_dedent_path(parts[::-1]))
 
 @patch
+@retry_schema
 def read(self:Database,
          node_id:str,           # 'doc#seq', as returned by toc() or sections()
          store:str='store',
@@ -628,6 +628,7 @@ def merge_spans(hits,            # ranked hits carrying node_id + page
     return sorted(out, key=lambda h: h.get('_rank', 1<<30))
 
 @patch
+@retry_schema
 def doc_search(self:Database,
                q:str,                 # query string
                emb:bytes,             # query embedding
@@ -677,6 +678,7 @@ def _wrrf(fts, vec, wf=1.0, wv=1.0, k=60, limit=50, id_key='rowid'):
     return sorted(scores.values(), key=lambda r: -r['_rrf_score'])[:limit]
 
 @patch
+@retry_schema
 def sections(self:Database,
              q:str,               # query string
              emb:bytes,           # query embedding
@@ -724,6 +726,7 @@ def sections(self:Database,
 def _prov(bc): return bool(bc) and '›' in bc   # a bare document title (the root) has no separator
 
 @patch
+@retry_schema
 def node_context(self:Database,
                  node_id:str,          # a 'doc#seq' node id
                  store:str='store',
@@ -743,6 +746,7 @@ def node_context(self:Database,
                     children=kids.sorted(key=lambda r: r['seq']).map(pick)[:12])
 
 @patch
+@retry_schema
 def context(self:Database,
             q:str,                  # query string
             emb:bytes,              # query embedding
