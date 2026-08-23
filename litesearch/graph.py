@@ -13,7 +13,7 @@ from multiprocessing import get_context
 import ast, math, re, sys, zlib
 from functools import lru_cache
 import numpy as np
-from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn, upsert_all
+from .core import _in, _rid, _slug, _np_dtype, process_content, write_txn, db_lock, upsert_all
 
 # %% ../nbs/05_graph.ipynb #e2556b625e937d53
 @patch
@@ -260,11 +260,16 @@ def _n_workers(n, n_workers):
 
 # %% ../nbs/05_graph.ipynb #bd12970f219d8213
 class _WindowStore:
-    '''Co-occurrence windows kept in a SQLite table instead of a python list.'''
+    '''Co-occurrence windows kept in a SQLite table instead of a python list.
+    The table is TEMP: scratch for one build does not belong in the shared schema, where creating
+    and dropping it bumps the schema cookie and forces every other connection to re-prepare.'''
+    PAGE = 10_000   # windows per read; keeps the cursor closed between yields
     def __init__(self, db, name):
         store_attr(); self.n, self._w = 0, 0
-        db.conn.execute(f'create table if not exists {name} (w integer, e text)')
-        db.conn.execute(f'delete from {name}')
+        with write_txn(db):
+            db.conn.execute(f'drop table if exists main.{name}')   # left behind by older versions
+            db.conn.execute(f'create temp table if not exists {name} (w integer, e text)')
+            db.conn.execute(f'delete from {name}')
     def extend(self, wins):
         rows = [(self._w + i, e) for i, w in enumerate(wins) for e in w if e]
         if not rows: self._w += len(wins); self.n += len(wins); return
@@ -272,31 +277,45 @@ class _WindowStore:
         self._w += len(wins); self.n += len(wins)
     def entity_counts(self):
         'entity -> windows containing it. Bounded by vocabulary, which saturates; safe in memory.'
-        return dict(self.db.conn.execute(f'select e, count(*) from {self.name} group by e'))
+        with db_lock(self.db):
+            return dict(self.db.conn.execute(f'select e, count(*) from {self.name} group by e'))
     def pair_counts(self, hub, min_n):
-        """Co-occurrence count per unordered pair, aggregated on disk."""
+        """Co-occurrence count per unordered pair, aggregated on disk. Materialised: the caller
+        builds edges between rows, and an open cursor makes the connection busy for that whole walk."""
         c = self.db.conn
-        c.execute(f'create index if not exists {self.name}_w on {self.name}(w)')
-        c.execute(f'create temp table if not exists {self.name}_hub (e text primary key)')
-        c.execute(f'delete from {self.name}_hub')
-        if hub: c.executemany(f'insert or ignore into {self.name}_hub values (?)', [(e,) for e in hub])
-        return c.execute(f'''select a.e, b.e, count(*) c from {self.name} a
+        with write_txn(self.db):
+            c.execute(f'create index if not exists {self.name}_w on {self.name}(w)')
+            c.execute(f'create temp table if not exists {self.name}_hub (e text primary key)')
+            c.execute(f'delete from {self.name}_hub')
+            if hub: c.executemany(f'insert or ignore into {self.name}_hub values (?)', [(e,) for e in hub])
+        with db_lock(self.db): return c.execute(f'''select a.e, b.e, count(*) c from {self.name} a
               join {self.name} b on a.w = b.w and a.e < b.e
               where a.e not in (select e from {self.name}_hub)
                 and b.e not in (select e from {self.name}_hub)
-              group by a.e, b.e having c >= {int(min_n)}''')
+              group by a.e, b.e having c >= {int(min_n)}''').fetchall()
     def __len__(self): return self.n
     def __iter__(self):
-        cur, w, acc = self.db.conn.execute(f'select w, e from {self.name} order by w'), None, set()
-        for wi, e in cur:
-            if wi != w:
-                if w is not None: yield acc
-                w, acc = wi, set()
-            acc.add(e)
-        if w is not None: yield acc
+        'One page of whole windows at a time: a cursor left open across a yield holds the connection.'
+        last = -1
+        while True:
+            with db_lock(self.db):
+                ws = [r[0] for r in self.db.conn.execute(
+                    f'select distinct w from {self.name} where w > ? order by w limit {self.PAGE}', (last,)).fetchall()]
+                if not ws: return
+                rows = self.db.conn.execute(f'select w, e from {self.name} where w between ? and ? order by w',
+                                            (ws[0], ws[-1])).fetchall()
+            w, acc = None, set()
+            for wi, e in rows:
+                if wi != w:
+                    if w is not None: yield acc
+                    w, acc = wi, set()
+                acc.add(e)
+            if w is not None: yield acc
+            last = ws[-1]
     def drop(self):
-        self.db.conn.execute(f'drop table if exists {self.name}')
-        self.db.conn.execute(f'drop table if exists temp.{self.name}_hub')
+        with write_txn(self.db):
+            self.db.conn.execute(f'drop table if exists temp.{self.name}')
+            self.db.conn.execute(f'drop table if exists temp.{self.name}_hub')
 
 def build_graph(db,                  # Database with a chunk store
                 chunks,              # chunk dicts ({'content','metadata'}) as returned by dir2chunks/pkg2chunks

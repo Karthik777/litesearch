@@ -240,16 +240,23 @@ def get_tree(self:Database,
              ann:bool=True,       # register an ANN index on the chunk store
              **kw                 # extra typed columns for the chunk store
 ) -> AttrDict:
-    'Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.'
+    """Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.
+    `sections`, `read` and `breadcrumb` all call this per query, so the DDL runs once per connection
+    (`Database.ensured`) rather than once per call."""
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     dt, nt = f'{p}docs', f'{p}nodes'
+    key = ('tree', store, p, bool(ann))
+    if key in self.ensured:
+        return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=self.t[store], prefix=p)
     st = self.get_store(store, hash=True, ann=ann, doc_id=str, node_id=str, page=int, heading=str, **kw)
-    self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
-                      pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
-    self.t[nt].create(id=str, doc_id=str, parent_id=str, level=int, seq=int, title=str,
-                      page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
-    for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
-        self.t[t].create_index([c], if_not_exists=True)
+    with write_txn(self):
+        self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
+                          pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
+        self.t[nt].create(id=str, doc_id=str, parent_id=str, level=int, seq=int, title=str,
+                          page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
+        for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
+            self.t[t].create_index([c], if_not_exists=True)
+    self.ensured.add(key)
     return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
 
 # %% ../nbs/06_tree.ipynb #538721312f0bb5f
