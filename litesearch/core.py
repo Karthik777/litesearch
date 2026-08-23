@@ -455,8 +455,7 @@ RERANK_FANOUT, _RERANKERS = 30, {}
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
     try: from flashrank import Ranker
-    except ImportError as e:
-        raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
+    except ImportError as e: raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
     key = model or 'default'
     if key not in _RERANKERS: _RERANKERS[key] = Ranker(model_name=model) if model else Ranker()
     return _RERANKERS[key]

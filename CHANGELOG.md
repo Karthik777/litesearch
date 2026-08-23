@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.30
+make onnx optional
+
 ## 0.1.29
 pdf to markdown alignment issues
 
