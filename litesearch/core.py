@@ -452,20 +452,22 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
 
 # %% ../nbs/01_core.ipynb #571724f3bc9bcf44
 RERANK_FANOUT, _RERANKERS = 30, {}
+def _flashrank():
+    "flashrank, which only reranking wants. Retrieval needs none of it."
+    try: import flashrank; return flashrank
+    except ImportError as e: raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
+
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
-    try: from flashrank import Ranker
-    except ImportError as e: raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
-    key = model or 'default'
+    Ranker, key = _flashrank().Ranker, model or 'default'
     if key not in _RERANKERS: _RERANKERS[key] = Ranker(model_name=model) if model else Ranker()
     return _RERANKERS[key]
 
 def rerank_hits(q, hits, model=None, limit=None, text_col='content'):
     'Reorder search hits by a flashrank cross-encoder on (q, hit[text_col]); returns the top `limit`.'
-    from flashrank import RerankRequest
     if not hits: return hits
     passages = [{'id':i, 'text':h.get(text_col) or ''} for i,h in enumerate(hits)]
-    ranked = _get_reranker(model).rerank(RerankRequest(query=q, passages=passages))
+    ranked = _get_reranker(model).rerank(_flashrank().RerankRequest(query=q, passages=passages))
     out = [hits[r['id']] for r in ranked]
     return out[:limit] if limit else out
 
