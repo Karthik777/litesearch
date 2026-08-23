@@ -55,6 +55,8 @@ dev = [
     'pyperclip',
     "chonkie",
     "flashrank",
+    "onnx>=1.22.0",
+    "onnxruntime>=1.24.3",
     "model2vec[distill]>=0.7.0",
     "fastprogress>=1.1.5",
     "koshas>=0.0.25",
