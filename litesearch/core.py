@@ -131,7 +131,7 @@ def process_content(store,          # target Table (hash-id store)
     return store
 
 
-# %% ../nbs/01_core.ipynb #eac5223b
+# %% ../nbs/01_core.ipynb #62c623f7d0a93d6a
 @patch(as_prop=True)
 def ensured(self:Database):
     '''Tables this connection has already built, so idempotent DDL runs once instead of per call.
@@ -141,7 +141,7 @@ def ensured(self:Database):
     if not hasattr(self, '_ensured'): self._ensured = {}
     return self._ensured
 
-# %% ../nbs/01_core.ipynb #6e6662cb
+# %% ../nbs/01_core.ipynb #5fc7d3d2087383f2
 @patch
 def forget_ensured(self:Database, store:str=None):
     'Forget the memo and the loaded ANN index for `store`, or for every store. Call after dropping tables.'
@@ -149,7 +149,7 @@ def forget_ensured(self:Database, store:str=None):
     for k in [k for k in self.ensured if k[1] == store]: del self.ensured[k]
     self.ann_indices.pop(store, None)
 
-# %% ../nbs/01_core.ipynb #914e4306
+# %% ../nbs/01_core.ipynb #a03b2e8572bf771f
 SCHEMA_RETRIES = 4   # attempts before a schema change under a read is given up on
 
 def retry_schema(f):
@@ -501,7 +501,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     return _db
 
 
-# %% ../nbs/01_core.ipynb #f12d6c12
+# %% ../nbs/01_core.ipynb #a8ca0a07298e874b
 @patch
 def clone(self:Database, busy_timeout:int=BUSY_TIMEOUT_MS, **kw) -> Database:
     '''A second connection to the same file, for another thread. Extensions and tokenizers are
