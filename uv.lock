@@ -2605,13 +2605,9 @@ dependencies = [
     { name = "chonkie" },
     { name = "codesigs" },
     { name = "fastlite" },
-    { name = "flashrank" },
     { name = "liteparse" },
     { name = "model2vec" },
     { name = "notebook" },
-    { name = "onnx" },
-    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "onnxruntime", version = "1.28.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pdf-oxide" },
@@ -2626,6 +2622,20 @@ eval = [
     { name = "datasets" },
     { name = "rishi", version = "0.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "rishi", version = "0.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+full = [
+    { name = "flashrank" },
+    { name = "onnx" },
+    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.28.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+onnx = [
+    { name = "onnx" },
+    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.28.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+rerank = [
+    { name = "flashrank" },
 ]
 sanskrit = [
     { name = "vidyut" },
@@ -2656,12 +2666,15 @@ requires-dist = [
     { name = "codesigs", specifier = ">=0.0.2" },
     { name = "datasets", marker = "extra == 'eval'", specifier = ">=5.0.0" },
     { name = "fastlite", specifier = ">=0.2.4" },
-    { name = "flashrank", specifier = ">=0.2.10" },
+    { name = "flashrank", marker = "extra == 'full'", specifier = ">=0.2.10" },
+    { name = "flashrank", marker = "extra == 'rerank'", specifier = ">=0.2.10" },
     { name = "liteparse", specifier = ">=2.6.0" },
     { name = "model2vec", specifier = ">=0.7.0" },
     { name = "notebook", specifier = ">=7.5.4" },
-    { name = "onnx", specifier = ">=1.22.0" },
-    { name = "onnxruntime", specifier = ">=1.24.3" },
+    { name = "onnx", marker = "extra == 'full'", specifier = ">=1.22.0" },
+    { name = "onnx", marker = "extra == 'onnx'", specifier = ">=1.22.0" },
+    { name = "onnxruntime", marker = "extra == 'full'", specifier = ">=1.24.3" },
+    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.24.3" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdf-oxide", specifier = ">=0.3.17" },
     { name = "pillow", specifier = ">=12.1.1" },
@@ -2671,7 +2684,7 @@ requires-dist = [
     { name = "vidyut", marker = "extra == 'sanskrit'", specifier = ">=0.4.0" },
     { name = "yake", specifier = ">=0.7.3" },
 ]
-provides-extras = ["eval", "sanskrit"]
+provides-extras = ["eval", "full", "onnx", "rerank", "sanskrit"]
 
 [package.metadata.requires-dev]
 dev = [

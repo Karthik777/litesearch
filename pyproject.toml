@@ -19,18 +19,18 @@ dependencies = [
     "liteparse>=2.6.0",
     "model2vec>=0.7.0",
     "notebook>=7.5.4",
-    "onnx>=1.22.0",
-    "onnxruntime>=1.24.3",
     "pandas>=2.3.3",
     "pdf-oxide>=0.3.17",
     "pillow>=12.1.1",
     "tokenizers>=0.22.2",
     "usearch>=2.23.0",
     "yake>=0.7.3",
-    "flashrank>=0.2.10",
 ]
 
 [project.optional-dependencies]
+onnx = ["onnx>=1.22.0", "onnxruntime>=1.24.3"]
+rerank = ["flashrank>=0.2.10"]
+full = ["litesearch[onnx,rerank]"]
 eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
 sanskrit = ["vidyut>=0.4.0"]
 

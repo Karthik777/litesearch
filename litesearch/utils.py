@@ -13,9 +13,14 @@ from fastcore.parallel import parallel as fc_parallel
 import json, os, warnings
 from functools import cache
 import numpy as np
-import onnxruntime as ort
 from tokenizers import Tokenizer, AddedToken
 from model2vec import StaticModel
+def _ort():
+	"onnxruntime, which only the ONNX encoders want. A model2vec static model needs none of it."
+	try: import onnxruntime as ort; return ort
+	except ImportError as e:
+		raise ImportError('an ONNX model needs onnxruntime: pip install "litesearch[onnx]"') from e
+
 
 # %% ../nbs/03_utils.ipynb #be27730c21e0c597
 embedding_gemma_prompt = AttrDict(document='title: none | text: {text}', query='task: search result | query: {text}')
@@ -120,6 +125,7 @@ class FastEncode:
 	def _load_enc(self):
 		try:
 			onnx_p = self._maybe_quantize(Path(self.md) / self.md_nm)
+			ort = _ort()
 			sess_opt = ort.SessionOptions()
 			sess_opt.intra_op_num_threads = os.cpu_count() or 1
 			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
@@ -316,6 +322,7 @@ class FastEncodeImage:
 	def _load_enc(self):
 		try:
 			onnx_p = Path(self.md) / self.model_dict.onnx_path
+			ort = _ort()
 			sess_opt = ort.SessionOptions()
 			sess_opt.intra_op_num_threads = os.cpu_count() or 1
 			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL

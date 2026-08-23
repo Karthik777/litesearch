@@ -454,7 +454,9 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
 RERANK_FANOUT, _RERANKERS = 30, {}
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
-    from flashrank import Ranker
+    try: from flashrank import Ranker
+    except ImportError as e:
+        raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
     key = model or 'default'
     if key not in _RERANKERS: _RERANKERS[key] = Ranker(model_name=model) if model else Ranker()
     return _RERANKERS[key]
