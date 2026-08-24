@@ -13,9 +13,9 @@ from apswutils.utils import hash_record
 from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
-
+from contextlib import nullcontext
 from .core import (_in, _rid, _np_dtype, rrf_merge, process_content, write_txn, db_lock,
-        rerank_hits, retry_schema, RERANK_FANOUT)
+        rerank_hits, RERANK_FANOUT)
 from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
@@ -481,6 +481,7 @@ def add_dir(self:Database,
             n_workers:int=None,     # parse workers; 0 is serial, None picks by parse-heavy file count
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             files=None,             # ingest exactly these paths instead of walking `dir`
+            bulk:bool=False,     # rebuild FTS once after an offline load; FTS is stale during the load
             **kw                    # forwarded to add_doc
 ) -> list:
     '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.'''
@@ -498,7 +499,7 @@ def add_dir(self:Database,
             store_chunks(g.store, pend, emb_fn, wh); pend.clear()
     if embed_batch: kw['defer'] = pend
     out = []
-    with g.store.bulk_load():
+    with (g.store.bulk_load() if bulk else nullcontext()):
         if nw and nw > 1 and files:
             jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
             for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False, progress=False)):
@@ -559,7 +560,6 @@ def breadcrumb(self:Database, node_id:str, store:str='store', prefix:str=None, s
     return sep.join(_dedent_path(parts[::-1]))
 
 @patch
-@retry_schema
 def read(self:Database,
          node_id:str,           # 'doc#seq', as returned by toc() or sections()
          store:str='store',
@@ -628,7 +628,6 @@ def merge_spans(hits,            # ranked hits carrying node_id + page
     return sorted(out, key=lambda h: h.get('_rank', 1<<30))
 
 @patch
-@retry_schema
 def doc_search(self:Database,
                q:str,                 # query string
                emb:bytes,             # query embedding
@@ -678,7 +677,6 @@ def _wrrf(fts, vec, wf=1.0, wv=1.0, k=60, limit=50, id_key='rowid'):
     return sorted(scores.values(), key=lambda r: -r['_rrf_score'])[:limit]
 
 @patch
-@retry_schema
 def sections(self:Database,
              q:str,               # query string
              emb:bytes,           # query embedding
@@ -726,7 +724,6 @@ def sections(self:Database,
 def _prov(bc): return bool(bc) and '›' in bc   # a bare document title (the root) has no separator
 
 @patch
-@retry_schema
 def node_context(self:Database,
                  node_id:str,          # a 'doc#seq' node id
                  store:str='store',
@@ -746,7 +743,6 @@ def node_context(self:Database,
                     children=kids.sorted(key=lambda r: r['seq']).map(pick)[:12])
 
 @patch
-@retry_schema
 def context(self:Database,
             q:str,                  # query string
             emb:bytes,              # query embedding
