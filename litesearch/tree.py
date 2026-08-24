@@ -13,7 +13,7 @@ from apswutils.utils import hash_record
 from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
-
+from contextlib import nullcontext
 from .core import (_in, _rid, _np_dtype, rrf_merge, process_content, write_txn, db_lock,
         rerank_hits, RERANK_FANOUT)
 from .data import chunk_markdown
@@ -240,17 +240,23 @@ def get_tree(self:Database,
              ann:bool=True,       # register an ANN index on the chunk store
              **kw                 # extra typed columns for the chunk store
 ) -> AttrDict:
-    'Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.'
+    """Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.
+    `sections`, `read` and `breadcrumb` all call this per query, so the DDL runs once per connection
+    (`Database.ensured`) rather than once per call."""
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     dt, nt = f'{p}docs', f'{p}nodes'
+    key = ('tree', store, p, bool(ann))
+    if key in self.ensured: return self.ensured[key]
     st = self.get_store(store, hash=True, ann=ann, doc_id=str, node_id=str, page=int, heading=str, **kw)
-    self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
-                      pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
-    self.t[nt].create(id=str, doc_id=str, parent_id=str, level=int, seq=int, title=str,
-                      page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
-    for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
-        self.t[t].create_index([c], if_not_exists=True)
-    return AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
+    with write_txn(self):
+        self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
+                          pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
+        self.t[nt].create(id=str, doc_id=str, parent_id=str, level=int, seq=int, title=str,
+                          page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
+        for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
+            self.t[t].create_index([c], if_not_exists=True)
+    self.ensured[key] = AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
+    return self.ensured[key]
 
 # %% ../nbs/06_tree.ipynb #538721312f0bb5f
 MIN_CHUNK = 40
@@ -475,6 +481,7 @@ def add_dir(self:Database,
             n_workers:int=None,     # parse workers; 0 is serial, None picks by parse-heavy file count
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             files=None,             # ingest exactly these paths instead of walking `dir`
+            bulk:bool=False,     # rebuild FTS once after an offline load; FTS is stale during the load
             **kw                    # forwarded to add_doc
 ) -> list:
     '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.'''
@@ -492,7 +499,7 @@ def add_dir(self:Database,
             store_chunks(g.store, pend, emb_fn, wh); pend.clear()
     if embed_batch: kw['defer'] = pend
     out = []
-    with g.store.bulk_load():
+    with (g.store.bulk_load() if bulk else nullcontext()):
         if nw and nw > 1 and files:
             jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
             for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False, progress=False)):

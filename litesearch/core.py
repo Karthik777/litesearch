@@ -68,11 +68,7 @@ def busy_window(busy_ms=BUSY_TIMEOUT_MS, *dbs):
 
 _conn_locks, _conn_locks_guard = weakref.WeakKeyDictionary(), threading.Lock()
 def db_lock(db):
-    '''Re-entrant lock for one *connection*, guarding litesearch's read-modify-write paths.
-    This makes litesearch's own paths safe against each other. It cannot help a thread that reaches
-    around them and runs SQL on the same connection directly; for that, give each thread its own
-    connection (and build the ANN index once at the end, since two connections maintaining one
-    sidecar is its own hazard).'''
+    'Re-entrant lock guarding litesearch operations on one connection.'
     with _conn_locks_guard:
         lk = _conn_locks.get(db.conn)
         if lk is None: lk = _conn_locks[db.conn] = threading.RLock()
@@ -80,7 +76,7 @@ def db_lock(db):
 
 @contextmanager
 def write_txn(db):
-    'BEGIN IMMEDIATE txn: takes the write lock upfront so the busy handler waits instead of failing. No-op inside an open txn.'
+    'Transaction using `BEGIN IMMEDIATE`; nested calls join the open transaction.'
     c = db.conn
     with db_lock(db):
         if c.in_transaction: yield; return
@@ -97,12 +93,8 @@ def process_content(store,          # target Table (hash-id store)
                     parallel=False, # widen the busy timeout so concurrent writers wait rather than fail
                     chunk=5_000,    # rows per transaction
                     **kw):          # forwarded to emb_fn
-    '''Embed chunks (optional) and upsert into a hash-id store. No-op on empty content.
-    Every write goes through `write_txn` in `chunk`-sized batches, whether or not `parallel` is set.
-    Left alone, apswutils commits once per insert batch, and in WAL mode a commit is an fsync: the
-    same 8,000 rows cost 7.4s that way against 1.5s inside one transaction.
-    `parallel` means *other writers are active*, which is what the widened busy timeout
-    is for, and a throughput property'''
+    '''Embed and upsert chunks in `chunk`-sized transactions.
+    `parallel=True` gives concurrent writers a 30-second busy timeout.'''
     content = list(content or [])
     if embed:
         assert emb_fn, 'emb_fn is required when embed=True'
@@ -115,6 +107,24 @@ def process_content(store,          # target Table (hash-id store)
         for b in chunked(content, chunk): upsert_all(store, b, 'id')
     return store
 
+
+# %% ../nbs/01_core.ipynb #62c623f7d0a93d6a
+@patch(as_prop=True)
+def ensured(self:Database):
+    '''Tables this connection has already built, so idempotent DDL runs once instead of per call.
+    Holds the handles themselves, not just the names: a `Table` caches its primary keys, and one
+    fetched before the table existed reports `rowid`. Anything that drops a store has to call
+    `forget_ensured`, or the next `get_tree` hands back tables that are no longer there.'''
+    if not hasattr(self, '_ensured'): self._ensured = {}
+    return self._ensured
+
+# %% ../nbs/01_core.ipynb #5fc7d3d2087383f2
+@patch
+def forget_ensured(self:Database, store:str=None):
+    'Forget the memo and the loaded ANN index for `store`, or for every store. Call after dropping tables.'
+    if store is None: self.ensured.clear(); self.ann_indices.clear(); return
+    for k in [k for k in self.ensured if k[1] == store]: del self.ensured[k]
+    self.ann_indices.pop(store, None)
 
 # %% ../nbs/01_core.ipynb #752be578bb3e57df
 def upsert_all(tbl,            # target Table, with `pk` declared as its primary key
@@ -152,7 +162,10 @@ def get_store(self:Database,        # database connection
             tokenize:str=None,      # FTS5 tokenizer (default: apsw unicodewords chain, else 'porter')
             **kw,                   # additional args to pass to fastlite create
 ):
-    "creates a content/embedding/metadata table with FTS5. Set ann=True to also maintain a usearch HNSW index."
+    """creates a content/embedding/metadata table with FTS5. Set ann=True to also maintain a usearch HNSW index.
+    The DDL and the `detect_fts` probe run once per connection; see `Database.ensured`."""
+    key = ('store', name, bool(hash), bool(ann))
+    if key in self.ensured: return self.ensured[key]
     cols = dict(content=str, embedding=bytes, metadata=str, uploaded_at=float,defaults=dict(uploaded_at='CURRENT_TIMESTAMP'),pk='id')
     if hash: cols.update(dict(hash_id='id',hash_id_columns=['content']))
     else: cols.update(dict(id=int, not_null=['content']))
@@ -160,6 +173,7 @@ def get_store(self:Database,        # database connection
     tok = tokenize or (_FTS_TOKENIZE if getattr(self, '_fts_tokenizers', False) else 'porter')
     if not _content.detect_fts(): _content.enable_fts(['content','metadata'], create_triggers=True, tokenize=tok, replace=True)
     if ann: self._register_ann(name, ndim, metric, dtype, connectivity, expansion_add, expansion_search, index_path)
+    self.ensured[key] = _content
     return _content
 
 # %% ../nbs/01_core.ipynb #1a18ae1db1ae4552
