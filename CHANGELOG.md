@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.32
+bulk load is no longer default
+
 ## 0.1.31
 flashrank is optional
 
