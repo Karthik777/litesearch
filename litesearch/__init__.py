@@ -8,4 +8,5 @@ from .graph import *
 from .tree import *
 from .sanskrit import *
 from .api import *
+from .quality import *
 from pdf_oxide import *
