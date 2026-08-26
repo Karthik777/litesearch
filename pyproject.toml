@@ -15,6 +15,7 @@ classifiers = ["Natural Language :: English", "Intended Audience :: Developers",
 dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
+    "fastcore>=2.2.15",
     "fastlite>=0.2.4",
     "liteparse>=2.6.0",
     "model2vec>=0.7.0",
