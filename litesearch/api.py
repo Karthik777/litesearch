@@ -131,9 +131,12 @@ def sections(self:Index,
     return self.db.sections(q, self.qemb(q), limit=limit, store=self.name, where=where, **kw)
 
 @patch
-def read(self:Index, node_id:str, **kw) -> dict:
+def read(self:Index,
+         node_id:str,
+         store:str=None,    # the store the node is in; None -> this one
+         **kw) -> dict:
     'One whole section, reassembled — the unit to hand a model instead of fragments.'
-    return self.db.read(node_id, store=self.name, **kw)
+    return self.db.read(node_id, store=store or self.name, **kw)
 
 @patch
 def context(self:Index,
