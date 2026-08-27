@@ -174,3 +174,8 @@ evals/cache/qvec/
 evals/cache/synonyms.json
 evals/cache/pages_*.json
 evals/cache/build_stats.json
+
+# evals: fetched pages and their conversions are reproduced by `python -m evals.htmlmd fetch`
+evals/corpus/html/
+evals/cache/htmlmd.json
+evals/cache/htmlmd_*.db*

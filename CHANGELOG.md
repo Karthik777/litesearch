@@ -1,5 +1,32 @@
 # Release notes <!-- do not remove -->
 
+## Unreleased
+
+**`evals/htmlmd.py` asks whether an embedding store wants markdown or plain text.** `fossick.to_md`
+runs readability then html2text and hands over markdown. `fossick.to_text` runs resiliparse and
+hands over plain text at a twelfth of the cost. Both feed the same chunker and the same encoder.
+What is being tested is whether markdown syntax and the headings it preserves earn their tokens.
+
+They do not, and removing them does not help either. The eval covers 32 pages and 287 paired
+queries in four flavours, two encoders, and both the hybrid and the vector-only path. **All sixteen
+comparisons come back statistically indistinguishable** at 95% on a paired bootstrap. The sign
+reverses between encoders. `potion-32M` favours plain text in 7 of 8, `bge-small` favours markdown
+in 8 of 8, and the largest single difference is 0.033 MRR against intervals around 0.08 wide. The
+format handed to the encoder is not a retrieval lever. The eval resolves about 0.05 MRR, which is
+where a reader should stop believing it.
+
+Pairing is the point. Ground truth is source sentences that survive both conversions and occur
+exactly once in the corpus. Neither arm is scored on text the other never saw, and both answer the
+same queries. Hits are judged with `score.overlaps`, the chunking-independent 5-gram rule the rest
+of the evaluation already uses.
+
+The two do differ on coverage and on cost, and neither is about ranking. resiliparse keeps
+1,335,318 characters against readability's 1,101,170, and 5,186 sentences against 4,599. Of
+resiliparse's sentences, 32% are absent from the markdown. Conversion runs at 8.2ms a page against
+103.4ms.
+
+The corpus is fetched rather than committed. Run `fetch`, then `build`, then `run`.
+
 ## 0.1.32
 bulk load is no longer default
 
