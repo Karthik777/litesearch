@@ -18,21 +18,12 @@ dependencies = [
     "fastlite>=0.2.4",
     "liteparse>=2.6.0",
     "model2vec>=0.7.0",
-    "notebook>=7.5.4",
-    "pandas>=2.3.3",
     "pdf-oxide>=0.3.17",
     "pillow>=12.1.1",
     "tokenizers>=0.22.2",
     "usearch>=2.23.0",
     "yake>=0.7.3",
 ]
-
-[project.optional-dependencies]
-onnx = ["onnx>=1.22.0", "onnxruntime>=1.24.3"]
-rerank = ["flashrank>=0.2.10"]
-full = ["litesearch[onnx,rerank]"]
-eval = ["datasets>=5.0.0", "rishi>=0.0.2"]
-sanskrit = ["vidyut>=0.4.0"]
 
 [project.urls]
 Repository = "https://github.com/Karthik777/litesearch"
@@ -46,6 +37,12 @@ litesearch = "litesearch._modidx:d"
 
 [dependency-groups]
 dev = [
+    "datasets>=5.0.0",         # evals/ only
+    "flashrank>=0.2.10",       # `rerank=True`, imported on use
+    "onnx>=1.22.0",            # `FastEncode`, imported on use
+    "onnxruntime>=1.24.3",
+    "rishi>=0.0.2",            # evals/ only
+    "vidyut>=0.4.0",           # `litesearch.sanskrit` lemmas and glosses, imported on use
     'notebook',
     'nbdev',
     'jupyterlab',

@@ -469,7 +469,7 @@ RERANK_FANOUT, _RERANKERS = 30, {}
 def _flashrank():
     "flashrank, which only reranking wants. Retrieval needs none of it."
     try: import flashrank; return flashrank
-    except ImportError as e: raise ImportError('reranking needs flashrank: pip install "litesearch[rerank]"') from e
+    except ImportError as e: raise ImportError('reranking needs flashrank: pip install flashrank') from e
 
 def _get_reranker(model=None):
     'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'

@@ -102,16 +102,18 @@ def search(self:Index,
            q:str,                # query string
            limit:int=10,         # hits to return
            rerank:bool=False,    # reorder with a flashrank cross-encoder (see above)
-           **kw                  # forwarded to Database.search
+           where:str=None,       # SQL over the chunk store, to search part of it
+           **kw                  # forwarded to Database.doc_search
            ) -> list:
-    'Hybrid keyword + vector search over the chunk store.'
+    '''Hybrid keyword + vector search over the chunk store.
+
+    This is `doc_search`, not `Database.search`: hits are span-merged and carry a `breadcrumb`,
+    which is what makes a hit citable. The two used to differ and callers wanting the merge had to
+    reach past `Index` for it.'''
     if not (q or '').strip(): return []
-    qv = self.qemb(q)
     cols = list(dict.fromkeys(HIT_COLS + (kw.pop('columns', None) or [])))
-    n = max(limit, RERANK_FANOUT) if rerank else limit
-    hits = self.db.search(q, qv, columns=cols, table_name=self.name, limit=n,
-                          dtype=DTYPE, ann=self.ann, **kw) or []
-    return rerank_hits(q, hits, None, limit) if rerank else hits
+    return self.db.doc_search(q, self.qemb(q), columns=cols, store=self.name, limit=limit,
+                              dtype=DTYPE, ann=self.ann, rerank=rerank, where=where, **kw) or []
 
 # %% ../nbs/07_api.ipynb #4a3bded13bfd
 @patch
@@ -120,9 +122,13 @@ def toc(self:Index, doc:str=None, **kw) -> list:
     return self.db.toc(doc, store=self.name, **kw)
 
 @patch
-def sections(self:Index, q:str, limit:int=5, **kw) -> list:
+def sections(self:Index,
+             q:str,
+             limit:int=5,      # sections to return
+             where:str=None,   # SQL over the chunk store, to search part of it
+             **kw) -> list:
     'Ranked sections rather than chunks, each with snippets and a `read` handle.'
-    return self.db.sections(q, self.qemb(q), limit=limit, store=self.name, **kw)
+    return self.db.sections(q, self.qemb(q), limit=limit, store=self.name, where=where, **kw)
 
 @patch
 def read(self:Index, node_id:str, **kw) -> dict:
@@ -130,6 +136,9 @@ def read(self:Index, node_id:str, **kw) -> dict:
     return self.db.read(node_id, store=self.name, **kw)
 
 @patch
-def context(self:Index, q:str, **kw) -> dict:
+def context(self:Index,
+            q:str,
+            where:str=None,    # SQL over the chunk store, applied to every retrieval leg
+            **kw) -> dict:
     'Operative sections plus what they connect to, composed for a prompt.'
-    return self.db.context(q, self.qemb(q), store=self.name, **kw)
+    return self.db.context(q, self.qemb(q), store=self.name, where=where, **kw)

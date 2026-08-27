@@ -18,7 +18,7 @@ from model2vec import StaticModel
 def _ort():
 	"onnxruntime, which only the ONNX encoders want. A model2vec static model needs none of it."
 	try: import onnxruntime as ort; return ort
-	except ImportError as e: raise ImportError('needs onnxruntime: pip install "litesearch[onnx]"') from e
+	except ImportError as e: raise ImportError('needs onnxruntime: pip install onnxruntime') from e
 
 
 # %% ../nbs/03_utils.ipynb #be27730c21e0c597

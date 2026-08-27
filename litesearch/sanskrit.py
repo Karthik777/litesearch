@@ -822,7 +822,7 @@ def vidyut_data(path=None, force:bool=False) -> Path:
     d = Path(path) if path else sanskrit_home('vidyut')
     if force or not (d/'kosha').exists():
         try: import vidyut
-        except ImportError: raise ImportError("vidyut is not installed — `pip install litesearch[sanskrit]`") from None
+        except ImportError: raise ImportError('lemmas and glosses need vidyut: pip install vidyut') from None
         d.mkdir(parents=True, exist_ok=True)
         vidyut.download_data(str(d))
     return d
