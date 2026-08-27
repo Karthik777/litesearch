@@ -17,10 +17,9 @@ DTYPE, HIT_COLS = np.float16, ['content', 'metadata', 'node_id', 'page', 'headin
 # %% ../nbs/07_api.ipynb #9e17018e0b48
 class Index:
     '''A corpus you can search: ingest files, code or text, then query with a string.
-    The defaults are not a matter of taste — they are the configuration `evals/` measures as best
-    or tied-best across three genres. Everything is overridable, and `self.db` is the plain
-    `database()` underneath.
-    '''
+
+    Every default is what `evals/` measures as best or tied-best across three genres. All of them
+    are overridable, and `self.db` is the plain `database()` underneath.'''
     def __init__(self,
                  path=':memory:',     # sqlite file; omit for in-memory
                  encoder=None,        # anything `doc_encoder` takes (default: static potion-multilingual-128M)
@@ -105,11 +104,7 @@ def search(self:Index,
            where:str=None,       # SQL over the chunk store, to search part of it
            **kw                  # forwarded to Database.doc_search
            ) -> list:
-    '''Hybrid keyword + vector search over the chunk store.
-
-    This is `doc_search`, not `Database.search`: hits are span-merged and carry a `breadcrumb`,
-    which is what makes a hit citable. The two used to differ and callers wanting the merge had to
-    reach past `Index` for it.'''
+    'Hybrid keyword + vector search: `doc_search`, so hits are span-merged and carry a breadcrumb.'
     if not (q or '').strip(): return []
     cols = list(dict.fromkeys(HIT_COLS + (kw.pop('columns', None) or [])))
     return self.db.doc_search(q, self.qemb(q), columns=cols, store=self.name, limit=limit,
