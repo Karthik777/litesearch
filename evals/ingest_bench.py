@@ -629,8 +629,8 @@ def bench_embed_batch(n=200, sizes=(20, 64, 256, 2000, 0), workdir=None):
     why it is a parameter and not a constant: a static model is a lookup table with nothing to
     amortise and flattens by ~64 chunks a call, while an ONNX model has real per-call setup. Run
     this with the encoder you actually use before choosing a number. `0` means one call.'''
-    from litesearch.utils import static_retrieval_embedder, doc_encoder
-    enc = doc_encoder(static_retrieval_embedder())
+    from litesearch.utils import static_embedder, doc_encoder
+    enc = doc_encoder(static_embedder())
     texts = []
     for pages in corpus_docs(n, pages_per_doc=3):
         for _, t in pages: texts += [t[i:i+800] for i in range(0, len(t), 800)]

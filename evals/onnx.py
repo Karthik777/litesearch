@@ -1,0 +1,285 @@
+"""ONNX encoders and late chunking, kept here because `evals/` is the only caller left.
+
+`evals/RESULTS.md` measures these against the two static models litesearch ships. Late chunking
+came out at -0.033 to -0.053 weighted MRR, so the library stopped carrying it; the code stays so
+the number can be reproduced. Not shipped in the wheel.
+"""
+
+import json, os, warnings
+from functools import cache
+from pathlib import Path
+import numpy as np
+from fastcore.all import AttrDict, AttrDictDefault, L, chunked, first, ifnone, store_attr
+from fastcore.parallel import parallel as fc_parallel
+from tokenizers import Tokenizer, AddedToken
+
+def _ort():
+    "onnxruntime, which only the ONNX encoders want."
+    try: import onnxruntime as ort; return ort
+    except ImportError as e: raise ImportError('needs onnxruntime: pip install onnxruntime') from e
+
+embedding_gemma_prompt = AttrDict(document='title: none | text: {text}', query='task: search result | query: {text}')
+nomic_prompt = AttrDict(document='search_document: {text}', query='search_query: {text}')
+modernbert_prompt = nomic_prompt  # alias — same prefix format
+
+# Text models (for FastEncode)
+embedding_gemma = AttrDict(model='onnx-community/embeddinggemma-300m-ONNX', onnx_path='onnx/model.onnx', prompt=embedding_gemma_prompt)
+modernbert = AttrDict(model='nomic-ai/modernbert-embed-base', onnx_path='onnx/model.onnx', prompt=nomic_prompt)
+nomic_text_v15 = AttrDict(model='nomic-ai/nomic-embed-text-v1.5', onnx_path='onnx/model.onnx', prompt=nomic_prompt, tti=True)
+
+# coderank int8 fast model
+cr_instr = AttrDict(query="Represent this query for searching relevant code: {text}", document="{text}")
+model = AttrDict(model='mrsladoje/CodeRankEmbed-onnx-int8', onnx_path='onnx/model.onnx', prompt=cr_instr)
+
+# Image models (for FastEncodeImage)
+clip_vit_b32 = AttrDict(model='Qdrant/clip-ViT-B-32-vision', onnx_path='model.onnx', img_size=224,
+			mean=[0.48145466,0.4578275,0.40821073], std=[0.26862954,0.26130258,0.27577711])
+nomic_vision_v15 = AttrDict(model='nomic-ai/nomic-embed-vision-v1.5', onnx_path='onnx/model.onnx', img_size=224,
+			mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+
+# Unified multimodal models (for FastEncodeMultimodal)
+siglip2_so400m  = AttrDict(model='onnx-community/siglip2-so400m-patch16-512-ONNX', vision_onnx='onnx/vision_model.onnx',
+			   text_onnx='onnx/text_model.onnx', img_size=512, mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5], max_seq_len=64)
+
+bge_instr = AttrDict(document="{text}",query="{text}")
+bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quantized.onnx',prompt=bge_instr, tti=True)
+
+@cache
+def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
+    'Shared per name; potion-multilingual-128M alone is ~500MB of embeddings and every caller would load its own.'
+    return StaticModel.from_pretrained(model_nm, force_download=False)
+
+static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M-v2')
+static_retrieval_embedder = bind(static_embedder, model_nm='minishlab/potion-retrieval-32M')
+static_science_embedder = bind(static_embedder, model_nm='minishlab/potion-science-32M')
+
+def _cached_snapshot(repo_id):
+	'Local snapshot dir from the HF cache without hitting the network, else None.'
+	from huggingface_hub import scan_cache_dir
+	try: repo = first(scan_cache_dir().repos, lambda r: r.repo_id == repo_id)
+	except Exception: return None
+	if not repo: return None
+	rev = first(sorted(repo.revisions, key=lambda r: r.last_modified, reverse=True))
+	return str(rev.snapshot_path) if rev else None
+
+def download_model(repo_id=embedding_gemma.model,  # HF repo id
+                   md=None,                         # optional explicit local dir; else the HF cache is used
+                   filename=None,                   # file path within repo; if None, downloads full repo snapshot
+                   token=None                       # HF token. you can also set HF_TOKEN env variable
+):
+	'''Download model (or single file) from HF hub. Returns local path. Skips network if already cached.'''
+	import huggingface_hub as hf
+	token = token or os.getenv('HF_TOKEN')
+	if filename:
+		if md and (dest := Path(md) / filename).exists(): return str(dest)
+		snap = _cached_snapshot(repo_id)
+		if snap and (p := Path(snap) / filename).exists(): return str(p)
+		if filename not in hf.list_repo_files(repo_id, token=token): raise FileNotFoundError(f'{filename} not in {repo_id}')
+		return hf.hf_hub_download(repo_id, filename, token=token)
+	if md and Path(md).exists(): return md
+	return _cached_snapshot(repo_id) or hf.snapshot_download(repo_id=repo_id, token=token)
+
+class FastEncode:
+	def __init__(self,
+				 model_dict=embedding_gemma, # model dict with model repo, onnx path and prompt templates
+				 repo_id=None,               # model repo on HF. needs to have onnx model file
+				 md=None,                    # local model dir
+				 md_nm=None,                 # onnx model file name
+				 normalize=True,             # normalize embeddings
+				 dtype=np.float16,           # output dtype
+				 tti=False,                  # use token type ids (overridden by model_dict.tti if set)
+				 prompt=None,                # prompt templates
+				 hf_token=None,              # HF token. you can also set HF_TOKEN env variable
+				 batch_size=32,              # texts per ONNX call
+				 parallel=0,                 # thread workers for parallel encoding (0=single-threaded)
+				 quantize=None,              # quantize weights: None, 'int8', or 'uint8'
+				 max_seq_len=None,           # override tokenizer max length (e.g. 64 for SigLIP2)
+	):
+		'''Fast ONNX-based text encoder with batching, parallel execution, and quantization.'''
+		assert (model_dict is None) != (repo_id is None), 'Either model_dict or repo_id must be provided and not both'
+		repo_id = model_dict.model if model_dict else repo_id
+		md = md or (model_dict.model if model_dict else repo_id)
+		md_nm = md_nm or (model_dict.onnx_path if model_dict else 'onnx/model.onnx')
+		prompt = prompt or (model_dict.prompt if model_dict else AttrDictDefault())
+		tti = tti or getattr(model_dict, 'tti', False)
+		store_attr()
+		try: self.md = download_model(repo_id=repo_id, md=md, token=hf_token)
+		except Exception as ex: print(f'model download failed: {ex}. hint: is hf_token set')
+		self._load_enc()
+	def _maybe_quantize(self, onnx_p):
+		'Quantize ONNX model weights if quantize is set; returns path to (possibly quantized) model.'
+		if not self.quantize: return onnx_p
+		from onnxruntime.quantization import quantize_dynamic, QuantType
+		q_p = Path(onnx_p).parent / f'model_{self.quantize}.onnx'
+		if not q_p.exists():
+			qt = QuantType.QInt8 if self.quantize == 'int8' else QuantType.QUInt8
+			quantize_dynamic(str(onnx_p), str(q_p), weight_type=qt)
+		return q_p
+	def _load_enc(self):
+		try:
+			onnx_p = self._maybe_quantize(Path(self.md) / self.md_nm)
+			ort = _ort()
+			sess_opt = ort.SessionOptions()
+			sess_opt.intra_op_num_threads = os.cpu_count() or 1
+			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+			sess_opt.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+			self._load_tok()
+			pr = filter_ex(ort.get_available_providers(), lambda x: x in ['CUDAExecutionProvider', 'CPUExecutionProvider'])
+			try: self.sess = ort.InferenceSession(str(onnx_p), sess_opt, pr)
+			except: self.sess = ort.InferenceSession(str(onnx_p), sess_opt, providers=["CPUExecutionProvider"])
+			self._input_names = {i.name for i in self.sess.get_inputs()}
+		except Exception as ex:
+			print(f'Encoding setup errored out with exception: {ex}')
+			self.sess = None
+	def _load_tok(self):
+		cfg = (Path(self.md)/'config.json').read_json()
+		tok_cfg = (Path(self.md)/'tokenizer_config.json').read_json()
+		tok_map = (Path(self.md)/'special_tokens_map.json').read_json()
+		self.tok = Tokenizer.from_file(str(Path(self.md)/'tokenizer.json'))
+		pad_token = tok_cfg["pad_token"]
+		pad_id = ifnone(cfg.get("pad_token_id"), self.tok.token_to_id(pad_token) or 0)
+		self.tok.enable_padding(pad_id=pad_id, pad_token=pad_token)
+		self.tok.enable_truncation(max_length=min(tok_cfg['model_max_length'], self.max_seq_len or 512))
+		for t in tok_map.values():
+			items = t if isinstance(t, list) else [t]
+			toks = [x if isinstance(x, str) else AddedToken(**x) if isinstance(x, dict) else None for x in items]
+			self.tok.add_special_tokens([x for x in toks if x is not None])
+	def _enc(self, txts:list, dtype=np.int64):
+		encs = self.tok.encode_batch(txts, add_special_tokens=True)
+		ids = np.array([e.ids for e in encs], dtype=dtype)
+		msk = np.array([e.attention_mask for e in encs], dtype=dtype)
+		return ids, msk
+	def _mp(self, mout:np.ndarray, msk:np.ndarray):
+		token_embeddings = mout
+		input_mask_expanded = np.expand_dims(msk, axis=-1)
+		input_mask_expanded = np.broadcast_to(input_mask_expanded, token_embeddings.shape)
+		sum_embeddings = np.sum(token_embeddings * input_mask_expanded, axis=1)
+		sum_mask = np.clip(np.sum(input_mask_expanded, axis=1), a_min=1e-9, a_max=None)
+		return sum_embeddings / sum_mask
+	def _encode_batch(self, lns:list, **kw):
+		'Encode a single batch of texts; returns float array.'
+		if not lns: return np.zeros((0, self.sess.get_outputs()[0].shape[-1]), dtype=self.dtype)
+		ids, msk = self._enc(lns)
+		if ids.ndim == 1: ids, msk = np.expand_dims(ids, 0), np.expand_dims(msk, 0)
+		inp = dict(input_ids=ids)
+		if 'attention_mask' in self._input_names: inp['attention_mask'] = msk
+		if self.tti and 'token_type_ids' in self._input_names: inp['token_type_ids'] = np.zeros(ids.shape, dtype=np.int64)
+		o = self._mp(self.sess.run(None, inp)[0], msk)
+		if self.normalize: o = o / np.clip(np.linalg.norm(o, ord=2, axis=1, keepdims=True), 1e-12, None)
+		return o.astype(self.dtype)
+	def encode(self, lns:list, batch_size:int=None, parallel:int=None, stream:bool=False, **kw):
+		'Encode texts with optional batching and parallel thread workers. stream=True yields batch arrays.'
+		if not self.sess: print('ONNX session not initialized. Fix error during initialisation'); return None
+		bs = ifnone(batch_size, self.batch_size)
+		pw = ifnone(parallel, self.parallel)
+		batches = list(chunked(lns, bs))
+		if not batches: return np.zeros((0, self.sess.get_outputs()[0].shape[-1]), dtype=self.dtype)
+		fn = (lambda b: self._encode_batch(b, **kw)) if kw else self._encode_batch
+		if pw: results = fc_parallel(fn, batches, n_workers=pw or defaults.cpus, threadpool=True, progress=True)
+		else:  results = L(batches).map(fn)
+		return results if stream else np.concatenate(list(results))
+	def encode_document(self, lns, prompt:str=None, **kw):
+		if prompt is None: prompt = self.prompt.get('document', None)
+		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
+	def encode_query(self, lns, prompt:str=None, **kw):
+		if prompt is None: prompt = self.prompt.get('query', None)
+		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
+
+class LateChunkFastEncode(FastEncode):
+	'Embed the whole doc once; mean-pool per chunk span so each chunk vector keeps full-doc context.'
+	def _token_embeddings(self, text:str):
+		'Single forward pass; returns (token_embeddings, char offsets, attention mask with special tokens zeroed).'
+		enc = self.tok.encode(text, add_special_tokens=True)
+		ids = np.array([enc.ids], dtype=np.int64)
+		msk = np.array([enc.attention_mask], dtype=np.int64)
+		inp = dict(input_ids=ids)
+		if 'attention_mask' in self._input_names: inp['attention_mask'] = msk
+		if self.tti and 'token_type_ids' in self._input_names: inp['token_type_ids'] = np.zeros(ids.shape, dtype=np.int64)
+		token_embs = self.sess.run(None, inp)[0][0]
+		pool_msk = msk[0] * (1 - np.array(enc.special_tokens_mask, dtype=np.int64))
+		return token_embs, enc.offsets, pool_msk
+
+	def encode_late_chunks(self, text:str, spans:list, prompt:str=None):
+		'Pool per (start,end) char span over full-doc token embeddings. Truncates past max_seq_len; use encode_auto for long docs.'
+		prompt = prompt if prompt is not None else self.prompt.get('document', None)
+		full = prompt.format(text=text) if prompt else text
+		prefix_len = len(full) - len(text)
+		token_embs, offsets, msk = self._token_embeddings(full)
+		out = np.zeros((len(spans), token_embs.shape[-1]), dtype=np.float32)
+		empty = 0
+		for i,(cs,ce) in enumerate(spans):
+			cs, ce = cs+prefix_len, ce+prefix_len
+			idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>cs and s<ce]
+			if idx: out[i] = token_embs[idx].mean(axis=0)
+			else: empty += 1
+		if empty: warnings.warn(f'{empty}/{len(spans)} spans got no tokens (doc likely exceeds max_seq_len); use encode_auto/encode_long_document for long docs')
+		if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
+		return out.astype(self.dtype)
+
+# %% ../nbs/03_utils.ipynb #cf76ec50
+class LongLateChunkFastEncode(LateChunkFastEncode):
+    'Late chunking for docs beyond the context window via overlapping windows and token-weighted averaging.'
+    def _make_windows(self, text, window_chars, overlap_chars):
+        'Stepped char windows covering the whole text including the tail.'
+        step = max(window_chars - overlap_chars, 1)
+        starts = list(range(0, max(len(text) - overlap_chars, 1), step))
+        windows = [(s, min(s + window_chars, len(text))) for s in starts]
+        if windows[-1][1] < len(text): windows.append((max(len(text) - window_chars, 0), len(text)))
+        return windows
+
+    def encode_long_document(self, text, spans, window_chars=None, overlap_chars=None, prompt=None):
+        'Pool each span within every overlapping window; combine by token-weighted average.'
+        max_tok = (self.max_seq_len or 512) - 8
+        window_chars = window_chars or int(max_tok * 3.5)
+        overlap_chars = overlap_chars if overlap_chars is not None else window_chars // 5
+        windows = self._make_windows(text, window_chars, overlap_chars)
+        tmpl = prompt if prompt is not None else (self.prompt.get('document', None) or '{text}')
+        chunk_sums, chunk_weights, dim = None, np.zeros(len(spans)), None
+        for ws,we in windows:
+            win_text = text[ws:we]
+            full = tmpl.format(text=win_text)
+            token_embs, offsets, msk = self._token_embeddings(full)
+            prefix_len = len(full) - len(win_text)
+            if dim is None:
+                dim = token_embs.shape[-1]
+                chunk_sums = np.zeros((len(spans), dim), dtype=np.float32)
+            for i,(cs,ce) in enumerate(spans):
+                local_cs, local_ce = cs-ws, ce-ws
+                if local_ce <= 0 or local_cs >= (we-ws): continue
+                local_cs = max(local_cs,0)+prefix_len
+                local_ce = min(local_ce,we-ws)+prefix_len
+                idx = [t for t,(s,e) in enumerate(offsets) if msk[t] and e>local_cs and s<local_ce]
+                if not idx: continue
+                w = len(idx)
+                chunk_sums[i] += token_embs[idx].mean(axis=0) * w
+                chunk_weights[i] += w
+        out = np.zeros_like(chunk_sums)
+        ok = chunk_weights > 0
+        out[ok] = chunk_sums[ok] / chunk_weights[ok, None]
+        if self.normalize: out = out / np.clip(np.linalg.norm(out, axis=1, keepdims=True), 1e-12, None)
+        return out.astype(self.dtype)
+
+# %% ../nbs/03_utils.ipynb #acc9466f
+class AutoLateChunkFastEncode(LongLateChunkFastEncode):
+    'Route to single-pass / windowed / tight-windowed late chunking by document token count.'
+    def _count_tokens(self, text):
+        'Token count with truncation disabled (tokenizer only, no ONNX run).'
+        trunc = self.tok.truncation
+        self.tok.no_truncation()
+        try:
+            return len(self.tok.encode(text, add_special_tokens=True).ids)
+        finally:
+            if trunc: self.tok.enable_truncation(**{k:trunc[k] for k in ('max_length','stride','strategy','direction') if k in trunc})
+
+    def encode_auto(self, text, spans, prompt=None, long_ratio=4.0, **kw):
+        'Return (embeddings, tier); tier is normal / long / longer by token count vs context window.'
+        max_tok = self.max_seq_len or 512
+        n_tok = self._count_tokens(text)
+        if n_tok <= max_tok - 8:
+            return self.encode_late_chunks(text, spans, prompt=prompt), 'normal'
+        if n_tok <= max_tok * long_ratio:
+            return self.encode_long_document(text, spans, prompt=prompt, **kw), 'long'
+        max_chars = int((max_tok - 8) * 3.5)
+        return self.encode_long_document(text, spans, prompt=prompt,
+            window_chars=kw.pop('window_chars', max_chars),
+            overlap_chars=kw.pop('overlap_chars', max_chars // 8), **kw), 'longer'

@@ -14,7 +14,7 @@ Five, spanning three orders of magnitude of cost per chunk:
 there is also no context of any kind. It cannot do late chunking, and that is the point of having it
 here: it is the floor that everything else has to beat to justify its latency.
 
-**A dtype trap worth naming.** `model2vec` returns float32 and `FastEncode` returns float16, while
+**A dtype trap worth naming.** `model2vec` returns float32 and `evals.onnx.FastEncode` returns float16, while
 `Database.search` and `vec_search` both default to `dtype=np.float16`. Store float32 bytes and
 search them as float16 and every distance is computed over reinterpreted bytes at twice the
 dimension — no error is raised, and the vector leg silently returns noise. Everything here is
@@ -24,8 +24,8 @@ import time
 import numpy as np
 from fastcore.all import AttrDict
 
-from litesearch.utils import (FastEncode, AutoLateChunkFastEncode, static_embedder,
-                              nomic_text_v15, embedding_gemma)
+from litesearch.utils import static_embedder
+from .onnx import FastEncode, AutoLateChunkFastEncode, nomic_text_v15, embedding_gemma
 
 DT = np.float16
 
