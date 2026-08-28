@@ -16,9 +16,10 @@ dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
     "fastlite>=0.2.4",
-    "liteparse>=2.6.0",
     "model2vec>=0.7.0",
+    "tokenizers>=0.22.2",
     "pdf-oxide>=0.3.17",
+    "pdflite>=0.0.1",
     "pillow>=12.1.1",
     "usearch>=2.23.0",
 ]
@@ -42,9 +43,8 @@ dev = [
     "flashrank>=0.2.10",         # `rerank=True`, imported on use
     "vruksha>=0.0.1",            # evals/ and the graph= seam in `context`
     "ganapati>=0.0.1",           # evals/ and the Sanskrit profiles
-    "onnx>=1.22.0",              # evals/onnx.py
-    "onnxruntime>=1.24.3",       # evals/onnx.py
-    "tokenizers>=0.22.2",        # evals/onnx.py
+    "onnx>=1.22.0",              # `FastEncode`, imported on use
+    "onnxruntime>=1.24.3",       # `FastEncode`, imported on use
     "model2vec[distill]>=0.7.0", # evals/
     "datasets>=5.0.1",           # evals/
     "rishi>=0.0.2",              # evals/
