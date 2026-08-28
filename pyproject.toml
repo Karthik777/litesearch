@@ -41,14 +41,11 @@ dev = [
     "jupyterlab-quarto",
     "notebook",
     "flashrank>=0.2.10",         # `rerank=True`, imported on use
-    "vruksha>=0.0.1",            # evals/ and the graph= seam in `context`
-    "ganapati>=0.0.1",           # evals/ and the Sanskrit profiles
     "onnx>=1.22.0",              # `FastEncode`, imported on use
     "onnxruntime>=1.24.3",       # `FastEncode`, imported on use
     "model2vec[distill]>=0.7.0", # evals/
     "datasets>=5.0.1",           # evals/
     "rishi>=0.0.2",              # evals/
-    "koshas>=0.0.25",            # evals/
     "fastprogress>=1.1.5",       # evals/
     "selectolax",                # evals/
     "ddgs",                      # evals/
