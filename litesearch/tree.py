@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
 from contextlib import nullcontext
-from .core import (_in, _rid, _np_dtype, rrf_all, process_content, write_txn, db_lock,
+from .core import (sql_in, rowid_sel, NP_DTYPE, rrf_all, process_content, write_txn, db_lock,
         rerank_hits, RERANK_FANOUT)
 from .data import chunk_markdown
 
@@ -356,7 +356,7 @@ def add_doc(self:Database,
             store_chunks(g.store, chunks, emb_fn, with_heading)
             if index and (m := self._ann_meta(store)):
                 ids = L(g.store(select='id', where=f'doc_id={did!r}')).itemgot('id')
-                if ids: g.store._sync_index(list(ids), [], _np_dtype.get(m['dtype'], np.float16))
+                if ids: g.store._sync_index(list(ids), [], NP_DTYPE.get(m['dtype'], np.float16))
         return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
 
 def store_chunks(store,                 # chunk store table
@@ -379,12 +379,12 @@ def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
     with db_lock(self):
         g = self.get_tree(store, prefix, ann=self._tree_ann(store))
         m = self._ann_meta(store)
-        rm = L(g.store(select=_rid(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
+        rm = L(g.store(select=rowid_sel(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
         with write_txn(self):
             g.store.delete_where(where=f'doc_id={did!r}')
             g.nodes.delete_where(where=f'doc_id={did!r}')
             g.docs.delete_where(where=f'id={did!r}')
-        if m and rm: g.store._sync_index([], list(rm), _np_dtype.get(m['dtype'], np.float16))
+        if m and rm: g.store._sync_index([], list(rm), NP_DTYPE.get(m['dtype'], np.float16))
 
 
 # %% ../nbs/06_tree.ipynb #470e83335ade7f42
@@ -531,7 +531,7 @@ def toc(self:Database,
     # that it is the cheap, vectorless way to see the corpus.
     by_doc, ids = {}, [d['id'] for d in docs]
     for b in chunked(ids, 400):
-        for r in g.nodes(where=_in('doc_id', b)): by_doc.setdefault(r['doc_id'], []).append(r)
+        for r in g.nodes(where=sql_in('doc_id', b)): by_doc.setdefault(r['doc_id'], []).append(r)
     out = []
     for d in docs:
         rows = sorted(by_doc.get(d['id'], []), key=lambda r: r['seq'])
@@ -575,11 +575,11 @@ def read(self:Database,
     if children:
         frontier = [node_id]
         while frontier:
-            kids = [r['id'] for r in g.nodes(where=_in('parent_id', frontier))]
+            kids = [r['id'] for r in g.nodes(where=sql_in('parent_id', frontier))]
             if not kids: break
             ids += kids
             frontier = kids
-    rows = sorted(g.store(select='content, node_id, page', where=_in('node_id', ids)),
+    rows = sorted(g.store(select='content, node_id, page', where=sql_in('node_id', ids)),
                   key=lambda r: (ids.index(r['node_id']) if r['node_id'] in ids else 1<<30, r['page'] or 0))
     text = '\n\n'.join(r['content'] for r in rows)[:max_chars]
     return dict(id=node_id, title=nd['title'], breadcrumb=self.breadcrumb(node_id, store, prefix),
@@ -697,7 +697,7 @@ def sections(self:Database,
         if len(a['snippets']) < per: a['snippets'].append((h.get('content') or '')[:400])
         if h.get('page') is not None: a['pages'].append(h['page'])
     if not agg: return []
-    nodes = {r['id']: r for r in g.nodes(where=_in('id', list(agg)))}
+    nodes = {r['id']: r for r in g.nodes(where=sql_in('id', list(agg)))}
     out = []
     for nid, a in sorted(agg.items(), key=lambda kv: -kv[1]['score'])[:limit]:
         nd = nodes.get(nid) or {}

@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 import numpy as np
 from fastcore.all import AttrDict, L, patch
 from fastlite import Database
-from .core import _np_dtype
+from .core import NP_DTYPE
 
 # %% ../nbs/11_quality.ipynb #bf0dbd24
 #: Features oriented larger=noisier; document-level aggregates of chunk quantities.
