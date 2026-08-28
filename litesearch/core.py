@@ -111,17 +111,14 @@ def process_content(store,          # target Table (hash-id store)
 # %% ../nbs/01_core.ipynb #62c623f7d0a93d6a
 @patch(as_prop=True)
 def ensured(self:Database):
-    '''Tables this connection has already built, so idempotent DDL runs once instead of per call.
-    Holds the handles themselves, not just the names: a `Table` caches its primary keys, and one
-    fetched before the table existed reports `rowid`. Anything that drops a store has to call
-    `forget_ensured`, or the next `get_tree` hands back tables that are no longer there.'''
+    'Table handles built on this connection, keyed by store configuration.'
     if not hasattr(self, '_ensured'): self._ensured = {}
     return self._ensured
 
 # %% ../nbs/01_core.ipynb #5fc7d3d2087383f2
 @patch
 def forget_ensured(self:Database, store:str=None):
-    'Forget the memo and the loaded ANN index for `store`, or for every store. Call after dropping tables.'
+    'Forget cached table handles and ANN indices after dropping stores.'
     if store is None: self.ensured.clear(); self.ann_indices.clear(); return
     for k in [k for k in self.ensured if k[1] == store]: del self.ensured[k]
     self.ann_indices.pop(store, None)
@@ -131,7 +128,7 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
                rows,           # dicts of scalars, upserted on `pk`
                pk,             # primary-key column name or tuple of them
                chunk=2000):    # rows per `executemany` batch
-    '''Upsert rows with one prepared statement instead of two per row.'''
+    'Upsert rows with one prepared statement instead of two per row.'
     from apswutils.db import jsonify_if_needed as _j
     rows = list(rows)
     if not rows: return 0
@@ -144,7 +141,7 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
            f'on conflict ({", ".join(f"[{c}]" for c in pks)}) do {do}')
     with write_txn(tbl.db):
         for b in chunked(rows, chunk):
-	        tbl.db.conn.cursor().executemany(sql, [[_j(r.get(c)) for c in cols] for r in b])
+            tbl.db.conn.cursor().executemany(sql, [[_j(r.get(c)) for c in cols] for r in b])
     return len(rows)
 
 @patch
@@ -162,8 +159,7 @@ def get_store(self:Database,        # database connection
             tokenize:str=None,      # FTS5 tokenizer (default: apsw unicodewords chain, else 'porter')
             **kw,                   # additional args to pass to fastlite create
 ):
-    """creates a content/embedding/metadata table with FTS5. Set ann=True to also maintain a usearch HNSW index.
-    The DDL and the `detect_fts` probe run once per connection; see `Database.ensured`."""
+    'Create an FTS5 store with optional content hashes and a usearch HNSW index.'
     key = ('store', name, bool(hash), bool(ann))
     if key in self.ensured: return self.ensured[key]
     cols = dict(content=str, embedding=bytes, metadata=str, uploaded_at=float,defaults=dict(uploaded_at='CURRENT_TIMESTAMP'),pk='id')
@@ -284,10 +280,9 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
                emb:bytes,           # query embedding
                columns:list=None,   # columns to return (rowid always included)
                limit:int=50,        # max results
-               where:str= None,        # additional where clause (ignored if no rows returned by ANN)
-               where_args: dict = None,  # args for where clause
-               dtype=np.float16
-               ):   # embedding dtype
+               where:str=None,        # additional where clause
+               where_args:dict=None,  # args for where clause
+               dtype=np.float16):      # embedding dtype
     'HNSW ANN search via the store\'s usearch Index. Returns rows (+`_dist`) ordered by similarity.'
     m = self.db._ann_meta(self.name)
     if not (m and m['ndim']): return []
