@@ -791,6 +791,7 @@ def context(self:Database,
         if not nid or nid in prim or nid in rel: return
         rel[nid] = AttrDict(node_id=nid, via=via, score=score or 0.0, breadcrumb=heading)
     if graph and f'{p}entities' in self.t:
+        if not hasattr(self, 'graph_search'): raise ImportError('graph=True needs vruksha: pip install vruksha')
         for h in self.graph_search(q, emb, columns=['content', 'heading', 'node_id'],
                                    limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w, **kw):
             add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))

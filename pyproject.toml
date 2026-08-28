@@ -21,7 +21,6 @@ dependencies = [
     "pdf-oxide>=0.3.17",
     "pillow>=12.1.1",
     "usearch>=2.23.0",
-    "yake>=0.7.3",
 ]
 
 [project.urls]
@@ -41,7 +40,8 @@ dev = [
     "jupyterlab-quarto",
     "notebook",
     "flashrank>=0.2.10",         # `rerank=True`, imported on use
-    "vidyut>=0.4.0",             # `litesearch.sanskrit` lemmas and glosses, imported on use
+    "vruksha>=0.0.1",            # evals/ and the graph= seam in `context`
+    "ganapati>=0.0.1",           # evals/ and the Sanskrit profiles
     "onnx>=1.22.0",              # evals/onnx.py
     "onnxruntime>=1.24.3",       # evals/onnx.py
     "tokenizers>=0.22.2",        # evals/onnx.py

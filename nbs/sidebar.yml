@@ -8,10 +8,10 @@ website:
       - 02_data.ipynb
       - 03_utils.ipynb
       - 04_cli.ipynb
-      - 04_latechunk_eval.ipynb
-      - 05_graph.ipynb
+      - 05_topics.ipynb
       - 06_tree.ipynb
       - 07_doc_eval.ipynb
       - 08_tier_eval.ipynb
+      - 09_ingest_eval.ipynb
       - 09_sanskrit.ipynb
-      - 10_sanskrit_eval.ipynb
+      - 11_quality.ipynb
