@@ -24,8 +24,8 @@ import time
 import numpy as np
 from fastcore.all import AttrDict
 
-from litesearch.utils import (FastEncode, AutoLateChunkFastEncode, static_embedder,
-                              nomic_text_v15, embedding_gemma)
+from litesearch.utils import FastEncode, static_embedder, nomic_text_v15, embedding_gemma
+from .latechunk import AutoLateChunkFastEncode
 
 DT = np.float16
 

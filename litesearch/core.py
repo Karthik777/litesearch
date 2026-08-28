@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'RERANK_FANOUT', 'embed_chunk', 'busy_window', 'db_lock', 'write_txn', 'process_content',
-           'upsert_all', 'rrf_merge', 'database', 'rerank_hits']
+           'upsert_all', 'rrf_all', 'rrf_merge', 'database', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_, parallel as fcp
@@ -419,18 +419,25 @@ def ann_neighbors(self:Table,             # ANN-registered store
     return rows[:limit] if include_self else [r for r in rows if r['rowid'] != key][:limit]
 
 
-# %% ../nbs/01_core.ipynb #c1c7f47e3b5c18a5
-def rrf_merge(fts_results, vec_results, k=60, limit=50, id_key='rowid') -> list:
-    "Reciprocal Rank Fusion: merges FTS and vector results. Items in both lists score highest."
-    scores = {}
-    for rank, row in enumerate(fts_results):
-        rid = row.get(id_key, id(row))
-        scores[rid] = merge(row, {'_rrf_score': 1.0/(k + rank)})
-    for rank, row in enumerate(vec_results):
-        rid = row.get(id_key, id(row))
-        if rid in scores: scores[rid]['_rrf_score'] += 1.0/(k + rank)
-        else: scores[rid] = merge(row, {'_rrf_score': 1.0/(k + rank)})
-    return sorted(scores.values(), key=lambda x: x['_rrf_score'], reverse=True)[:limit]
+# %% ../nbs/01_core.ipynb #6966e48f99c9
+def rrf_all(lists,            # ranked result lists to fuse
+            k:int=60,         # rank at which a hit is worth half the top spot
+            limit:int=50,     # results returned
+            id_key='rowid',   # the key rows are joined on
+            weights=None      # one weight per list; None means all equal
+) -> list:
+    'Reciprocal Rank Fusion over any number of ranked lists. A row in two lists outranks a row in one.'
+    ws, scores = weights or [1.0]*len(lists), {}
+    for lst, w in zip(lists, ws):
+        for rank, row in enumerate(lst or []):
+            rid = row.get(id_key, id(row))
+            if rid in scores: scores[rid]['_rrf_score'] += w/(k + rank)
+            else:             scores[rid] = merge(row, {'_rrf_score': w/(k + rank)})
+    return sorted(scores.values(), key=lambda r: -r['_rrf_score'])[:limit]
+
+def rrf_merge(fts, vec, k=60, limit=50, id_key='rowid') -> list:
+    'Two-list `rrf_all`. Deprecated: call `rrf_all` directly.'
+    return rrf_all([fts, vec], k=k, limit=limit, id_key=id_key)
 
 # %% ../nbs/01_core.ipynb #4037ed73523beff7
 def database(pth_or_uri:str=':memory:',     # the database name or URL

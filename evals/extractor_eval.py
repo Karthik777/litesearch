@@ -41,7 +41,7 @@ ENCODER = 'bge-small'
 
 # ------------------------------------------------------------------ extractors
 def _yake(topk_default=12):
-    from litesearch.graph import _yake_terms
+    from vruksha import _yake_terms
     return lambda text, topk=topk_default: _yake_terms(text, topk)
 
 def _yake_rust(topk_default=12):
@@ -105,7 +105,7 @@ def build_for(genre, name, fn, force=False):
     A clone rather than a rebuild: the chunks, their embeddings and the ANN index are held fixed so
     the only thing that differs between two runs is the graph built over them. `mode` carries the
     extractor name, which is what puts each variant at its own `db_path`.'''
-    from litesearch.graph import build_graph, resolve_entities, topic_nodes, graph_stats
+    from vruksha import build_graph, resolve_entities, topic_nodes, graph_stats
     src, dst = db_path(genre, BASE_GRAIN, ENCODER, 'tree'), db_path(genre, BASE_GRAIN, ENCODER, _mode(name))
     if not src.exists(): print(f'  missing {src.stem} — run `python -m evals.run build_tree`'); return None
     if dst.exists() and not force: return dict(genre=genre, extractor=name, skipped=True)

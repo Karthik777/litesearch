@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import re, tempfile
 import numpy as np
 from contextlib import nullcontext
-from .core import (_in, _rid, _np_dtype, rrf_merge, process_content, write_txn, db_lock,
+from .core import (_in, _rid, _np_dtype, rrf_all, process_content, write_txn, db_lock,
         rerank_hits, RERANK_FANOUT)
 from .data import chunk_markdown
 
@@ -654,7 +654,7 @@ def doc_search(self:Database,
     if not base: return []
     fts, vec = base['fts'], base['vec']
     wf, wv = adaptive_weights(q, fts, vec) if adaptive else (1.0, 1.0)
-    hits = _wrrf(fts, vec, wf, wv, rrf_k, n*(3 if spans else 1))
+    hits = rrf_all([fts, vec], k=rrf_k, limit=n*(3 if spans else 1), weights=[wf, wv])
     if spans: hits = merge_spans(hits, gap)
     # after the rerank, not before: a breadcrumb is a lookup per hit, and only `limit` survive
     if rerank:
@@ -665,16 +665,6 @@ def doc_search(self:Database,
         for i, h in enumerate(hits): h['_rrf_score'] = 1.0/(rrf_k + i)
     for h in hits[:limit]: h['breadcrumb'] = h.get('heading') or self.breadcrumb(h.get('node_id') or '', store, prefix)
     return hits[:limit]
-
-def _wrrf(fts, vec, wf=1.0, wv=1.0, k=60, limit=50, id_key='rowid'):
-    'Weighted RRF over the two legs. `rrf_merge` with a thumb on the scale.'
-    scores = {}
-    for lst, w in ((fts, wf), (vec, wv)):
-        for rank, row in enumerate(lst or []):
-            rid = row.get(id_key, id(row))
-            if rid in scores: scores[rid]['_rrf_score'] += w/(k+rank)
-            else: scores[rid] = dict(row, _rrf_score=w/(k+rank))
-    return sorted(scores.values(), key=lambda r: -r['_rrf_score'])[:limit]
 
 @patch
 def sections(self:Database,
@@ -801,6 +791,7 @@ def context(self:Database,
         if not nid or nid in prim or nid in rel: return
         rel[nid] = AttrDict(node_id=nid, via=via, score=score or 0.0, breadcrumb=heading)
     if graph and f'{p}entities' in self.t:
+        if not hasattr(self, 'graph_search'): raise ImportError('graph=True needs vruksha: pip install vruksha')
         for h in self.graph_search(q, emb, columns=['content', 'heading', 'node_id'],
                                    limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w, **kw):
             add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))

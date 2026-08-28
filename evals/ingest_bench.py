@@ -28,7 +28,9 @@ import numpy as np
 from fastcore.all import L, first, defaults
 
 from litesearch.core import database, process_content
-from litesearch.graph import build_graph, hash_embed, resolve_entities, rrf_all
+from litesearch.utils import hash_embed
+from litesearch.core import rrf_all
+from vruksha import build_graph, resolve_entities
 from litesearch.data import dir2chunks
 
 # ---------------------------------------------------------------- timing helpers
@@ -362,7 +364,7 @@ def bench_lexical_recall(sizes=(250, 500, 1000, 2000), lex=0.34, max_group=60, w
     Blocking exists only to avoid enumerating that set, so the number that matters is how much of
     it survives, and it has to be measured against corpus size: a recall that is fine at a thousand
     entities and poor at ten thousand looks like nothing at all from inside a single run.'''
-    from litesearch.graph import _lexical_pairs, _lex_ok
+    from vruksha import _lexical_pairs, _lex_ok
     print(f'\n== lexical blocking recall (max_group={max_group}) ==')
     print(f"{'chunks':>7} {'entities':>9} {'truth pairs':>12} {'recall':>8} {'pairs examined':>15}")
     out = []
@@ -394,7 +396,7 @@ def bench_resolve_parts(n=2000, workdir=None, examples=3):
     rules turn out to be nearly free and two of them turn out to be load-bearing, and neither fact
     was visible from a timing of the whole call.'''
     import hashlib, copy
-    from litesearch import graph as G
+    from vruksha import search as G
     print(f'\n== resolve_entities: what each part contributes ({n} chunks) ==')
     root = Path(tempfile.mkdtemp(dir=workdir)); src = root/'built'
     src.mkdir(parents=True)
@@ -465,7 +467,7 @@ def bench_string_libs(n=1500, workdir=None):
 
     usearch is not in the table: it is already doing the vector work here, batched, in
     `_ann_pairs` and `_cluster_groups`.'''
-    from litesearch.graph import _sentences, _toks, prose_windows, _yake_terms
+    from vruksha import _sentences, _toks, prose_windows, _yake_terms
     def have(m):
         try: return __import__(m)
         except ImportError: return None
@@ -524,7 +526,7 @@ def bench_search_legs(sizes=(120, 600), workdir=None, reps=30):
     connection: SQLite serialises them behind its own mutex, so the thread pool buys contention and
     two futures instead of overlap. Recorded so the flag stays deprecated on evidence.'''
     from concurrent.futures import ThreadPoolExecutor
-    from litesearch.graph import hash_embed
+    from litesearch.utils import hash_embed
     print('\n== search legs: serial vs threaded ==')
     print(f"  {'chunks':>8} {'vector leg':>11} {'serial':>9} {'threaded':>9} {'change':>9}")
     out, ex = [], ThreadPoolExecutor(2)
@@ -571,7 +573,7 @@ def bench_extractors(n=400, topk=12, workdir=None):
         pip install yake-rust rake-nltk rakun2
     '''
     from concurrent.futures import ThreadPoolExecutor
-    from litesearch.graph import _yake_terms
+    from vruksha import _yake_terms
     texts = [c['content'] for c in corpus_chunks(n, chars=800)]
     cands = [('yake (shipped)', _yake_terms)]
     try:
@@ -629,8 +631,8 @@ def bench_embed_batch(n=200, sizes=(20, 64, 256, 2000, 0), workdir=None):
     why it is a parameter and not a constant: a static model is a lookup table with nothing to
     amortise and flattens by ~64 chunks a call, while an ONNX model has real per-call setup. Run
     this with the encoder you actually use before choosing a number. `0` means one call.'''
-    from litesearch.utils import static_retrieval_embedder, doc_encoder
-    enc = doc_encoder(static_retrieval_embedder())
+    from litesearch.utils import static_embedder, doc_encoder
+    enc = doc_encoder(static_embedder())
     texts = []
     for pages in corpus_docs(n, pages_per_doc=3):
         for _, t in pages: texts += [t[i:i+800] for i in range(0, len(t), 800)]
@@ -734,7 +736,7 @@ def verify_ann_probe(n=2000, k=8, reps=3, workdir=None):
     ~0.1% between full rebuilds — before this change as much as after. Hold the index still and the
     two probes have to agree exactly, and they do.'''
     from litesearch.core import _rid
-    from litesearch.graph import _ann_pairs
+    from vruksha import _ann_pairs
     root = Path(tempfile.mkdtemp(dir=workdir))
     db = database(str(root/'g.db')); db.get_store('store', hash=True, ann=True)
     st = build_graph(db, corpus_chunks(n, chars=800), emb_fn=hash_emb_fn())
