@@ -28,6 +28,10 @@ reachable as `Index.db`, so there is no migration and no wrapper to escape from.
 !uv add litesearch
 ```
 
+The optional pieces have no extras. `rerank=True` wants flashrank, [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) wants
+onnxruntime, and the Sanskrit lemmas want vidyut; each is imported when it is used and says what
+to install if it is missing. `pip install litesearch` gets everything else.
+
 ## Route 1 — [`Index`](https://Karthik777.github.io/litesearch/api.html#index)
 
 Three lines. `add` takes a directory, a file, a string, a list of strings, or `{title: text}`.

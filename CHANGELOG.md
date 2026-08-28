@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.33
+fix api to add `where` to Index.
+
 ## 0.1.32
 bulk load is no longer default
 
