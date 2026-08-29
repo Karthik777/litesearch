@@ -16,13 +16,12 @@ dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
     "fastlite>=0.2.4",
-    "liteparse>=2.6.0",
     "model2vec>=0.7.0",
-    "pdf-oxide>=0.3.17",
-    "pillow>=12.1.1",
     "tokenizers>=0.22.2",
+    "pdf-oxide>=0.3.17",
+    "pdflite>=0.0.1",
+    "pillow>=12.1.1",
     "usearch>=2.23.0",
-    "yake>=0.7.3",
 ]
 
 [project.urls]
@@ -37,28 +36,20 @@ litesearch = "litesearch._modidx:d"
 
 [dependency-groups]
 dev = [
-    "datasets>=5.0.0",         # evals/ only
-    "flashrank>=0.2.10",       # `rerank=True`, imported on use
-    "onnx>=1.22.0",            # `FastEncode`, imported on use
-    "onnxruntime>=1.24.3",
-    "rishi>=0.0.2",            # evals/ only
-    "vidyut>=0.4.0",           # `litesearch.sanskrit` lemmas and glosses, imported on use
-    'notebook',
-    'nbdev',
-    'jupyterlab',
-    'jupyterlab-quarto',
-    'selectolax',
-    'ddgs',
-    'pyperclip',
-    "chonkie",
-    "flashrank",
-    "onnx>=1.22.0",
-    "onnxruntime>=1.24.3",
-    "model2vec[distill]>=0.7.0",
-    "fastprogress>=1.1.5",
-    "koshas>=0.0.25",
-    "datasets>=5.0.1",
-    "rishi>=0.0.2",
+    "nbdev",
+    "jupyterlab",
+    "jupyterlab-quarto",
+    "notebook",
+    "flashrank>=0.2.10",         # `rerank=True`, imported on use
+    "onnx>=1.22.0",              # `FastEncode`, imported on use
+    "onnxruntime>=1.24.3",       # `FastEncode`, imported on use
+    "model2vec[distill]>=0.7.0", # evals/
+    "datasets>=5.0.1",           # evals/
+    "rishi>=0.0.2",              # evals/
+    "fastprogress>=1.1.5",       # evals/
+    "selectolax",                # evals/
+    "ddgs",                      # evals/
+    "pyperclip",                 # evals/
 ]
 
 [tool.hatch.version]
