@@ -30,7 +30,6 @@ from fastcore.all import L, first, defaults
 from litesearch.core import database, process_content
 from litesearch.utils import hash_embed
 from litesearch.core import rrf_all
-from vruksha import build_graph, resolve_entities
 from litesearch.data import dir2chunks
 
 # ---------------------------------------------------------------- timing helpers
@@ -275,6 +274,7 @@ def bench_pdf(pdf='nbs/pdfs/attention_is_all_you_need.pdf', workdir=None, emb=No
 
 def bench_graph(sizes=(500, 1000, 2000), workdir=None, emb=None, n_workers=0, batch=None):
     'build_graph + resolve_entities over real prose chunks. `n_workers=None` picks a pool by size.'
+    from vruksha import build_graph, resolve_entities
     print(f'\n== graph build (n_workers={n_workers}, batch={batch}) ==')
     rows = []
     for n in sizes:
@@ -364,7 +364,7 @@ def bench_lexical_recall(sizes=(250, 500, 1000, 2000), lex=0.34, max_group=60, w
     Blocking exists only to avoid enumerating that set, so the number that matters is how much of
     it survives, and it has to be measured against corpus size: a recall that is fine at a thousand
     entities and poor at ten thousand looks like nothing at all from inside a single run.'''
-    from vruksha import _lexical_pairs, _lex_ok
+    from vruksha import _lexical_pairs, _lex_ok, build_graph
     print(f'\n== lexical blocking recall (max_group={max_group}) ==')
     print(f"{'chunks':>7} {'entities':>9} {'truth pairs':>12} {'recall':>8} {'pairs examined':>15}")
     out = []
@@ -661,6 +661,7 @@ def bench_graph_memory(sizes=(2000, 4000, 8000), batch=500, workdir=None):
     Reported as marginal KB/chunk between sizes rather than as a total, because the total is
     dominated by the interpreter and the question is only whether the slope flattens.'''
     import resource
+    from vruksha import build_graph
     print(f'\n== build_graph memory (batch={batch}) ==')
     print(f"{'chunks':>7} {'mode':>16} {'wall':>8} {'rss delta':>11} {'KB/chunk':>9}")
     out = []

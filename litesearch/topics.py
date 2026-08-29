@@ -9,7 +9,7 @@ import numpy as np
 from fastcore.all import AttrDict, L, chunked, first, ifnone, patch
 from fastlite import Database
 from apswutils.db import Table
-from .core import _in, _rid, _slug, _np_dtype, upsert_all
+from .core import sql_in, rowid_sel, content_id, NP_DTYPE, upsert_all
 
 # %% ../nbs/05_topics.ipynb #e2556b625e937d53
 @patch
@@ -129,14 +129,14 @@ def topic_nodes(db,                # Database
     if not (m and m['ndim']): return dict(topics=0, method=None)
     idx = db.get_index(store)
     if idx.size < 4: return dict(topics=0, method=None)
-    dt = _np_dtype.get(m['dtype'], dtype)
-    rid2cid = {r['rowid']: r['id'] for r in db.t[store](select=f'{_rid()}, id')}
+    dt = NP_DTYPE.get(m['dtype'], dtype)
+    rid2cid = {r['rowid']: r['id'] for r in db.t[store](select=f'{rowid_sel()}, id')}
     groups, method = _cluster_groups(idx, rid2cid.keys(), min_count, max_count, k, dt)
     kept = [[rid2cid[r] for r in mem if r in rid2cid] for _, mem in groups]
     kept = [c for c in kept if len(c) >= min_size]
     if not kept: return dict(topics=0, method=method)
     txt = {r['id']: r['content'] for r in db.t[store](select='id, content',
-                                                      where=_in('id', [c for g_ in kept for c in g_[:24]]))}
+                                                      where=sql_in('id', [c for g_ in kept for c in g_[:24]]))}
     texts, lab = [], []
     for j, cids in enumerate(kept):
         for c in cids[:24]: texts.append((txt.get(c) or '')[:max_label_chars]); lab.append(j)
@@ -144,7 +144,7 @@ def topic_nodes(db,                # Database
     ents, mens = [], []
     for j, cids in enumerate(kept):
         name = f'topic: {names[j]}'[:60] if names[j] else f'topic-{j}'
-        eid = _slug(name)
+        eid = content_id(name)
         ents.append(dict(content=name, kind='topic', freq=len(cids), canon=eid))
         mens += [dict(chunk_id=c, entity_id=eid, surface=name, n=1) for c in cids]
     if ents: g.entities.insert_all(ents, upsert=True, hash_id='id', hash_id_columns=['content'])
@@ -171,9 +171,9 @@ def _member_rows(self:Table, keys, columns=None):
     'Store rows for a list of usearch keys, keyed by rowid. `content` is always fetched (labels need it).'
     if not keys: return {}
     cols = list(dict.fromkeys([c for c in (columns or []) if c != 'rowid'] + ['content']))
-    sel, out = ','.join(cols + [_rid()]), {}
+    sel, out = ','.join(cols + [rowid_sel()]), {}
     for b in chunked(keys, 400):
-        for r in self.db.q(f'select {sel} from {self.name} where {_in("rowid", b)}'): out[r['rowid']] = r
+        for r in self.db.q(f'select {sel} from {self.name} where {sql_in("rowid", b)}'): out[r['rowid']] = r
     return out
 
 @patch
@@ -193,7 +193,7 @@ def clusters(self:Table,              # ANN-registered store
     if not m['ndim']: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} has no vectors yet')
     idx = self.db.get_index(self.name)
     if idx.size < 4: return AttrDict(clusters=L(), method=None, note=f'index holds {idx.size} vectors; too few to cluster')
-    dt = _np_dtype.get(m['dtype'], dtype)
+    dt = NP_DTYPE.get(m['dtype'], dtype)
     groups, method, _ = self._cluster_cached(min_count, max_count, k, dt)
     kept = [(c, g) for c, g in groups if len(g) >= min_size]
     if not kept: return AttrDict(clusters=L(), method=method, note=f'no group reached min_size={min_size}')
@@ -224,7 +224,7 @@ def peers(self:Table,            # ANN-registered store
     if not m['ndim']: return AttrDict(hits=L(), method=None, note=f'{self.name!r} has no vectors yet')
     idx = self.db.get_index(self.name)
     if not idx.size or not idx.contains(key): return AttrDict(hits=L(), method=None, note=f'key {key} is not indexed')
-    dt = _np_dtype.get(m['dtype'], dtype)
+    dt = NP_DTYPE.get(m['dtype'], dtype)
     if idx.size < 4: return nbr(f'index holds {idx.size} vectors; showing nearest neighbours')
     _, method, assign = self._cluster_cached(min_count, max_count, k, dt)
     grp = assign.get(key)
