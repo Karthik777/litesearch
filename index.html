@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, HNSW ANN, auto-reranked.">
+
+<title>litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="litesearch">
+<meta property="og:description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, HNSW ANN, auto-reranked.">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="litesearch">
+<meta name="twitter:description" content="Fast hybrid search — SQLite FTS5 + SIMD vector search, HNSW ANN, auto-reranked.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">litesearch</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#install" id="toc-install" class="nav-link active" data-scroll-target="#install">Install</a></li>
+  <li><a href="#route-1-index" id="toc-route-1-index" class="nav-link" data-scroll-target="#route-1-index">Route 1: <code>Index</code></a></li>
+  <li><a href="#route-2-database" id="toc-route-2-database" class="nav-link" data-scroll-target="#route-2-database">Route 2: <code>database()</code></a></li>
+  <li><a href="#what-the-evaluation-says" id="toc-what-the-evaluation-says" class="nav-link" data-scroll-target="#what-the-evaluation-says">What the evaluation says</a></li>
+  <li><a href="#beyond-the-two-routes" id="toc-beyond-the-two-routes" class="nav-link" data-scroll-target="#beyond-the-two-routes">Beyond the two routes</a></li>
+  <li><a href="#next-steps" id="toc-next-steps" class="nav-link" data-scroll-target="#next-steps">Next Steps</a></li>
+  <li><a href="#acknowledgements" id="toc-acknowledgements" class="nav-link" data-scroll-target="#acknowledgements">Acknowledgements</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="index.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">litesearch</h1>
+</div>
+
+<div>
+  <div class="description">
+    Fast hybrid search — SQLite FTS5 + SIMD vector search, HNSW ANN, auto-reranked.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<blockquote class="blockquote">
+<p><strong>NB</strong> Reading this on GitHub? The formatted <a href="https://Karthik777.github.io/litesearch/">documentation</a> is nicer.</p>
+</blockquote>
+<p>litesearch stores and searches documents in one SQLite file. FTS5 keyword search and SIMD vector search, fused by Reciprocal Rank Fusion. No server.</p>
+<p>Two ways in. Pick by one question: do you want the defaults decided for you?</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>route</th>
+<th>use it when</th>
+<th>what it costs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="./api.html">[<code>Index</code>](https://Karthik777.github.io/litesearch/api.html#index)</a></td>
+<td>you want to search a folder of documents or code</td>
+<td>nothing. Encoder, dtype, chunk size, retrieval and tree all come from <code>evals/</code></td>
+</tr>
+<tr class="even">
+<td><a href="./core.html">[<code>database()</code>](https://Karthik777.github.io/litesearch/core.html#database)</a></td>
+<td>you need your own columns, encoder, SQL or float32 vectors</td>
+<td>six decisions, one of which fails silently</td>
+</tr>
+</tbody>
+</table>
+<p>Start at <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a>. Drop to <a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> when it stops fitting: it is the same object underneath, reachable as <code>Index.db</code>.</p>
+<section id="install" class="level2">
+<h2 class="anchored" data-anchor-id="install">Install</h2>
+<div id="2ce68d454ef5" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># usearch SQLite extensions are configured automatically on first import</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># (macOS needs one extra step — see litesearch.postfix)</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>uv add litesearch</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>No extras. <code>rerank=True</code> wants flashrank, <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> wants onnxruntime, and each is imported when used and says what to install. <code>pip install litesearch</code> gets the rest.</p>
+</section>
+<section id="route-1-index" class="level2">
+<h2 class="anchored" data-anchor-id="route-1-index">Route 1: <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a></h2>
+<p>Six methods. <code>add</code> ingests, <code>search</code> returns chunks, <code>sections</code> returns sections, <code>read</code> opens one, <code>toc</code> lists the corpus, <code>context</code> assembles an answer.</p>
+<div id="1f16636b25dd" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>ix <span class="op">=</span> Index()                                        <span class="co"># pass a path to keep it on disk</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>ix.add(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>hits <span class="op">=</span> ix.search(<span class="st">'how does multi-head attention work'</span>, limit<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>[(h[<span class="st">'heading'</span>], h[<span class="st">'page'</span>]) <span class="cf">for</span> h <span class="kw">in</span> hits]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Every hit carries a <code>heading</code> breadcrumb and a <code>node_id</code>, because <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> builds a document tree at ingest. That is what turns “which 512 characters” into “which section”.</p>
+<div id="c27011b88d88" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>sec <span class="op">=</span> ix.sections(<span class="st">'how does multi-head attention work'</span>, limit<span class="op">=</span><span class="dv">2</span>)   <span class="co"># ranked *sections*, not chunks</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>[(s[<span class="st">'node_id'</span>], (s[<span class="st">'snippets'</span>] <span class="kw">or</span> [<span class="st">''</span>])[<span class="dv">0</span>][:<span class="dv">60</span>]) <span class="cf">for</span> s <span class="kw">in</span> sec]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="24e42e7c4cc6" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>ix.read(sec[<span class="dv">0</span>][<span class="st">'node_id'</span>])[<span class="st">'text'</span>][:<span class="dv">300</span>]            <span class="co"># one whole section, reassembled</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="28ddd56b9e03" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>ix.toc(summaries<span class="op">=</span><span class="va">False</span>)                             <span class="co"># the corpus — no embeddings computed at all</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>One knob is left to you. <code>rerank=True</code> runs a flashrank cross-encoder over the top 30 candidates: +0.026 to +0.077 weighted MRR, positive in all twelve measured cells, at roughly 10x query latency and a 4 MB download on first use.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>ix.search(<span class="st">'how does multi-head attention work'</span>, rerank<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For code, <code>add_code</code> uses the AST instead of headings, and its tree is module › class › function:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>ix.add_code(<span class="st">'litesearch'</span>)      <span class="co"># a directory, or an installed package name</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="route-2-database" class="level2">
+<h2 class="anchored" data-anchor-id="route-2-database">Route 2: <a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a></h2>
+<p><a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> returns a <a href="https://fastlite.answer.ai/">fastlite</a> <code>Database</code> patched with usearch’s SIMD distance functions. Pass a path to persist, omit it for memory.</p>
+<div id="72a7ddf433ae" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>db <span class="op">=</span> database()</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>vecs <span class="op">=</span> <span class="bu">dict</span>(v1<span class="op">=</span>np.ones((<span class="dv">100</span>,), dtype<span class="op">=</span>np.float32).tobytes(),</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>            v2<span class="op">=</span>np.zeros((<span class="dv">100</span>,), dtype<span class="op">=</span>np.float32).tobytes())</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>{m: db.q(<span class="ss">f'select distance_</span><span class="sc">{</span>m<span class="sc">}</span><span class="ss">_f32(:v1,:v2) as d'</span>, vecs)[<span class="dv">0</span>][<span class="st">'d'</span>]</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a> <span class="cf">for</span> m <span class="kw">in</span> [<span class="st">'sqeuclidean'</span>, <span class="st">'divergence'</span>, <span class="st">'inner'</span>, <span class="st">'cosine'</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Four metrics, <code>cosine</code>, <code>sqeuclidean</code>, <code>inner</code> and <code>divergence</code>, each in <code>f32</code>, <code>f16</code>, <code>f64</code> and <code>i8</code>, running inside SQL.</p>
+<p>Route 1 by hand is eight lines, and one of them is a trap:</p>
+<div id="6410a93a8062" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>enc   <span class="op">=</span> static_embedder()             <span class="co"># model2vec: no GPU, no ONNX runtime</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>store <span class="op">=</span> db.get_store(<span class="bu">hash</span><span class="op">=</span><span class="va">True</span>, ann<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># float16, because that is what a store holds. Handing it float32 fails quietly: every distance</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co"># comes back 0 and the ranking degrades to keyword-only with no error.</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>emb   <span class="op">=</span> <span class="kw">lambda</span> xs: np.asarray(enc.encode(<span class="bu">list</span>(xs)), dtype<span class="op">=</span>np.float16)</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>texts <span class="op">=</span> [<span class="st">'attention mechanisms in neural networks'</span>, <span class="st">'transformer architecture for sequences'</span>,</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>         <span class="st">'stochastic gradient descent and learning rate schedules'</span>,</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>         <span class="st">'positional encoding and token embeddings'</span>, <span class="st">'dropout reduces overfitting'</span>]</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>store.insert_all([<span class="bu">dict</span>(content<span class="op">=</span>t, embedding<span class="op">=</span>e.tobytes()) <span class="cf">for</span> t, e <span class="kw">in</span> <span class="bu">zip</span>(texts, emb(texts))],</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>                 upsert<span class="op">=</span><span class="va">True</span>, hash_id<span class="op">=</span><span class="st">'id'</span>, hash_id_columns<span class="op">=</span>[<span class="st">'content'</span>])</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>store.rebuild_index()</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> <span class="st">'self-attention mechanism'</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>db.search(q, emb([q])[<span class="dv">0</span>].tobytes(), columns<span class="op">=</span>[<span class="st">'content'</span>], limit<span class="op">=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> exists because those eight lines have to be right every time.</p>
+</section>
+<section id="what-the-evaluation-says" class="level2">
+<h2 class="anchored" data-anchor-id="what-the-evaluation-says">What the evaluation says</h2>
+<p><code>evals/</code> runs 120 known-item queries per genre over three corpora (EU legislation, arXiv papers, a 19th-century astrology treatise) in five query flavours, scoring section-level MRR weighted so three quarters of the mass sits where the query is not a copy of the answer. <code>python -m evals.decide</code> reproduces every number.</p>
+<p>Above the line is on by default. Below it is off and stays off.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>change</th>
+<th>Δ weighted MRR</th>
+<th>verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="https://Karthik777.github.io/litesearch/data.html#pre"><code>pre()</code></a> on the FTS leg</td>
+<td>+0.016 to +0.093</td>
+<td>on since 0.1.6</td>
+</tr>
+<tr class="even">
+<td>512-char chunks over page-sized</td>
+<td>+0.06 to +0.12</td>
+<td><a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> default</td>
+</tr>
+<tr class="odd">
+<td>cross-encoder rerank</td>
+<td>+0.026 to +0.077</td>
+<td><code>rerank=True</code>, the one lever worth deciding</td>
+</tr>
+<tr class="even">
+<td>HNSW ANN vector leg</td>
+<td>−0.005</td>
+<td>on by default; buy the speed</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>document tree, for ranking</td>
+<td>−0.052 to +0.011</td>
+<td>a wash. Built for <code>toc</code>, <code>read</code>, <code>sections</code></td>
+</tr>
+<tr class="odd">
+<td>heading prefix on the chunk</td>
+<td>±0.02, sign flips by genre</td>
+<td>a wash</td>
+</tr>
+<tr class="even">
+<td>deeper fanout alone</td>
+<td>−0.014 to −0.068</td>
+<td>pays only with a reranker</td>
+</tr>
+<tr class="odd">
+<td>late chunking</td>
+<td>−0.033 to −0.053</td>
+<td>deleted; the code is in <code>evals/latechunk.py</code></td>
+</tr>
+<tr class="even">
+<td>entity graph leg</td>
+<td>−0.070 to −0.160</td>
+<td><a href="https://github.com/vedicreader/vruksha">vruksha</a>, opt-in</td>
+</tr>
+</tbody>
+</table>
+<p>Three findings worth more than a table row.</p>
+<p><strong>The encoder is not the lever.</strong> Across <code>potion-32M</code>, <code>bge-small</code>, <code>jina-v2-sm</code> and <code>egemma-300m</code> the spread is 0.018 to 0.046, and the static model wins one genre outright at ~1,700x cheaper indexing. The default is <code>potion-multilingual-128M</code>, so non-Latin scripts are covered without choosing an encoder.</p>
+<p><strong>The tree does not improve ranking and is still worth building.</strong> Section ranking is a wash. Section assembly is not: on the Sanskrit corpus <code>context()</code> roughly doubles verse-level recall over plain chunk search, 0.190 to 0.340, the largest single effect in <code>evals/</code>.</p>
+<p><strong>FTS alone looks unbeatable here, and that is the benchmark’s fault.</strong> Keyword-only retrieval with <a href="https://Karthik777.github.io/litesearch/data.html#pre"><code>pre()</code></a> beats hybrid in all 24 paired cells, because every query in the main set is a lexical transformation of its target. <code>evals/multihop.py</code> builds the corrective: a bridge set where the answer shares no token with the question. There FTS cannot score at all and the vector leg reaches the target at rank 1 between 53% and 84% of the time.</p>
+</section>
+<section id="beyond-the-two-routes" class="level2">
+<h2 class="anchored" data-anchor-id="beyond-the-two-routes">Beyond the two routes</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>module</th>
+<th>what you get</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="./tree.html"><code>litesearch.tree</code></a></td>
+<td>the tree directly: <code>add_dir</code>, <code>doc_search</code>, <code>context</code>, custom chunkers</td>
+</tr>
+<tr class="even">
+<td><a href="./data.html"><code>litesearch.data</code></a></td>
+<td><a href="https://Karthik777.github.io/litesearch/data.html#file_parse"><code>file_parse</code></a> for any file, <a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a> for code, FTS query preprocessing</td>
+</tr>
+<tr class="odd">
+<td><a href="./utils.html"><code>litesearch.utils</code></a></td>
+<td>encoders: static, ONNX <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>, image and multimodal</td>
+</tr>
+<tr class="even">
+<td><a href="./topics.html"><code>litesearch.topics</code></a></td>
+<td>clusters and topic labels off the ANN index</td>
+</tr>
+<tr class="odd">
+<td><a href="./sanskrit.html"><code>litesearch.sanskrit</code></a></td>
+<td>the cross-script FTS5 tokenizer</td>
+</tr>
+<tr class="even">
+<td><a href="./quality.html"><code>litesearch.quality</code></a></td>
+<td>which documents in a store are retrieval noise</td>
+</tr>
+</tbody>
+</table>
+<p>Three things live in their own packages: <a href="https://github.com/vedicreader/pdflite">pdflite</a> reads PDFs, <a href="https://github.com/vedicreader/ganapati">ganapati</a> does Sanskrit metre, verse chunking and lemmas, and <a href="https://github.com/vedicreader/vruksha">vruksha</a> builds the entity graph.</p>
+<p><strong>Cross-script search is on for every store</strong>, not only Sanskrit ones. The <code>sanskrit</code> FTS5 tokenizer emits an ASCII fold of each token beside it, so <code>श्रीमाता</code>, <code>śrīmātā</code> and <code>srimata</code> all reach the same row. Purely additive, ordinary English tokenises identically, and it is the largest measured retrieval win here: 1.000 Devanagari to verse recall for every encoder tested. One cost: a store built with this chain cannot be opened by a connection that has not registered the tokenizer, plain <code>sqlite3</code> included.</p>
+</section>
+<section id="next-steps" class="level2">
+<h2 class="anchored" data-anchor-id="next-steps">Next Steps</h2>
+<ul>
+<li><strong><a href="examples/01_simple_rag.ipynb">examples/01_simple_rag.ipynb</a></strong>, ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank</li>
+<li><strong><a href="examples/02_tool_use.ipynb">examples/02_tool_use.ipynb</a></strong>, wire litesearch into an LLM tool-use loop</li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/api.html">api docs</a></strong>, <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a>, and what each default is worth</li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/core.html">core docs</a></strong>, <a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database</code></a>, <code>get_store</code>, <code>search</code>, <a href="https://Karthik777.github.io/litesearch/core.html#rrf_all"><code>rrf_all</code></a>, <code>vec_search</code></li>
+<li><strong><a href="https://Karthik777.github.io/litesearch/tree.html">tree docs</a></strong>, <code>add_dir</code>, <code>toc</code>, <code>read</code>, <code>sections</code>, <code>context</code></li>
+<li><strong><a href="https://github.com/vedicreader/vishalakshi">vishalakshi</a></strong>, a litesearch-backed vault, and the first caller nominated to port onto <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a>; see the <a href="./api.html">api page</a> for what that port should test</li>
+</ul>
+</section>
+<section id="acknowledgements" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgements">Acknowledgements</h2>
+<p>A big thank you to <a href="https://github.com/yfedoseev"><span class="citation" data-cites="yfedoseev">@yfedoseev</span></a> for <a href="https://github.com/yfedoseev/pdf-oxide">pdf-oxide</a>, which powers the PDF extraction functionality in <code>litesearch.data</code>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

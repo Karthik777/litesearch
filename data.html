@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="some utilities to aid data extraction and query preprocessing">
+
+<title>data – litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="data – litesearch">
+<meta property="og:description" content="some utilities to aid data extraction and query preprocessing">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="data – litesearch">
+<meta name="twitter:description" content="some utilities to aid data extraction and query preprocessing">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./data.html">data</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#profiles-one-object-per-document-kind" id="toc-profiles-one-object-per-document-kind" class="nav-link active" data-scroll-target="#profiles-one-object-per-document-kind">Profiles, one object per document kind</a></li>
+  <li><a href="#image-pdf" id="toc-image-pdf" class="nav-link" data-scroll-target="#image-pdf">Image → PDF</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="data.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">data</h1>
+</div>
+
+<div>
+  <div class="description">
+    some utilities to aid data extraction and query preprocessing
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<p>We will build a simple ingestion pipeline to ingest pdf documents into litesearch database for searching.</p>
+<p>Extensions to pdf_oxide PdfDocument to extract texts, images, links, tables, spans and outline</p>
+<div id="8610bafb" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.010194+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.681468+00:00&quot;,&quot;total&quot;:0.6712795960000051}}" data-execution_count="3">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L49" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_spans" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_spans">PdfDocument.pdf_spans</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_spans(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract text spans with font metadata (size, weight, bbox) per page.</em></p>
+</section>
+</div>
+<div id="538d669f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.681673+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.686823+00:00&quot;,&quot;total&quot;:0.005153292000017018}}" data-execution_count="4">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#LNone" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_tables" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_tables">PdfDocument.pdf_tables</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_tables(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract structured tables (rows/cells/bbox) from each page.</em></p>
+</section>
+</div>
+<div id="43f0d584" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.686968+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.691058+00:00&quot;,&quot;total&quot;:0.004092654999993783}}" data-execution_count="5">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#LNone" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_markdown" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_markdown">PdfDocument.pdf_markdown</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_markdown(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span>, <span class="op">**</span>kw</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Convert pages to markdown with headings and tables detected.</em></p>
+</section>
+</div>
+<div id="016d4ab7" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.691158+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.694309+00:00&quot;,&quot;total&quot;:0.003153231999988293}}" data-execution_count="6">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#LNone" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_images" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_images">PdfDocument.pdf_images</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_images(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span>, output_dir:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract images — returns metadata dicts, or saves to output_dir if provided.</em></p>
+</section>
+</div>
+<div id="c1e75200" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.694406+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.697363+00:00&quot;,&quot;total&quot;:0.002960462000004327}}" data-execution_count="7">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#LNone" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_links" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_links">PdfDocument.pdf_links</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_links(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract hyperlinks from each page as a list of URI strings.</em></p>
+</section>
+</div>
+<div id="af90da5b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.697461+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.700307+00:00&quot;,&quot;total&quot;:0.002848123000006808}}" data-execution_count="8">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#LNone" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_texts" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_texts">PdfDocument.pdf_texts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_texts(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    doc:PdfDocument, st:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, end:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract plain text from each page.</em></p>
+</section>
+</div>
+<p>The PDF helpers are <a href="https://github.com/vedicreader/pdflite">pdflite</a>, re-exported here.</p>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#pdf_parse"><code>pdf_parse</code></a> returns one markdown string per page. The document tree and the measured chunk sizes are built on that split.</p>
+<div id="cdc716cc" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.704198+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.709022+00:00&quot;,&quot;total&quot;:0.004828857000006792}}" data-execution_count="11">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L59" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdf_parse" class="level3">
+<h3 class="anchored" data-anchor-id="pdf_parse">pdf_parse</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_parse(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    pdf:pdf_oxide.pdf_oxide.PdfDocument <span class="op">|</span> <span class="bu">str</span> <span class="op">|</span> pathlib.Path <span class="op">|</span> <span class="bu">bytes</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    out_path:<span class="bu">str</span> <span class="op">|</span> pathlib.Path<span class="op">=</span><span class="va">None</span>, <span class="co"># dir holding the image subdir; links are relative to it</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    image_dir:<span class="bu">str</span><span class="op">=</span><span class="st">'images'</span>, <span class="co"># subdir for extracted images</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    preserve_layout:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, ocr_selection:<span class="bu">str</span><span class="op">=</span><span class="st">'auto'</span>, <span class="co"># auto | on | off</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">list</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A PDF as one markdown string per page. The page split the tree and its chunk sizes are measured against.</em></p>
+</section>
+</div>
+<div id="accd92b1c21a2562" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>mds<span class="op">=</span>pdf_parse(Path(<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream</code></pre>
+</div>
+</div>
+<section id="safefastchunker" class="level4">
+<h4 class="anchored"><a href="https://Karthik777.github.io/litesearch/data.html#safefastchunker"><code>SafeFastChunker</code></a></h4>
+<p><code>FastChunker</code> whose cuts land on character boundaries.</p>
+<p>chonkie-core returns byte offsets and <code>FastChunker.chunk</code> decodes each slice on its own, so a size cut that falls inside a multi-byte character raises <code>UnicodeDecodeError</code>, which any long unbroken paragraph containing an em dash or a curly quote will do, i.e.&nbsp;most scraped web pages. Both sides of a cut are moved back to the start of the character it split, so the text is repartitioned by up to three bytes and never lost.</p>
+<div id="c681db05" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.712415+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.717094+00:00&quot;,&quot;total&quot;:0.004682284999972808}}" data-execution_count="13">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L78" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="safefastchunker-1" class="level3">
+<h3 class="anchored" data-anchor-id="safefastchunker-1">SafeFastChunker</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> SafeFastChunker(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    chunk_size:<span class="bu">int</span><span class="op">=</span><span class="dv">4096</span>, delimiters:<span class="bu">str</span><span class="op">=</span><span class="st">'</span><span class="ch">\n</span><span class="st">.?'</span>, pattern:Optional<span class="op">=</span><span class="va">None</span>, prefix:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, consecutive:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    forward_fallback:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em><code>FastChunker</code> whose cuts land on character boundaries.</em></p>
+</section>
+</div>
+<div id="010b604b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.718617+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.723681+00:00&quot;,&quot;total&quot;:0.0050663309999947614}}" data-execution_count="15">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L104" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pdfdocument.pdf_chunks" class="level3">
+<h3 class="anchored" data-anchor-id="pdfdocument.pdf_chunks">PdfDocument.pdf_chunks</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pdf_chunks(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    chunker:BaseChunker<span class="op">=</span><span class="va">None</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Markdown-chunked text from each page; yields (page, chunk_idx, text) tuples.</em></p>
+</section>
+</div>
+<div id="45d0fd47" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.723773+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.727804+00:00&quot;,&quot;total&quot;:0.004035560999994914}}" data-execution_count="16">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L95" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="chunk_markdown" class="level3">
+<h3 class="anchored" data-anchor-id="chunk_markdown">chunk_markdown</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> chunk_markdown(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    text:<span class="bu">str</span>, <span class="co"># markdown text (e.g. from pdf_markdown())</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    chunker:BaseChunker<span class="op">=</span><span class="va">None</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split markdown into paragraph chunks on blank lines</em></p>
+</section>
+</div>
+<div id="b9332a1e337e02f0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>_pdf2 <span class="op">=</span> <span class="bu">next</span>((p <span class="cf">for</span> p <span class="kw">in</span> [<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>, <span class="st">'nbs/pdfs/attention_is_all_you_need.pdf'</span>] <span class="cf">if</span> Path(p).exists()), <span class="va">None</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> _pdf2:</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    _doc <span class="op">=</span> PdfDocument(_pdf2)</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    _chunks <span class="op">=</span> _doc.pdf_chunks()</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(_chunks) <span class="op">&gt;</span> <span class="dv">0</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">all</span>(<span class="bu">len</span>(t) <span class="op">==</span> <span class="dv">3</span> <span class="cf">for</span> t <span class="kw">in</span> _chunks), <span class="st">'each chunk must be (page, chunk_idx, text)'</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">all</span>(<span class="bu">len</span>(t[<span class="dv">2</span>]) <span class="op">&gt;=</span> <span class="dv">40</span> <span class="cf">for</span> t <span class="kw">in</span> _chunks), <span class="st">'short fragments should be filtered'</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f'pdf_chunks: </span><span class="sc">{</span><span class="bu">len</span>(_chunks)<span class="sc">}</span><span class="ss"> chunks from </span><span class="sc">{</span>_doc<span class="sc">.</span>page_count()<span class="sc">}</span><span class="ss"> pages (sample: </span><span class="sc">{</span><span class="bu">repr</span>(_chunks[<span class="dv">0</span>][<span class="dv">2</span>][:<span class="dv">60</span>])<span class="sc">}</span><span class="ss">)...'</span>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'Skipping chunk test — PDF not found'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>pdf_chunks: 98 chunks from 15 pages (sample: 'Provided proper attribution is provided, Google hereby grant')...</code></pre>
+</div>
+</div>
+<div id="6502d130" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.729902+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.734351+00:00&quot;,&quot;total&quot;:0.00445330700000568}}" data-execution_count="18">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L113" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="chunk_spans" class="level3">
+<h3 class="anchored" data-anchor-id="chunk_spans">chunk_spans</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> chunk_spans(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    text:<span class="bu">str</span>, <span class="co"># text to split</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    chunker:BaseChunker<span class="op">=</span><span class="va">None</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split text into chunks, returning (start_char, end_char, text) spans into the original text.</em></p>
+</section>
+</div>
+<div id="bf8bdecba1c49492" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>_t <span class="op">=</span> <span class="st">"First sentence here. Second sentence follows. Third one ends it."</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>_spans <span class="op">=</span> chunk_spans(_t)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(_spans) <span class="op">&gt;=</span> <span class="dv">1</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> s,e,txt <span class="kw">in</span> _spans:</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> _t[s:e] <span class="op">==</span> txt          <span class="co"># offsets index back into the original text exactly</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> _spans[<span class="dv">0</span>][<span class="dv">0</span>] <span class="op">==</span> <span class="dv">0</span>           <span class="co"># first chunk starts at 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="8edc7cf8676675c3" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _bad <span class="kw">in</span> [<span class="st">'a'</span><span class="op">*</span><span class="dv">510</span> <span class="op">+</span> <span class="st">'—'</span> <span class="op">+</span> <span class="st">'b'</span><span class="op">*</span><span class="dv">600</span>,     <span class="co"># the cut lands mid-character</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>             <span class="st">'a'</span><span class="op">*</span><span class="dv">400</span> <span class="op">+</span> <span class="st">'—'</span><span class="op">*</span><span class="dv">200</span>,           <span class="co"># every candidate cut is mid-character</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>             <span class="st">'—'</span><span class="op">*</span><span class="dv">700</span>]:</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">''</span>.join(chunk_markdown(_bad)) <span class="op">==</span> _bad, <span class="st">'text lost or altered by chunking'</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> s, e, txt <span class="kw">in</span> chunk_spans(_bad): <span class="cf">assert</span> _bad[s:e] <span class="op">==</span> txt</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co"># the upstream chunker on the same input is what used to reach `add_doc`</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>: FastChunker(chunk_size<span class="op">=</span><span class="dv">512</span>)(<span class="st">'a'</span><span class="op">*</span><span class="dv">510</span> <span class="op">+</span> <span class="st">'—'</span> <span class="op">+</span> <span class="st">'b'</span><span class="op">*</span><span class="dv">600</span>)<span class="op">;</span> <span class="cf">assert</span> <span class="va">False</span>, <span class="st">'chonkie fixed it upstream'</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="cf">except</span> <span class="pp">UnicodeDecodeError</span>: <span class="cf">pass</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co"># a paragraph split still happens where it should, and ASCII text chunks exactly as before</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>_para <span class="op">=</span> (<span class="st">'x'</span><span class="op">*</span><span class="dv">200</span> <span class="op">+</span> <span class="st">'</span><span class="ch">\n\n</span><span class="st">'</span>)<span class="op">*</span><span class="dv">3</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> chunk_markdown(_para, SafeFastChunker(chunk_size<span class="op">=</span><span class="dv">512</span>, delimiters<span class="op">=</span><span class="st">'</span><span class="ch">\n\n</span><span class="st">'</span>)) <span class="op">==</span> <span class="op">\</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>       chunk_markdown(_para, FastChunker(chunk_size<span class="op">=</span><span class="dv">512</span>, delimiters<span class="op">=</span><span class="st">'</span><span class="ch">\n\n</span><span class="st">'</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Code extraction utilities</p>
+<div id="d3854132" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.749240+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.752507+00:00&quot;,&quot;total&quot;:0.0032690380000133246}}" data-execution_count="21">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L213" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="chunk_texts" class="level3">
+<h3 class="anchored" data-anchor-id="chunk_texts">chunk_texts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> chunk_texts(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    text:<span class="bu">str</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Chunk texts using Fast Chunker</em></p>
+</section>
+</div>
+<div id="760059c7" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.752647+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.755452+00:00&quot;,&quot;total&quot;:0.0028072469999926852}}" data-execution_count="22">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L208" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="non_py_sigs" class="level3">
+<h3 class="anchored" data-anchor-id="non_py_sigs">non_py_sigs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> non_py_sigs(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    p</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Signatures for paths that are not python code files using codesigs</em></p>
+</section>
+</div>
+<div id="939f5ac6" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.755547+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.758519+00:00&quot;,&quot;total&quot;:0.0029769439999824954}}" data-execution_count="23">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L202" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="ipynb_parse" class="level3">
+<h3 class="anchored" data-anchor-id="ipynb_parse">ipynb_parse</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> ipynb_parse(</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    p</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Parse ipynb files</em></p>
+</section>
+</div>
+<div id="c7b9e806" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.758669+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.765923+00:00&quot;,&quot;total&quot;:0.007256886999982726}}" data-execution_count="24">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L177" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pyparse" class="level3">
+<h3 class="anchored" data-anchor-id="pyparse">pyparse</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pyparse(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    p:Path<span class="op">=</span><span class="va">None</span>, <span class="co"># path to a python file</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>    code:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># code string to parse</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>    imports:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include import statements as code chunks</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>    assigns:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include top-level assignments as code chunks</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Parse a code string or python file and return code chunks as list of dicts with content and metadata.</em></p>
+<p>Only module-level definitions are ever returned, so <code>tree.body</code> <em>is</em> the candidate list: walking the whole tree to tag every node with a <code>parent</code> and then filtering on “parent is the Module” computes an answer the body already gives. Dropping the walk and hoisting the line split take the same 400 files from 23.4s to 3.3s, chunk-for-chunk identical.</p>
+</section>
+</div>
+<div id="ca4b919b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.766020+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.771116+00:00&quot;,&quot;total&quot;:0.005099342999983492}}" data-execution_count="25">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L152" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="spec" class="level3">
+<h3 class="anchored" data-anchor-id="spec">spec</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> spec(</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    pkg:<span class="bu">str</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>_frozen_importlib.ModuleSpec <span class="op">|</span> <span class="va">None</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return the importlib ModuleSpec for a package, or None if not found.</em></p>
+</section>
+</div>
+<div id="e205c986" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.771209+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.775097+00:00&quot;,&quot;total&quot;:0.0038908080000226164}}" data-execution_count="26">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L136" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="repo_root" class="level3">
+<h3 class="anchored" data-anchor-id="repo_root">repo_root</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> repo_root()<span class="op">-&gt;</span>Path:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Find the root of the current git repository, or None if not in a repo.</em></p>
+</section>
+</div>
+</section>
+<section id="profiles-one-object-per-document-kind" class="level2">
+<h2 class="anchored" data-anchor-id="profiles-one-object-per-document-kind">Profiles, one object per document kind</h2>
+<p><code>add_doc(chunker=...)</code> implies that a format is described by its chunker. It is not. Reading Sanskrit correctly needed three different things: a parser that knows <code>&lt;lg xml:id=…&gt;</code> is a verse, a tree mode that knows a citation names a chapter, and a chunker that cuts on daṇḍas. A <a href="https://Karthik777.github.io/litesearch/data.html#profile"><code>Profile</code></a> names all three together, so the next format is a registration rather than another branch inside <code>add_file</code>.</p>
+<p>Extension is a filter, never the decision, <code>.xml</code> is TEI, vedicreader and a hundred unrelated schemas, so a profile sharing an extension must sniff content.</p>
+<section id="profile" class="level4">
+<h4 class="anchored" data-anchor-id="profile"><a href="https://Karthik777.github.io/litesearch/data.html#profile"><code>Profile</code></a></h4>
+<p>How one kind of document should be read: parser, structure, chunker.</p>
+<p>A chunker alone is not enough to describe a format, which is what <code>add_doc(chunker=...)</code> on its own implies. Getting Sanskrit right needed a reader that knows <code>&lt;lg xml:id=…&gt;</code> is a verse, a tree mode that knows a citation is a chapter boundary, and a chunker that cuts on daṇḍas, three different seams. A profile is the one object that names all three, so adding the next format is a registration rather than another branch in <code>add_file</code>.</p>
+<p><code>meta</code> is the fourth: what a format knows about a chunk that no generic pipeline could compute. Sanskrit fills it with metre and gaṇa signature, which land in the <code>metadata</code> column <code>get_store</code> already indexes for FTS, so a facet nothing else in litesearch understands becomes searchable and filterable with no schema change.</p>
+</section>
+<section id="profile_for" class="level4">
+<h4 class="anchored"><a href="https://Karthik777.github.io/litesearch/data.html#profile_for"><code>profile_for</code></a></h4>
+<p>The profile that claims this document, or None for the default pipeline.</p>
+<p>Extension is a filter, never the decision: <code>.xml</code> is TEI, vedicreader and a hundred unrelated schemas, and <code>.txt</code> is anything at all. A profile that shares an extension must sniff the content, and one that cannot is only reached by <code>name</code>.</p>
+<div id="6dfe9b39" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.781317+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.789532+00:00&quot;,&quot;total&quot;:0.008218341000002738}}" data-execution_count="28">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L259" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="file_parse" class="level3">
+<h3 class="anchored" data-anchor-id="file_parse">file_parse</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> file_parse(</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    p:Path<span class="op">=</span><span class="va">None</span>, <span class="co"># path to a code file</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    code:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># code string to parse</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    imports:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include import statements as code chunks</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    assigns:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include top-level assignments as code chunks</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L: <span class="co"># additional args to pass to pyparse</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Parse a code file or code string and return code chunks with metadata.</em></p>
+</section>
+</div>
+<div id="f31ed4ca" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.789693+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.794891+00:00&quot;,&quot;total&quot;:0.005201722999998992}}" data-execution_count="29">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L242" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="profile_for-1" class="level3">
+<h3 class="anchored" data-anchor-id="profile_for-1">profile_for</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> profile_for(</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    path:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># file whose extension (and first bytes) select the profile</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    text:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># already-read text, when there is no file</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>    name:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># ask for one by name, skipping detection</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>__main__.Profile <span class="op">|</span> <span class="va">None</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>The profile that claims this document, or None for the default pipeline.</em></p>
+</section>
+</div>
+<div id="3df2bb68" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.795025+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.799119+00:00&quot;,&quot;total&quot;:0.004098073999983853}}" data-execution_count="30">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L237" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="register_profile" class="level3">
+<h3 class="anchored" data-anchor-id="register_profile">register_profile</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> register_profile(</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>    p:Profile</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Profile:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Add a profile to the registry, replacing any of the same name.</em></p>
+</section>
+</div>
+<div id="c80ff2f0" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.799249+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.802922+00:00&quot;,&quot;total&quot;:0.0036778609999998935}}" data-execution_count="31">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L221" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="profile-1" class="level3">
+<h3 class="anchored" data-anchor-id="profile-1">Profile</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> Profile(</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>    name:<span class="bu">str</span>, exts:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, parse:<span class="bu">callable</span><span class="op">=</span><span class="va">None</span>, chunker:<span class="bu">callable</span><span class="op">=</span><span class="va">None</span>, mode:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, detect:<span class="bu">callable</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>    kind:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, meta:<span class="bu">callable</span><span class="op">=</span><span class="va">None</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="va">None</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>How one </em>kind* of document should be read: parser, structure, chunker.*</p>
+</section>
+</div>
+<div id="407cd88c376a10c0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>ipynb_parse(Path(<span class="st">'01_core.ipynb'</span>))[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{'content': '---\ndescription: Building blocks for litesearch\noutput-file: core.html\ntitle: core\n\n---\n\n',
+ 'metadata': {'path': '01_core.ipynb',
+  'uploaded_at': 1787911231.2660935,
+  'lang': '.ipynb',
+  'type': 'raw'}}</code></pre>
+</div>
+</div>
+<p>You can use <a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a> to extract code chunks from a python file or code string.</p>
+<div id="e8cf05e7fb913b3a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>txt <span class="op">=</span> <span class="st">"""</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="st">from fastcore.all import *</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="st">a=1</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="st">class SomeClass:</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="st">    def __init__(self,x): store_attr()</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="st">    def method(self): return self.x + a</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="st"> """</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>pyparse(code<span class="op">=</span>txt)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': 'SomeClass', 'lang': '.py', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]</code></pre>
+</div>
+</div>
+<p>Setting imports to True will also include import statements as code chunks.</p>
+<div id="32a6f64c1932de38" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>pyparse(code<span class="op">=</span>txt, imports<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'content': 'from fastcore.all import *', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': None, 'lang': '.py', 'type': 'ImportFrom', 'lineno': 2, 'end_lineno': 2}}, {'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': 'SomeClass', 'lang': '.py', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]</code></pre>
+</div>
+</div>
+<div id="ac5be08e6a219ab2" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>pyparse(code<span class="op">=</span>txt, assigns<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'content': 'a=1', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': None, 'lang': '.py', 'type': 'Assign', 'lineno': 3, 'end_lineno': 3}}, {'content': 'class SomeClass:\n    def __init__(self,x): store_attr()\n    def method(self): return self.x + a', 'metadata': {'path': 'None', 'uploaded_at': None, 'name': 'SomeClass', 'lang': '.py', 'type': 'ClassDef', 'lineno': 4, 'end_lineno': 6}}]</code></pre>
+</div>
+</div>
+<div id="efd8100ce6d6b33f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.808891+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.813398+00:00&quot;,&quot;total&quot;:0.0045111649999967085}}" data-execution_count="33">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> parse_js():</span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> textwrap <span class="im">import</span> dedent</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> tempfile <span class="im">import</span> NamedTemporaryFile <span class="im">as</span> ntf</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>    js_code <span class="op">=</span> dedent(<span class="st">"""</span></span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a><span class="st">        const htmlElement = document.documentElement;</span></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a><span class="st">        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');</span></span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a><span class="st">        const vr = '__VR__';</span></span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a><span class="st">        let __VR__ = JSON.parse(localStorage.getItem(vr) || '</span><span class="sc">{{</span><span class="st">__state__</span><span class="sc">}}</span><span class="st">');</span></span>
+<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a><span class="st">        function storeState(key, value) {__VR__[key] = value; localStorage.setItem(vr, JSON.stringify(__VR__));}</span></span>
+<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a><span class="st">        function getState(key){return __VR__[key];}</span></span>
+<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a><span class="st">        function removeState(key) {delete  __VR__[key]; localStorage.setItem(key, JSON.stringify(__VR__)); }</span></span>
+<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a><span class="st">        function setTheme(color,fn=null, ...args) {</span></span>
+<span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a><span class="st">            if (color === null || color === undefined) {return;}</span></span>
+<span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a><span class="st">            htmlElement.classList.remove(__VR__.theme);</span></span>
+<span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a><span class="st">            htmlElement.classList.add(color);</span></span>
+<span id="cb37-17"><a href="#cb37-17" aria-hidden="true" tabindex="-1"></a><span class="st">            storeState('theme', color);</span></span>
+<span id="cb37-18"><a href="#cb37-18" aria-hidden="true" tabindex="-1"></a><span class="st">            if (typeof fn === 'function') {fn(...args);}</span></span>
+<span id="cb37-19"><a href="#cb37-19" aria-hidden="true" tabindex="-1"></a><span class="st">        }</span></span>
+<span id="cb37-20"><a href="#cb37-20" aria-hidden="true" tabindex="-1"></a><span class="st">    """</span>)</span>
+<span id="cb37-21"><a href="#cb37-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-22"><a href="#cb37-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> ntf(<span class="st">'w+'</span>, suffix<span class="op">=</span><span class="st">'.js'</span>, encoding<span class="op">=</span><span class="st">'utf-8'</span>) <span class="im">as</span> f:</span>
+<span id="cb37-23"><a href="#cb37-23" aria-hidden="true" tabindex="-1"></a>        f.write(js_code)</span>
+<span id="cb37-24"><a href="#cb37-24" aria-hidden="true" tabindex="-1"></a>        f.flush()  <span class="co"># Ensure content is readable by file_parse from disk</span></span>
+<span id="cb37-25"><a href="#cb37-25" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(file_parse(Path(f.name)))</span>
+<span id="cb37-26"><a href="#cb37-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-27"><a href="#cb37-27" aria-hidden="true" tabindex="-1"></a>parse_js()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[{'content': 'function storeState(key, value) {...}', 'metadata': {'path': '/tmp/tmp9wvads4o.js', 'uploaded_at': 1788044982.810499, 'lang': '.js'}}, {'content': 'function getState(key) {...}', 'metadata': {'path': '/tmp/tmp9wvads4o.js', 'uploaded_at': 1788044982.810499, 'lang': '.js'}}, {'content': 'function removeState(key) {...}', 'metadata': {'path': '/tmp/tmp9wvads4o.js', 'uploaded_at': 1788044982.810499, 'lang': '.js'}}, {'content': 'function setTheme(color,fn=null, ...args) {...}', 'metadata': {'path': '/tmp/tmp9wvads4o.js', 'uploaded_at': 1788044982.810499, 'lang': '.js'}}]</code></pre>
+</div>
+</div>
+<div id="2fb37c16" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.815519+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.825118+00:00&quot;,&quot;total&quot;:0.009603523999999197}}" data-execution_count="35">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L276" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pkg2files" class="level3">
+<h3 class="anchored" data-anchor-id="pkg2files">pkg2files</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pkg2files(</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>    pkg:<span class="bu">str</span>, <span class="co"># package name</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>    skip_file_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:setup</span><span class="ch">\\</span><span class="st">.py|conftest</span><span class="ch">\\</span><span class="st">.py)$'</span>, <span class="co"># regex to skip files</span></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>    skip_folder_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:tests?|examples?|docs?|build|dist|_proc|_docs|_site|_site_libs|node_modules|__pycache__)$'</span>, <span class="co"># regex to skip folders</span></span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>    func:<span class="bu">type</span><span class="op">=</span>Path, <span class="co"># function to apply to file paths (e.g. Path or str)</span></span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a>    path:pathlib.Path <span class="op">|</span> <span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, <span class="co"># path to start searching</span></span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a>    recursive:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># search subfolders</span></span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>    maxdepth:<span class="bu">int</span><span class="op">=</span><span class="va">None</span>, <span class="co"># max depth to descend (1=just immediate contents; None=unlimited)</span></span>
+<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a>    symlinks:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># follow symlinks?</span></span>
+<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a>    file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching glob</span></span>
+<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a>    file_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching regex</span></span>
+<span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a>    folder_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only enter folders matching regex</span></span>
+<span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a>    skip_file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Skip files matching glob</span></span>
+<span id="cb39-14"><a href="#cb39-14" aria-hidden="true" tabindex="-1"></a>    ret_folders:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># return folders, not just files</span></span>
+<span id="cb39-15"><a href="#cb39-15" aria-hidden="true" tabindex="-1"></a>    sort:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># sort files by name within each folder</span></span>
+<span id="cb39-16"><a href="#cb39-16" aria-hidden="true" tabindex="-1"></a>    types:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of ext types from: py, js, java, c, cpp, rb, r, ex, sh, web, doc, cfg</span></span>
+<span id="cb39-17"><a href="#cb39-17" aria-hidden="true" tabindex="-1"></a>    exts:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of exts to include</span></span>
+<span id="cb39-18"><a href="#cb39-18" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L: <span class="co"># additional args to pass to globtastic</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return list of python files in a package excluding tests and setup files.</em></p>
+</section>
+</div>
+<div id="58433a5ea8d5e76f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>pkg2files(<span class="st">'fastlite'</span>, exts<span class="op">=</span>code_exts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/_modidx.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/kw.py')]</code></pre>
+</div>
+</div>
+<div id="942d439aea5930ad" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>pkg2files(<span class="st">'protobuf'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/_upb/_message.abi3.so'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/any.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/any_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/api_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/compiler/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/compiler/plugin_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/descriptor.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/descriptor_database.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/descriptor_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/descriptor_pool.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/duration.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/duration_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/empty_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/field_mask_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/api_implementation.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/builder.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/containers.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/decoder.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/encoder.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/enum_type_wrapper.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/extension_dict.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/field_mask.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/message_benchmark.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/message_listener.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/python_edition_defaults.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/python_message.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/testing_refleaks.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/type_checkers.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/well_known_types.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/internal/wire_format.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/json_enumvalue_options_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/json_format.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/json_options_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/message.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/message_factory.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/proto.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/proto_builder.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/proto_json.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/proto_text.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/pyext/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/pyext/cpp_message.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/reflection.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/runtime_version.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/service_reflection.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/source_context_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/struct_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/symbol_database.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/testdata/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/text_encoding.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/text_format.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/timestamp.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/timestamp_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/type_pb2.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/unknown_fields.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/util/__init__.py'), Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/google/protobuf/wrappers_pb2.py')]</code></pre>
+</div>
+</div>
+<div id="bca74e6a" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.827089+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.835683+00:00&quot;,&quot;total&quot;:0.008598208999984536}}" data-execution_count="37">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L292" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="dir2files" class="level3">
+<h3 class="anchored" data-anchor-id="dir2files">dir2files</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> dir2files(</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">dir</span>:<span class="bu">str</span>, <span class="co"># package name</span></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>    skip_file_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:setup</span><span class="ch">\\</span><span class="st">.py|conftest</span><span class="ch">\\</span><span class="st">.py)$'</span>, <span class="co"># regex to skip files</span></span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>    skip_folder_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:tests?|examples?|docs?|build|dist|_proc|_docs|_site|_site_libs|node_modules|__pycache__)$'</span>, <span class="co"># regex to skip folders</span></span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>    func:<span class="bu">type</span><span class="op">=</span>Path, <span class="co"># function to apply to file paths (e.g. Path or str)</span></span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>    path:pathlib.Path <span class="op">|</span> <span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, <span class="co"># path to start searching</span></span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>    recursive:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># search subfolders</span></span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a>    maxdepth:<span class="bu">int</span><span class="op">=</span><span class="va">None</span>, <span class="co"># max depth to descend (1=just immediate contents; None=unlimited)</span></span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>    symlinks:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># follow symlinks?</span></span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>    file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching glob</span></span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>    file_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching regex</span></span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>    folder_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only enter folders matching regex</span></span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a>    skip_file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Skip files matching glob</span></span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a>    ret_folders:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># return folders, not just files</span></span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a>    sort:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># sort files by name within each folder</span></span>
+<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a>    types:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of ext types from: py, js, java, c, cpp, rb, r, ex, sh, web, doc, cfg</span></span>
+<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a>    exts:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of exts to include</span></span>
+<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L: <span class="co"># additional args to pass to globtastic</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return list of python files in a package excluding tests and setup files.</em></p>
+</section>
+</div>
+<div id="eaaa956598822b69" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>dir2files(repo_root(), exts<span class="op">=</span>code_exts.split(<span class="st">','</span>), skip_file_glob<span class="op">=</span><span class="st">'*.ipynb'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[Path('/Users/71293/code/litesearch/evals/__init__.py'), Path('/Users/71293/code/litesearch/evals/boldhead.py'), Path('/Users/71293/code/litesearch/evals/build.py'), Path('/Users/71293/code/litesearch/evals/cluster_eval.py'), Path('/Users/71293/code/litesearch/evals/corpus.py'), Path('/Users/71293/code/litesearch/evals/decide.py'), Path('/Users/71293/code/litesearch/evals/encoders.py'), Path('/Users/71293/code/litesearch/evals/extractor_eval.py'), Path('/Users/71293/code/litesearch/evals/extractor_sig.py'), Path('/Users/71293/code/litesearch/evals/fastlate.py'), Path('/Users/71293/code/litesearch/evals/fetch_corpus.py'), Path('/Users/71293/code/litesearch/evals/ingest_bench.py'), Path('/Users/71293/code/litesearch/evals/latechunk.py'), Path('/Users/71293/code/litesearch/evals/multihop.py'), Path('/Users/71293/code/litesearch/evals/queries.py'), Path('/Users/71293/code/litesearch/evals/refindex.py'), Path('/Users/71293/code/litesearch/evals/report.py'), Path('/Users/71293/code/litesearch/evals/run.py'), Path('/Users/71293/code/litesearch/evals/score.py'), Path('/Users/71293/code/litesearch/evals/tables.py'), Path('/Users/71293/code/litesearch/litesearch/__init__.py'), Path('/Users/71293/code/litesearch/litesearch/_modidx.py'), Path('/Users/71293/code/litesearch/litesearch/api.py'), Path('/Users/71293/code/litesearch/litesearch/cli.py'), Path('/Users/71293/code/litesearch/litesearch/core.py'), Path('/Users/71293/code/litesearch/litesearch/data.py'), Path('/Users/71293/code/litesearch/litesearch/postfix.py'), Path('/Users/71293/code/litesearch/litesearch/quality.py'), Path('/Users/71293/code/litesearch/litesearch/sanskrit.py'), Path('/Users/71293/code/litesearch/litesearch/topics.py'), Path('/Users/71293/code/litesearch/litesearch/tree.py'), Path('/Users/71293/code/litesearch/litesearch/utils.py')]</code></pre>
+</div>
+</div>
+<div id="4a7fc3a6" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.846191+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.856918+00:00&quot;,&quot;total&quot;:0.010731568000011293}}" data-execution_count="40">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L329" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="dir2chunks" class="level3">
+<h3 class="anchored" data-anchor-id="dir2chunks">dir2chunks</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> dir2chunks(</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">dir</span>:<span class="bu">str</span>, <span class="co"># directory path</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>    imports:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include import statements as code chunks</span></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>    assigns:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include top-level assignments as code chunks</span></span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>    n_workers:<span class="bu">int</span><span class="op">=</span><span class="va">None</span>, <span class="co"># parse workers; 0 is serial, None picks by file count</span></span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>    threadpool:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># threads rather than processes (see `_parse_files`)</span></span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>    skip_file_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:setup</span><span class="ch">\\</span><span class="st">.py|conftest</span><span class="ch">\\</span><span class="st">.py)$'</span>, <span class="co"># regex to skip files</span></span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a>    skip_folder_re:<span class="bu">str</span><span class="op">=</span><span class="st">'^[.]|^(?:tests?|examples?|docs?|build|dist|_proc|_docs|_site|_site_libs|node_modules|__pycache__)$'</span>, <span class="co"># regex to skip folders</span></span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a>    func:<span class="bu">type</span><span class="op">=</span>Path, <span class="co"># function to apply to file paths (e.g. Path or str)</span></span>
+<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a>    path:pathlib.Path <span class="op">|</span> <span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, <span class="co"># path to start searching</span></span>
+<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a>    recursive:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># search subfolders</span></span>
+<span id="cb47-12"><a href="#cb47-12" aria-hidden="true" tabindex="-1"></a>    maxdepth:<span class="bu">int</span><span class="op">=</span><span class="va">None</span>, <span class="co"># max depth to descend (1=just immediate contents; None=unlimited)</span></span>
+<span id="cb47-13"><a href="#cb47-13" aria-hidden="true" tabindex="-1"></a>    symlinks:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># follow symlinks?</span></span>
+<span id="cb47-14"><a href="#cb47-14" aria-hidden="true" tabindex="-1"></a>    file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching glob</span></span>
+<span id="cb47-15"><a href="#cb47-15" aria-hidden="true" tabindex="-1"></a>    file_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only include files matching regex</span></span>
+<span id="cb47-16"><a href="#cb47-16" aria-hidden="true" tabindex="-1"></a>    folder_re:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Only enter folders matching regex</span></span>
+<span id="cb47-17"><a href="#cb47-17" aria-hidden="true" tabindex="-1"></a>    skip_file_glob:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Skip files matching glob</span></span>
+<span id="cb47-18"><a href="#cb47-18" aria-hidden="true" tabindex="-1"></a>    ret_folders:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># return folders, not just files</span></span>
+<span id="cb47-19"><a href="#cb47-19" aria-hidden="true" tabindex="-1"></a>    sort:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># sort files by name within each folder</span></span>
+<span id="cb47-20"><a href="#cb47-20" aria-hidden="true" tabindex="-1"></a>    types:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of ext types from: py, js, java, c, cpp, rb, r, ex, sh, web, doc, cfg</span></span>
+<span id="cb47-21"><a href="#cb47-21" aria-hidden="true" tabindex="-1"></a>    exts:<span class="bu">str</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list or comma-separated str of exts to include</span></span>
+<span id="cb47-22"><a href="#cb47-22" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L: <span class="co"># additional args to pass to dir2files</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return code chunks from a directory with extra metadata.</em></p>
+</section>
+</div>
+<div id="53fc573c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.857065+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.861987+00:00&quot;,&quot;total&quot;:0.004926079000000527}}" data-execution_count="41">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L316" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pkg2chunks" class="level3">
+<h3 class="anchored" data-anchor-id="pkg2chunks">pkg2chunks</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pkg2chunks(</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>    pkg:<span class="bu">str</span>, <span class="co"># package name</span></span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>    imports:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># include import statements as code chunks</span></span>
+<span id="cb48-4"><a href="#cb48-4" aria-hidden="true" tabindex="-1"></a>    n_workers:<span class="bu">int</span><span class="op">=</span><span class="va">None</span>, <span class="co"># parse workers; 0 is serial, None picks by file count</span></span>
+<span id="cb48-5"><a href="#cb48-5" aria-hidden="true" tabindex="-1"></a>    threadpool:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># threads rather than processes (see `_parse_files`)</span></span>
+<span id="cb48-6"><a href="#cb48-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kw</span>
+<span id="cb48-7"><a href="#cb48-7" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L: <span class="co"># additional args to pass to pkg2files</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return code chunks from a package with extra metadata.</em></p>
+</section>
+</div>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a> can be used to extract code chunks from an entire package installed in your environment.</p>
+<div id="f386447d1aa842fe" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>pkg2chunks(<span class="st">'fastlite'</span>).<span class="bu">filter</span>(<span class="kw">lambda</span> d: d[<span class="st">'metadata'</span>][<span class="st">'type'</span>]<span class="op">==</span><span class="st">'FunctionDef'</span>)[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{'content': 'def t(self:Database): return _TablesGetter(self)',
+ 'metadata': {'path': '/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/fastlite/core.py',
+  'uploaded_at': 1773452878.5692947,
+  'name': 't',
+  'lang': '.py',
+  'type': 'FunctionDef',
+  'lineno': 44,
+  'end_lineno': 44,
+  'package': 'fastlite',
+  'version': '0.2.4'}}</code></pre>
+</div>
+</div>
+<div id="553cafe382ad432b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>pkg2files(<span class="st">'pdf_oxide'</span>)[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>Path('/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/pdf_oxide/__init__.py')</code></pre>
+</div>
+</div>
+<div id="9cf3a608e6d1bbfc" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>dir2chunks(<span class="st">'../nbs'</span>, types<span class="op">=</span><span class="st">'ipynb'</span>)[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{'content': '---\ndescription: Fixes for post import issues\noutput-file: postfix.html\ntitle: postfix\n\n---\n\n',
+ 'metadata': {'path': '../nbs/00_postfix.ipynb',
+  'uploaded_at': 1773099020.1621501,
+  'lang': '.ipynb',
+  'type': 'raw',
+  'dir': '../nbs'}}</code></pre>
+</div>
+</div>
+<div id="765852ad" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.865916+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.872336+00:00&quot;,&quot;total&quot;:0.006424705000000586}}" data-execution_count="43">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L343" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="installed_packages" class="level3">
+<h3 class="anchored" data-anchor-id="installed_packages">installed_packages</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb55"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> installed_packages(</span>
+<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a>    nms:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>, <span class="co"># list of package names</span></span>
+<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a>    pyproject:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># restrict to pyproject.toml dependencies</span></span>
+<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a>    xtras:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># include extra groups as csv from pyproject.toml</span></span>
+<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return list of installed packages. If nms is provided, return only those packages.</em></p>
+</section>
+</div>
+<p>Get list of installed packages in your environment using <a href="https://Karthik777.github.io/litesearch/data.html#installed_packages"><code>installed_packages</code></a>. If you pass a list of package names, it only returns them if they exist in your environment.</p>
+<div id="38a98c7c18b32d99" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>installed_packages([<span class="st">'fstlite'</span>], pyproject<span class="op">=</span><span class="va">True</span>, xtras<span class="op">=</span><span class="st">'foo'</span>) <span class="co"># non existent package</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['pdflite', 'chonkie', 'pillow', 'model2vec', 'tokenizers', 'pdf_oxide', 'fastlite', 'usearch', 'codesigs']</code></pre>
+</div>
+</div>
+<div id="fb22450eb554de3a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>installed_packages([<span class="st">'fastlite'</span>]) <span class="co"># existing package</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['fastlite']</code></pre>
+</div>
+</div>
+<div id="794cbce32a565e13" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>installed_packages(<span class="st">'rishi[all]'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['rishi']</code></pre>
+</div>
+</div>
+<div id="a2760a0b3e86a0b1" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>_ls <span class="op">=</span> spec(<span class="st">'litesearch'</span>)</span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> _ls <span class="kw">and</span> spec(<span class="st">'litesearch[sanskrit]'</span>)</span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> spec(<span class="st">'litesearch[sanskrit]'</span>).name <span class="op">==</span> _ls.name</span>
+<span id="cb62-4"><a href="#cb62-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'litesearch'</span> <span class="kw">in</span> installed_packages([<span class="st">'litesearch[sanskrit]'</span>])</span>
+<span id="cb62-5"><a href="#cb62-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb62-6"><a href="#cb62-6" aria-hidden="true" tabindex="-1"></a>_rishi <span class="op">=</span> spec(<span class="st">'rishi'</span>)</span>
+<span id="cb62-7"><a href="#cb62-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> _rishi:</span>
+<span id="cb62-8"><a href="#cb62-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> spec(<span class="st">'rishi[all]'</span>)</span>
+<span id="cb62-9"><a href="#cb62-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> spec(<span class="st">'rishi[all]'</span>).name <span class="op">==</span> _rishi.name</span>
+<span id="cb62-10"><a href="#cb62-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">'rishi'</span> <span class="kw">in</span> installed_packages([<span class="st">'rishi[all]'</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="aa37db254f98cb71" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>installed_packages()[:<span class="dv">10</span>] <span class="co"># all installed packages that are not stdlib</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['shellingham', 'nbdev', 'python-fastllm', 'tornado', 'selectolax', 'threadpoolctl', 'apswutils', 'uri-template', 'rfc3339-validator', 'pexpect']</code></pre>
+</div>
+</div>
+<div id="d99f1c4d52020dce" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a>installed_packages(pyproject<span class="op">=</span><span class="va">True</span>) <span class="co"># all installed packages that are dependencies in pyproject.toml</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['chonkie', 'codesigs', 'fastlite', 'model2vec', 'tokenizers', 'pdf_oxide', 'pdflite', 'pillow', 'usearch']</code></pre>
+</div>
+</div>
+<div id="28ea8d947a772e9a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a>installed_packages(pyproject<span class="op">=</span><span class="va">True</span>, xtras<span class="op">=</span><span class="st">'dev'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['chonkie', 'codesigs', 'fastlite', 'model2vec', 'tokenizers', 'pdf_oxide', 'pdflite', 'pillow', 'usearch', 'nbdev', 'jupyterlab', 'jupyterlab-quarto', 'notebook', 'FlashRank', 'onnx', 'onnxruntime', 'model2vec', 'datasets', 'rishi', 'koshas', 'fastprogress', 'selectolax', 'pyperclip']</code></pre>
+</div>
+</div>
+<p>Query Preprocessing utilities</p>
+</section>
+<section id="clean" class="level4">
+<h4 class="anchored" data-anchor-id="clean"><a href="https://Karthik777.github.io/litesearch/data.html#clean"><code>clean</code></a></h4>
+<p>Clean the query by removing * and returning None for empty queries.</p>
+<p><code>_</code> is deliberately kept.</p>
+</section>
+<section id="add_wc" class="level4">
+<h4 class="anchored"><a href="https://Karthik777.github.io/litesearch/data.html#add_wc"><code>add_wc</code></a></h4>
+<p>Add wild card * to each word in the query.<a href="https://Karthik777.github.io/litesearch/data.html#kw"><code>kw</code></a> uses UAX#29 segmentation, which keeps</p>
+<p>the apostrophe inside <code>pathfinder's</code>,</p>
+<div id="20ab8d5f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.877666+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.882297+00:00&quot;,&quot;total&quot;:0.004634955999989643}}" data-execution_count="45">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L402" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pre" class="level3">
+<h3 class="anchored" data-anchor-id="pre">pre</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb69"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pre(</span>
+<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a>    q:<span class="bu">str</span>, <span class="co"># query to be passed for fts search</span></span>
+<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a>    wc:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># add wild card to each word</span></span>
+<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a>    wide:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># widen the query with OR operator</span></span>
+<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a>    extract_kw:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># extract keywords from the query</span></span>
+<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a>    pattern:<span class="bu">str</span><span class="op">=</span><span class="st">'[*,"</span><span class="ch">\\</span><span class="st">(</span><span class="ch">\\</span><span class="st">)</span><span class="ch">\\</span><span class="st">^]|-(?=</span><span class="ch">\\</span><span class="st">S)'</span>, <span class="co"># regex pattern to use to replace with space</span></span>
+<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Preprocess the query for fts search.</em></p>
+</section>
+</div>
+<div id="9aaccda9" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.882428+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.887034+00:00&quot;,&quot;total&quot;:0.0046102700000005825}}" data-execution_count="46">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L392" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="kw" class="level3">
+<h3 class="anchored" data-anchor-id="kw">kw</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb70"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> kw(</span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>    q:<span class="bu">str</span>, <span class="co"># query to be passed for fts search</span></span>
+<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a>    stop:<span class="bu">set</span><span class="op">=</span><span class="va">None</span>, <span class="co"># stopwords to drop (defaults to _QSTOP)</span></span>
+<span id="cb70-4"><a href="#cb70-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Query keywords by UAX#29 word segmentation (apsw), minus stopwords.</em></p>
+</section>
+</div>
+<div id="2ec2e830" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.887163+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.891219+00:00&quot;,&quot;total&quot;:0.004060644999981378}}" data-execution_count="47">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L382" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="mk_wider" class="level3">
+<h3 class="anchored" data-anchor-id="mk_wider">mk_wider</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb71"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> mk_wider(</span>
+<span id="cb71-2"><a href="#cb71-2" aria-hidden="true" tabindex="-1"></a>    q:<span class="bu">str</span>, <span class="co"># query to be passed for fts search</span></span>
+<span id="cb71-3"><a href="#cb71-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Widen the query by joining words with OR operator.</em></p>
+</section>
+</div>
+<div id="6a9d798d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.891351+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.895781+00:00&quot;,&quot;total&quot;:0.0044343010000034155}}" data-execution_count="48">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L376" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="add_wc-1" class="level3">
+<h3 class="anchored" data-anchor-id="add_wc-1">add_wc</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb72"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> add_wc(</span>
+<span id="cb72-2"><a href="#cb72-2" aria-hidden="true" tabindex="-1"></a>    q:<span class="bu">str</span>, <span class="co"># query to be passed for fts search</span></span>
+<span id="cb72-3"><a href="#cb72-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Add wild card </em> to each word in the query.<a href="https://Karthik777.github.io/litesearch/data.html#kw"><code>kw</code></a> uses UAX#29 segmentation, which keeps*</p>
+</section>
+</div>
+<div id="6fdf7d2b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.895914+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.900059+00:00&quot;,&quot;total&quot;:0.004149130000001833}}" data-execution_count="49">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L367" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="clean-1" class="level3">
+<h3 class="anchored" data-anchor-id="clean-1">clean</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb73"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> clean(</span>
+<span id="cb73-2"><a href="#cb73-2" aria-hidden="true" tabindex="-1"></a>    q:<span class="bu">str</span>, <span class="co"># query to be passed for fts search</span></span>
+<span id="cb73-3"><a href="#cb73-3" aria-hidden="true" tabindex="-1"></a>    pattern:<span class="bu">str</span><span class="op">=</span><span class="st">'[*,"</span><span class="ch">\\</span><span class="st">(</span><span class="ch">\\</span><span class="st">)</span><span class="ch">\\</span><span class="st">^]|-(?=</span><span class="ch">\\</span><span class="st">S)'</span>, <span class="co"># regex pattern to use to replace with space</span></span>
+<span id="cb73-4"><a href="#cb73-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Clean the query by removing </em> and returning None for empty queries.*</p>
+</section>
+</div>
+<p>You can clean queries passed into fts search using <a href="https://Karthik777.github.io/litesearch/data.html#clean"><code>clean</code></a>, add wild cards using <a href="https://Karthik777.github.io/litesearch/data.html#add_wc"><code>add_wc</code></a>, widen the query using <a href="https://Karthik777.github.io/litesearch/data.html#mk_wider"><code>mk_wider</code></a> and extract keywords using <a href="https://Karthik777.github.io/litesearch/data.html#kw"><code>kw</code></a>. You can combine all these using <a href="https://Karthik777.github.io/litesearch/data.html#pre"><code>pre</code></a> function.</p>
+<div id="358249a4fc64206b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb74"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> <span class="st">'This is a sample query'</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'preprocessed q with defaults: `</span><span class="sc">%s</span><span class="st">`'</span> <span class="op">%</span>pre(q))</span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'keywords extracted: `</span><span class="sc">%s</span><span class="st">`'</span> <span class="op">%</span>pre(q, wc<span class="op">=</span><span class="va">False</span>, wide<span class="op">=</span><span class="va">False</span>))</span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'q with wild card: `</span><span class="sc">%s</span><span class="st">`'</span> <span class="op">%</span>pre(q, extract_kw<span class="op">=</span><span class="va">False</span>, wide<span class="op">=</span><span class="va">False</span>, wc<span class="op">=</span><span class="va">True</span>))</span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'remove _ : `</span><span class="sc">%s</span><span class="st">`'</span> <span class="op">%</span>pre(<span class="st">'This_is_a_query_with_underscores with_uv'</span>, extract_kw<span class="op">=</span><span class="va">False</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>preprocessed q with defaults: `sample* OR query*`
+keywords extracted: `sample query`
+q with wild card: `This* is* a* sample* query*`
+remove _ : `This_is_a_query_with_underscores* OR with_uv*`</code></pre>
+</div>
+</div>
+<div id="debafa7b6ddab314" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.900767+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.903448+00:00&quot;,&quot;total&quot;:0.002685930000012604}}" data-execution_count="50">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb76"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="co"># A possessive used to make `pre` emit invalid FTS5, so `search` raised instead of searching.</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a><span class="co"># `pathfinder's*` is a syntax error; `"pathfinder's"*` is a prefix query on a string.</span></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> pre(<span class="st">"The Pathfinder's transition"</span>) <span class="op">==</span> <span class="st">'"pathfinder</span><span class="ch">\'</span><span class="st">s"* OR transition*'</span></span>
+<span id="cb76-4"><a href="#cb76-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-5"><a href="#cb76-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> apsw</span>
+<span id="cb76-6"><a href="#cb76-6" aria-hidden="true" tabindex="-1"></a>_c <span class="op">=</span> apsw.Connection(<span class="st">':memory:'</span>)</span>
+<span id="cb76-7"><a href="#cb76-7" aria-hidden="true" tabindex="-1"></a>_c.execute(<span class="st">"create virtual table t using fts5(content)"</span>)</span>
+<span id="cb76-8"><a href="#cb76-8" aria-hidden="true" tabindex="-1"></a>_c.execute(<span class="st">"insert into t values(?)"</span>, (<span class="st">"The Pathfinder's transition activities"</span>,))</span>
+<span id="cb76-9"><a href="#cb76-9" aria-hidden="true" tabindex="-1"></a>_c.execute(<span class="st">"insert into t values(?)"</span>, (<span class="st">'something else entirely'</span>,))</span>
+<span id="cb76-10"><a href="#cb76-10" aria-hidden="true" tabindex="-1"></a>_q <span class="op">=</span> pre(<span class="st">"Pathfinder's activities"</span>)</span>
+<span id="cb76-11"><a href="#cb76-11" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(<span class="bu">list</span>(_c.execute(<span class="st">"select content from t where t match ?"</span>, (_q,)))) <span class="op">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="image-pdf" class="level2">
+<h2 class="anchored" data-anchor-id="image-pdf">Image → PDF</h2>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#img2png"><code>img2png</code></a> normalises any image input (PIL, bytes, or path) to RGB PNG bytes. <a href="https://Karthik777.github.io/litesearch/data.html#png_det"><code>png_det</code></a> parses the PNG header and IDAT stream. <a href="https://Karthik777.github.io/litesearch/data.html#images_to_pdf"><code>images_to_pdf</code></a> wraps a list of images into a conformant multi-page image-only PDF without any external dependencies.</p>
+<blockquote class="blockquote">
+<p>Note: <code>pdf_oxide.Pdf.from_image*</code> methods are broken in 0.3.x (produce an empty 1.3 KB shell). These functions build a conformant PDF directly from the PNG spec using FlateDecode + Predictor 15.</p>
+</blockquote>
+<div id="daf06c14" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.911957+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.918637+00:00&quot;,&quot;total&quot;:0.006683586999997715}}" data-execution_count="52">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L440" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="images_to_pdf" class="level3">
+<h3 class="anchored" data-anchor-id="images_to_pdf">images_to_pdf</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb77"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> images_to_pdf(</span>
+<span id="cb77-2"><a href="#cb77-2" aria-hidden="true" tabindex="-1"></a>    imgs, <span class="co"># list of PIL Images, bytes, or file paths</span></span>
+<span id="cb77-3"><a href="#cb77-3" aria-hidden="true" tabindex="-1"></a>    output:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># path to save, or None to return bytes</span></span>
+<span id="cb77-4"><a href="#cb77-4" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">bytes</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Convert a list of images into a multi-page image-only PDF (one image per page).</em></p>
+</section>
+</div>
+<div id="7e11f405" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.918766+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.924858+00:00&quot;,&quot;total&quot;:0.006096903000013754}}" data-execution_count="53">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L428" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="png_det" class="level3">
+<h3 class="anchored" data-anchor-id="png_det">png_det</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb78"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> png_det(</span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a>    png:<span class="bu">bytes</span></span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return (width, height, concatenated IDAT bytes) from a PNG.</em></p>
+</section>
+</div>
+<div id="8e2e062e" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.924998+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.929826+00:00&quot;,&quot;total&quot;:0.004831192000011697}}" data-execution_count="54">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L418" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="img2png" class="level3">
+<h3 class="anchored" data-anchor-id="img2png">img2png</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb79"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> img2png(</span>
+<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a>    img</span>
+<span id="cb79-3"><a href="#cb79-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">bytes</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Normalise image input (PIL Image / bytes / path) to PNG bytes as RGB.</em></p>
+</section>
+</div>
+<div id="b29b3ebd9d3e8332" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.929951+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.930723+00:00&quot;,&quot;total&quot;:0.0007750659999885556}}" data-execution_count="55">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tempfile, os</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="8gfsamf1fjo" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb81"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="co"># find PDF relative to nbs/ (normal Jupyter) or project root (nbdev_test)</span></span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a>_pdf <span class="op">=</span> <span class="bu">next</span>((p <span class="cf">for</span> p <span class="kw">in</span> [<span class="st">'pdfs/attention_is_all_you_need.pdf'</span>, <span class="st">'nbs/pdfs/attention_is_all_you_need.pdf'</span>] <span class="cf">if</span> Path(p).exists()), <span class="va">None</span>)</span>
+<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> _pdf, <span class="st">'attention_is_all_you_need.pdf not found'</span></span>
+<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a>arxiv <span class="op">=</span> PdfDocument(_pdf)</span>
+<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-7"><a href="#cb81-7" aria-hidden="true" tabindex="-1"></a><span class="co"># pdf_texts and pdf_markdown</span></span>
+<span id="cb81-8"><a href="#cb81-8" aria-hidden="true" tabindex="-1"></a>md_pages <span class="op">=</span> arxiv.pdf_markdown()</span>
+<span id="cb81-9"><a href="#cb81-9" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(md_pages) <span class="op">==</span> arxiv.page_count(), <span class="ss">f'Expected </span><span class="sc">{</span>arxiv<span class="sc">.</span>page_count()<span class="sc">}</span><span class="ss"> pages, got </span><span class="sc">{</span><span class="bu">len</span>(md_pages)<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb81-10"><a href="#cb81-10" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">any</span>(<span class="st">'attention'</span> <span class="kw">in</span> p.lower() <span class="cf">for</span> p <span class="kw">in</span> md_pages)</span>
+<span id="cb81-11"><a href="#cb81-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-12"><a href="#cb81-12" aria-hidden="true" tabindex="-1"></a>txt_pages <span class="op">=</span> arxiv.pdf_texts()</span>
+<span id="cb81-13"><a href="#cb81-13" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(txt_pages) <span class="op">==</span> arxiv.page_count()</span>
+<span id="cb81-14"><a href="#cb81-14" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">any</span>(<span class="st">'attention'</span> <span class="kw">in</span> t.lower() <span class="cf">for</span> t <span class="kw">in</span> txt_pages)</span>
+<span id="cb81-15"><a href="#cb81-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-16"><a href="#cb81-16" aria-hidden="true" tabindex="-1"></a>links <span class="op">=</span> arxiv.pdf_links()</span>
+<span id="cb81-17"><a href="#cb81-17" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(links, L)</span>
+<span id="cb81-18"><a href="#cb81-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'pdf_texts: </span><span class="sc">{</span><span class="bu">len</span>(txt_pages)<span class="sc">}</span><span class="ss"> pages, pdf_markdown: </span><span class="sc">{</span><span class="bu">len</span>(md_pages)<span class="sc">}</span><span class="ss"> pages, pdf_links: </span><span class="sc">{</span><span class="bu">len</span>(links)<span class="sc">}</span><span class="ss"> links'</span>)</span>
+<span id="cb81-19"><a href="#cb81-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-20"><a href="#cb81-20" aria-hidden="true" tabindex="-1"></a><span class="co"># images_to_pdf: build synthetic scanned PDF from a real page image</span></span>
+<span id="cb81-21"><a href="#cb81-21" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> tempfile.TemporaryDirectory() <span class="im">as</span> tmp:</span>
+<span id="cb81-22"><a href="#cb81-22" aria-hidden="true" tabindex="-1"></a>    arxiv.to_markdown(<span class="dv">2</span>, include_images<span class="op">=</span><span class="va">True</span>, embed_images<span class="op">=</span><span class="va">False</span>, image_output_dir<span class="op">=</span>tmp)</span>
+<span id="cb81-23"><a href="#cb81-23" aria-hidden="true" tabindex="-1"></a>    img_bytes <span class="op">=</span> <span class="bu">open</span>(os.path.join(tmp, os.listdir(tmp)[<span class="dv">0</span>]), <span class="st">'rb'</span>).read()</span>
+<span id="cb81-24"><a href="#cb81-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-25"><a href="#cb81-25" aria-hidden="true" tabindex="-1"></a>_scanned <span class="op">=</span> Path(_pdf).parent<span class="op">/</span><span class="st">'scanned_test.pdf'</span></span>
+<span id="cb81-26"><a href="#cb81-26" aria-hidden="true" tabindex="-1"></a>images_to_pdf([img_bytes], output<span class="op">=</span><span class="bu">str</span>(_scanned))</span>
+<span id="cb81-27"><a href="#cb81-27" aria-hidden="true" tabindex="-1"></a>scanned <span class="op">=</span> PdfDocument(<span class="bu">str</span>(_scanned))</span>
+<span id="cb81-28"><a href="#cb81-28" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> scanned.extract_text(<span class="dv">0</span>).strip() <span class="op">==</span> <span class="st">''</span>, <span class="st">'scanned PDF should have no native text'</span></span>
+<span id="cb81-29"><a href="#cb81-29" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> _scanned.stat().st_size <span class="op">&gt;</span> <span class="dv">100_000</span>, <span class="st">'scanned PDF should contain the embedded image'</span></span>
+<span id="cb81-30"><a href="#cb81-30" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'images_to_pdf test passed:'</span>, _scanned)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream
+Dictionary used where Stream expected, treating as empty stream</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>pdf_texts: 15 pages, pdf_markdown: 15 pages, pdf_links: 18 links
+images_to_pdf test passed: pdfs/scanned_test.pdf</code></pre>
+</div>
+</div>
+<div id="8ff32cf0" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.934312+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.939906+00:00&quot;,&quot;total&quot;:0.005598422999980812}}" data-execution_count="57">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/data.py#L470" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="mv_skill_md" class="level3">
+<h3 class="anchored" data-anchor-id="mv_skill_md">mv_skill_md</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb84"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> mv_skill_md(</span>
+<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="bu">dir</span>:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb84-3"><a href="#cb84-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="va">None</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Copy bundled SKILL.md to skill directories (.agents/, .claude/, .Codex/).</em></p>
+</section>
+</div>
+<div id="f6b5eb87" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-08-29T23:09:42.940452+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-08-29T23:09:42.945665+00:00&quot;,&quot;total&quot;:0.005216079999996737}}" data-execution_count="58">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb85"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tempfile, importlib.util <span class="im">as</span> _iu</span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path <span class="im">as</span> _Path</span>
+<span id="cb85-3"><a href="#cb85-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-4"><a href="#cb85-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Locate the installed litesearch package — works regardless of cwd</span></span>
+<span id="cb85-5"><a href="#cb85-5" aria-hidden="true" tabindex="-1"></a>_spec <span class="op">=</span> _iu.find_spec(<span class="st">'litesearch'</span>)</span>
+<span id="cb85-6"><a href="#cb85-6" aria-hidden="true" tabindex="-1"></a>skill_src <span class="op">=</span> _Path(_spec.submodule_search_locations[<span class="dv">0</span>]) <span class="op">/</span> <span class="st">'SKILL.md'</span></span>
+<span id="cb85-7"><a href="#cb85-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> skill_src.exists(), <span class="ss">f'SKILL.md not found at </span><span class="sc">{</span>skill_src<span class="sc">.</span>resolve()<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb85-8"><a href="#cb85-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-9"><a href="#cb85-9" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> tempfile.TemporaryDirectory() <span class="im">as</span> tmp:</span>
+<span id="cb85-10"><a href="#cb85-10" aria-hidden="true" tabindex="-1"></a>    tmp <span class="op">=</span> _Path(tmp)</span>
+<span id="cb85-11"><a href="#cb85-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> d <span class="kw">in</span> [<span class="st">'.agents'</span>, <span class="st">'.claude'</span>, <span class="st">'.Codex'</span>]:</span>
+<span id="cb85-12"><a href="#cb85-12" aria-hidden="true" tabindex="-1"></a>        dest <span class="op">=</span> tmp <span class="op">/</span> d <span class="op">/</span> <span class="st">'skills'</span> <span class="op">/</span> <span class="st">'litesearch'</span> <span class="op">/</span> <span class="st">'SKILL.md'</span></span>
+<span id="cb85-13"><a href="#cb85-13" aria-hidden="true" tabindex="-1"></a>        dest.parent.mkdir(parents<span class="op">=</span><span class="va">True</span>, exist_ok<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb85-14"><a href="#cb85-14" aria-hidden="true" tabindex="-1"></a>        dest.write_text(skill_src.read_text())</span>
+<span id="cb85-15"><a href="#cb85-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> d <span class="kw">in</span> [<span class="st">'.agents'</span>, <span class="st">'.claude'</span>, <span class="st">'.Codex'</span>]:</span>
+<span id="cb85-16"><a href="#cb85-16" aria-hidden="true" tabindex="-1"></a>        dest <span class="op">=</span> tmp <span class="op">/</span> d <span class="op">/</span> <span class="st">'skills'</span> <span class="op">/</span> <span class="st">'litesearch'</span> <span class="op">/</span> <span class="st">'SKILL.md'</span></span>
+<span id="cb85-17"><a href="#cb85-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> dest.exists(), <span class="ss">f'Missing: </span><span class="sc">{</span>dest<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb85-18"><a href="#cb85-18" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">'litesearch'</span> <span class="kw">in</span> dest.read_text()</span>
+<span id="cb85-19"><a href="#cb85-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'mv_skill_md install paths ok'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>mv_skill_md install paths ok</code></pre>
+</div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

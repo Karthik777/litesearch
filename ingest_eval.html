@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Where ingestion time goes, and what the 0.1.16 fixes changed">
+
+<title>ingestion performance – litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="ingestion performance – litesearch">
+<meta property="og:description" content="Where ingestion time goes, and what the 0.1.16 fixes changed">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="ingestion performance – litesearch">
+<meta name="twitter:description" content="Where ingestion time goes, and what the 0.1.16 fixes changed">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./ingest_eval.html">ingestion performance</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#what-this-measures" id="toc-what-this-measures" class="nav-link active" data-scroll-target="#what-this-measures">What this measures</a></li>
+  <li><a href="#the-headline" id="toc-the-headline" class="nav-link" data-scroll-target="#the-headline">The headline</a></li>
+  <li><a href="#document-ingestion-swept-by-corpus-size" id="toc-document-ingestion-swept-by-corpus-size" class="nav-link" data-scroll-target="#document-ingestion-swept-by-corpus-size">1. Document ingestion, swept by corpus size</a></li>
+  <li><a href="#writes-one-transaction-and-the-fts-triggers" id="toc-writes-one-transaction-and-the-fts-triggers" class="nav-link" data-scroll-target="#writes-one-transaction-and-the-fts-triggers">2. Writes: one transaction, and the FTS triggers</a></li>
+  <li><a href="#code-files" id="toc-code-files" class="nav-link" data-scroll-target="#code-files">3. Code files</a></li>
+  <li><a href="#pdfs" id="toc-pdfs" class="nav-link" data-scroll-target="#pdfs">4. PDFs</a></li>
+  <li><a href="#graph" id="toc-graph" class="nav-link" data-scroll-target="#graph">5. Graph</a></li>
+  <li><a href="#considered-and-set-aside-sharding" id="toc-considered-and-set-aside-sharding" class="nav-link" data-scroll-target="#considered-and-set-aside-sharding">Considered and set aside: sharding</a></li>
+  <li><a href="#what-is-still-open-at-10⁶" id="toc-what-is-still-open-at-10⁶" class="nav-link" data-scroll-target="#what-is-still-open-at-10⁶">What is still open at 10⁶</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="ingest_eval.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">ingestion performance</h1>
+</div>
+
+<div>
+  <div class="description">
+    Where ingestion time goes, and what the 0.1.16 fixes changed
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="what-this-measures" class="level3">
+<h3 class="anchored" data-anchor-id="what-this-measures">What this measures</h3>
+<p>The retrieval evals ask what litesearch finds. This one asks what it costs to put anything in: parsing, chunking, embedding, SQLite upserts, ANN index maintenance, graph extraction. It exists because a corpus of a million documents fails on the write side long before it fails on the read side, and nothing in the retrieval evals would have caught it.</p>
+<p>Everything here is driven by <code>evals/ingest_bench.py</code> and runs on the same <code>evals.corpus</code> genres the retrieval evals use, repartitioned into as many documents as a run needs. <a href="https://Karthik777.github.io/litesearch/utils.html#hash_embed"><code>hash_embed</code></a> stands in for an encoder so the numbers are litesearch’s own overhead rather than ONNX inference, pass <code>--encoder potion</code> to put a real model back in.</p>
+<p><strong>Read the exponent, not the throughput.</strong> Per-document cost is only a cost if it is constant. Every size sweep below reports the slope of log(time) on log(n): 1.0 is linear, and anything approaching 2.0 does not reach a million documents at any hardware budget. The single most important number in this notebook is that <code>add_dir</code> went from 1.72 to 0.91.</p>
+<p>Cells are <code>eval: false</code> because a full sweep takes tens of minutes. The recorded output of each is in the markdown beneath it, measured on 4 CPUs with SQLite in WAL mode.</p>
+<div id="c_cli" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># everything in this notebook, from the command line</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>python <span class="op">-</span>m evals.ingest_bench <span class="op">--</span><span class="bu">help</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="the-headline" class="level3">
+<h3 class="anchored" data-anchor-id="the-headline">The headline</h3>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th>before 0.1.16</th>
+<th>after</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>add_dir</code>, 400 markdown docs</td>
+<td>112.2s, exponent 1.72</td>
+<td><strong>9.2s, exponent 0.91</strong></td>
+<td>12.2x</td>
+</tr>
+<tr class="even">
+<td>code ingestion, 2,169 files</td>
+<td>190.4s</td>
+<td><strong>7.3s</strong></td>
+<td>26x</td>
+</tr>
+<tr class="odd">
+<td><a href="https://Karthik777.github.io/litesearch/core.html#process_content"><code>process_content</code></a></td>
+<td>469–527 rows/s</td>
+<td><strong>912 rows/s</strong></td>
+<td>1.8x</td>
+</tr>
+<tr class="even">
+<td><code>resolve_entities</code>, 8,487 entities</td>
+<td>13.3s, exponent 1.35</td>
+<td><strong>5.8s, exponent 1.08</strong></td>
+<td>2.3x</td>
+</tr>
+</tbody>
+</table>
+<p>The multipliers are the least interesting part. The exponents are the finding: ingest used to get slower per document as the corpus grew, and now it does not.</p>
+</section>
+<section id="document-ingestion-swept-by-corpus-size" class="level3">
+<h3 class="anchored" data-anchor-id="document-ingestion-swept-by-corpus-size">1. Document ingestion, swept by corpus size</h3>
+<p><code>add_doc</code> used to end with <code>rebuild_index()</code>, which reads every embedding blob in the store and reconstructs the whole HNSW graph. Per document that is O(corpus), so a directory walk was O(N²), to build an index nobody reads until ingestion finishes.</p>
+<p>It now mirrors only that document’s keys into the index, the way <code>sync</code> always has, and <code>add_dir</code> treats the walk as a bulk load: FTS triggers suspended for the duration, one index rebuild at the end.</p>
+<div id="c_docs" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> bench_docs</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>bench_docs(sizes<span class="op">=</span>(<span class="dv">25</span>,<span class="dv">50</span>,<span class="dv">100</span>,<span class="dv">200</span>,<span class="dv">400</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<pre><code>before (0.1.15)                          after (0.1.16)
+add_dir(25)     1.64s   65.5 ms/doc      add_dir(25)    0.80s   32.1 ms/doc
+add_dir(50)     3.31s   66.3 ms/doc      add_dir(50)    1.21s   24.1 ms/doc
+add_dir(100)    8.35s   83.5 ms/doc      add_dir(100)   2.16s   21.6 ms/doc
+add_dir(200)   29.05s  145.2 ms/doc      add_dir(200)   5.06s   25.3 ms/doc
+add_dir(400)  112.18s  267.8 ms/doc      add_dir(400)   9.21s   23.0 ms/doc
+exponent        1.72                     exponent       0.91</code></pre>
+<p>Per-document cost used to climb 4x from 25 to 400 documents. It is now flat.</p>
+<p>The profile of the old 200-document run is where this came from: <code>usearch.compiled.add_many</code> was 17.4s of 34.7s, half the wall clock, alongside 409,730 row fetches and 407,928 <code>np.frombuffer</code> calls, all of them the quadratic re-reads.</p>
+<div id="c_defer" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># the isolating experiment: same corpus, same final index, rebuild deferred to once per batch.</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># run against 0.1.15 this reports the gap the fix closed.</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> bench_deferred_index</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>bench_deferred_index(sizes<span class="op">=</span>(<span class="dv">50</span>,<span class="dv">100</span>,<span class="dv">200</span>,<span class="dv">400</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>On 0.1.15 this was 1.35x at 50 documents rising to 7.01x at 400, the gap grows linearly with corpus size, which is what “unbounded” means here. On 0.1.16 both arms are the fixed path, so it now measures only the cost of the final rebuild (0.49s of 16.0s at 400 documents).</p>
+<p><strong>Benchmark on an idle machine.</strong> A concurrent <code>nbdev-test</code> (2 workers on 4 CPUs) was enough to turn the 50-document case into 55.9s against 3.7s, while leaving every vector count identical.</p>
+</section>
+<section id="writes-one-transaction-and-the-fts-triggers" class="level3">
+<h3 class="anchored" data-anchor-id="writes-one-transaction-and-the-fts-triggers">2. Writes: one transaction, and the FTS triggers</h3>
+<p><a href="https://Karthik777.github.io/litesearch/core.html#process_content"><code>process_content</code></a> called <code>insert_all</code> outside any transaction, so apswutils committed per chunk and WAL fsynced each time. The batching already existed, but behind <code>parallel=True</code>, which is a concurrency flag, not a throughput one. It now always batches; <code>parallel</code> controls only the widened busy timeout, which is all it ever meant.</p>
+<p>The remaining gap between a store with FTS and one without is the per-row trigger. <code>bulk_load</code> suspends the triggers and uses FTS5’s own <code>rebuild</code> once at the end.</p>
+<div id="c_writes" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> bench_store, verify_bulk_load</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>bench_store(sizes<span class="op">=</span>(<span class="dv">2000</span>,<span class="dv">8000</span>,<span class="dv">32000</span>))</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>verify_bulk_load()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<pre><code>8,000 rows                            0.1.15    0.1.16
+no fts, autocommit                     4.56s
+no fts, one txn                        0.50s              9.1x
+fts, autocommit                        7.44s
+fts, one txn                           1.46s              5.1x
+process_content(parallel=True)         1.11s              the win, gated behind a flag
+
+process_content end to end            527/s     913/s     exponent 1.04 -&gt; 1.00</code></pre>
+<p><code>bulk_load</code> is 2.05x, and populates the index rather than skipping it:</p>
+<pre><code>bulk_load=False  1.15s  rows=8000  fts_rows=8000  hits(vessel)=37
+bulk_load=True   0.66s  rows=8000  fts_rows=8000  hits(vessel)=37</code></pre>
+<p>Only worth it for a load: <code>rebuild</code> is O(rows in the table), so wrapping a two-row update in it is strictly slower than letting the triggers run.</p>
+</section>
+<section id="code-files" class="level3">
+<h3 class="anchored" data-anchor-id="code-files">3. Code files</h3>
+<p>Two independent problems, both worth more than they look.</p>
+<p><code>ast.get_source_segment</code> re-splits the entire source file on every call, and <a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a> called it once per chunk it emitted, O(top-level defs x file size) per file. Profiling 400 files of <code>transformers</code>, <code>ast._splitlines_no_ff</code> was <strong>47.3s of 70.0s</strong>. <a href="https://Karthik777.github.io/litesearch/data.html#pyparse"><code>pyparse</code></a> also walked the whole tree tagging every node with a <code>parent</code>, then filtered on “parent is the Module”, which is what <code>tree.body</code> already means.</p>
+<p>And <a href="https://Karthik777.github.io/litesearch/data.html#dir2chunks"><code>dir2chunks</code></a>/<a href="https://Karthik777.github.io/litesearch/data.html#pkg2chunks"><code>pkg2chunks</code></a> ran <a href="https://Karthik777.github.io/litesearch/data.html#file_parse"><code>file_parse</code></a> on a thread pool. It is <code>ast.parse</code> plus a pure-python walk and holds the GIL end to end, so the pool contended rather than overlapped.</p>
+<div id="c_code" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># byte-for-byte against the implementation this replaced, over a real package</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> verify_pyparse</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>verify_pyparse(<span class="st">'litesearch'</span>)                  <span class="co"># or any large tree: site-packages/transformers</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Over 2,169 files of <code>transformers</code>:</p>
+<pre><code>                                    old        new           chunks        mismatches
+default                          159.80s     22.36s   7.1x   14,444 both        0
+imports=True, assigns=True       281.89s     24.66s  11.4x   32,720 both        0</code></pre>
+<p>Zero mismatches on content and metadata. <code>nbs/02_data.ipynb</code> pins <a href="https://Karthik777.github.io/litesearch/data.html#_seg"><code>_seg</code></a> against <code>ast.get_source_segment</code> on the cases where the two line-splitters actually differ: a decorated def, a one-line class, a form feed, and a non-ascii line before the node. An earlier draft that used <code>str.splitlines</code> had 9 mismatches for exactly that reason, form feeds are breaks for <code>splitlines</code> and deliberately not for <code>_splitlines_no_ff</code>.</p>
+<p>The pool, same 2,169 files:</p>
+<pre><code>serial (n_workers=0)      17.67s
+threads (the old default) 24.00s      0.76x, slower than serial
+processes (new default)    7.34s      3.3x</code></pre>
+<p>190.4s on the old default against 7.34s: <strong>26x</strong> end to end. Directories below <code>MIN_PARALLEL_FILES</code> (64) stay serial, because below that a pool costs more to start than the parse it saves.</p>
+</section>
+<section id="pdfs" class="level3">
+<h3 class="anchored" data-anchor-id="pdfs">4. PDFs</h3>
+<p><a href="https://Karthik777.github.io/litesearch/data.html#pdf_parse"><code>pdf_parse</code></a> is Rust (pdf-oxide) but holds the GIL, so it threads no better than the AST parser does.</p>
+<div id="c_pdf" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> bench_pdf</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>bench_pdf()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<pre><code>8 corpus PDFs, 489 pages
+serial         4.07s   120.2 pages/s
+thread(4)      4.41s   111.0 pages/s   0.92x
+process(4)     2.14s   228.3 pages/s   1.90x
+thread(8)      3.92s   124.8 pages/s   1.04x
+process(8)     2.68s   182.7 pages/s   1.52x</code></pre>
+<p>Single-document rates for reference: 120 pages/s on the text-heavy directives, 34 pages/s on an image-heavy arXiv paper.</p>
+<p><strong>Still open:</strong> <code>add_dir</code> walks files serially. <a href="https://Karthik777.github.io/litesearch/data.html#_parse_files"><code>_parse_files</code></a> shows the shape of the fix but it has not been applied to the document path, because PDF parsing and SQLite writing want different pool sizes.</p>
+</section>
+<section id="graph" class="level3">
+<h3 class="anchored" data-anchor-id="graph">5. Graph</h3>
+<p>Three separate problems, found by profiling rather than by reading: throughput, memory, and a recall cliff that no timing would ever have shown.</p>
+<p><strong>Throughput.</strong> <code>insert_chunk</code> was 9.3s of a 36.1s build, <code>build_graph</code> wrote entities, mentions and edges through <code>insert_all</code> directly, outside any transaction, so it had the autocommit-per-batch problem <a href="https://Karthik777.github.io/litesearch/core.html#process_content"><code>process_content</code></a> had just been fixed for. One <a href="https://Karthik777.github.io/litesearch/core.html#write_txn"><code>write_txn</code></a> around the writes took 1,000 chunks from 21.6s to 11.5s.</p>
+<p><strong>Cores.</strong> With the writes fixed, extraction is 88% of a build (26.6s of 30.3s), and it is a pure function of the chunk text, so the build is a map with a cheap serial reduce after it. <code>n_workers=</code> spreads it over processes; threads are useless because yake and spaCy are both python and both hold the GIL. spaCy’s own <code>n_process</code> is used rather than reinvented, since it forks around the pipeline instead of shipping one per task. Below <code>MIN_PARALLEL_CHUNKS</code> (200) a drain stays serial.</p>
+<p>Order is preserved by both pools and the reduce depends on it: <code>ents.setdefault</code> keeps the <code>kind</code> of an entity’s first mention, so a reordered stream would relabel entities.</p>
+<p><strong>Memory.</strong> <code>build_graph</code> accumulated entities, mentions, edges and every co-occurrence window for the whole call. Windows are the one term that never saturates: entity vocabulary follows Heaps’ law and flattens, mentions can be flushed, but a window is one per sentence forever. Peak RSS grew straight-line with the corpus, so the ceiling was the machine.</p>
+<p>Three changes, each verified to leave the graph byte-identical:</p>
+<ul>
+<li><code>batch=</code> flushes mentions per batch and moves windows to a scratch SQLite table. <code>_pmi_edges</code> already walked its windows twice, because the hub cut-off is not known until the first pass ends, so anything with <code>__len__</code> and a re-iterable <code>__iter__</code> substitutes for the list.</li>
+<li>Pair counting moved into SQL. It was the last unbounded structure: pairs are quadratic in window size, so the counter tracked the corpus even after the windows stopped being held. SQLite groups on a temp b-tree instead of in RSS.</li>
+<li><code>for c in L(chunks)</code> became a plain iteration. <code>L()</code> materialises, so a caller who passed a generator specifically to keep a corpus off the heap had it read into a list before the first chunk was touched.</li>
+</ul>
+<p><strong>Recall.</strong> <code>_lexical_pairs</code> skipped any shared-token block bigger than <code>max_group</code>. Blocks grow with the corpus, so the pairs that stopped being proposed were exactly the ones a larger corpus added, a resolution that quietly gets worse the more you feed it, with nothing in any timing to show why. Oversized blocks are now windowed on sorted names rather than skipped: sorting puts containment variants adjacent (“polonium” beside “polonium isotope”), which is the case the lexical pass exists for, and the work stays O(block x max_group).</p>
+<div id="c_graph" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> bench_graph, bench_lexical_recall, bench_graph_memory</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>bench_graph(sizes<span class="op">=</span>(<span class="dv">500</span>,<span class="dv">1000</span>,<span class="dv">2000</span>))</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>bench_graph(sizes<span class="op">=</span>(<span class="dv">1000</span>,<span class="dv">2000</span>), n_workers<span class="op">=</span><span class="dv">4</span>)      <span class="co"># extraction on a process pool</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>bench_lexical_recall(sizes<span class="op">=</span>(<span class="dv">250</span>,<span class="dv">500</span>,<span class="dv">1000</span>,<span class="dv">2000</span>))   <span class="co"># exhaustive O(E^2) ground truth</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>bench_graph_memory(sizes<span class="op">=</span>(<span class="dv">2000</span>,<span class="dv">4000</span>,<span class="dv">8000</span>))        <span class="co"># run per-size in its own process for a clean RSS</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Throughput. The transaction fix and the pool are independent, and they compound:</p>
+<pre><code>1,000 chunks              yake         spaCy
+before (0.1.16)         ~45 ch/s
++ write_txn              86 ch/s      21 ch/s
++ 2 workers             141 ch/s
++ 4 workers             207 ch/s      39 ch/s
+                          4.6x total   1.87x from the pool</code></pre>
+<p><code>resolve_entities</code> after the batched probe:</p>
+<pre><code>                        before    after
+resolve n=500            3.61s    1.67s
+resolve n=1000           7.43s    3.28s
+resolve n=2000          13.26s    5.62s
+resolve exponent          1.35     1.08</code></pre>
+<p>Memory, generator input with <code>batch=500</code> against a list with no batching, each in its own process:</p>
+<pre><code>chunks    list, no batch    generator + batch    marginal KB/chunk (batched)
+  2000            113 MB               82 MB
+  4000            171 MB              109 MB           13.5
+  8000            281 MB              150 MB           10.3
+ 16000, 190 MB            5.0</code></pre>
+<p>The marginal cost halves as the corpus doubles, it now tracks entity vocabulary, which saturates, rather than corpus size, which does not. That is the difference between a corpus that fits and one that does not.</p>
+<p>Lexical blocking recall, against an exhaustive <code>_lex_ok</code> ground truth:</p>
+<pre><code>entities   truth pairs   skipping (before)   windowing (after)
+   1,377         1,569              97.0%              99.8%
+   3,254         3,713              94.4%              99.5%
+   5,650         8,193              86.1%              98.3%
+   8,487        15,004              75.9%              97.2%</code></pre>
+<p>At 8,487 entities the old blocking was proposing three quarters of the valid merges and falling. Windowing costs 2.2x the pairs examined and <strong>no measurable time</strong>, <code>resolve_entities</code> at n=2000 is 5.62s against 5.65s, because <code>_toks</code> is cached and <code>_uf_union</code> short-circuits pairs already merged. It finds more: 6,422 merges against 5,896.</p>
+<section id="an-honest-note-on-determinism" class="level4">
+<h4 class="anchored" data-anchor-id="an-honest-note-on-determinism">An honest note on determinism</h4>
+<p><code>resolve_entities</code> does not return the same answer twice. Rebuilt from scratch at n=2000 it gives <code>merged=5896</code> on one run and <code>merged=5891</code> on the next, about 0.1%.</p>
+<p>This is not the batching. usearch builds its HNSW graph across threads, so two rebuilds of the same vectors are two slightly different graphs, and an approximate probe over a different graph returns slightly different neighbours. It was true before this change too. The check that separates the two holds the index still and varies only the probe:</p>
+<div id="c_probe" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> evals.ingest_bench <span class="im">import</span> verify_ann_probe, verify_resolve</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>verify_ann_probe(n<span class="op">=</span><span class="dv">2000</span>)          <span class="co"># one fixed index, batched vs the per-entity loop</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>verify_resolve(sizes<span class="op">=</span>(<span class="dv">1000</span>,<span class="dv">2000</span>), reps<span class="op">=</span><span class="dv">2</span>)   <span class="co"># full rebuilds: shows the ~0.1% drift</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<pre><code>== ann probe equivalence (8487 entities, fixed index, k=8) ==
+  looped  x3: 67896 pairs, stable: True
+  batched x3: 67896 pairs, stable: True
+  identical: True   symmetric difference: 0</code></pre>
+<p>Given the same index, the two probes agree exactly and both are deterministic. So the batching is equivalent, and the drift belongs to index construction, worth knowing if you ever diff two graph builds and expect them to match.</p>
+<p><code>verify_resolve</code> reports a <strong>partition</strong> hash rather than the id→canon map, for the same reason: <code>_uf_union</code> breaks rank ties by arrival order, so which member of a merged group ends up canonical is not stable even when the grouping is.</p>
+</section>
+</section>
+<section id="considered-and-set-aside-sharding" class="level3">
+<h3 class="anchored" data-anchor-id="considered-and-set-aside-sharding">Considered and set aside: sharding</h3>
+<p>One database per profile was measured and is not worth doing for performance.</p>
+<p>Before the fixes it bought 4.7x on ingest at 8 shards, but only because it divided the quadratic. The fix alone on a single database (19.8s over 400 documents) beat 8-way sharding without it (23.8s), and with ingest linear, sharding adds ~12% and then flattens.</p>
+<p>On reads it is single-digit milliseconds in both directions at this corpus size: fanning out to 16 shards costs 34.9ms against 8.0ms for one index, and routing to a known shard saves 6ms. Neither is a reason to restructure anything.</p>
+<p><code>bench_shards</code> and <code>bench_shard_reads</code> remain in <code>evals/ingest_bench.py</code> for the one argument that survives, a resident HNSW index that no longer fits in memory, which is about RAM, not speed.</p>
+</section>
+<section id="what-is-still-open-at-10⁶" class="level3">
+<h3 class="anchored" data-anchor-id="what-is-still-open-at-10⁶">What is still open at 10⁶</h3>
+<ul>
+<li><strong>Embedding</strong>, deliberately excluded from every number here. With litesearch’s own overhead out of the way, the encoder is now the dominant cost, and it is the part that wants a GPU or a process pool.</li>
+<li><strong><code>add_dir</code> walks files serially</strong>, parsing parallelises 1.9x on 4 cores and the document path does not do it yet, because PDF parsing and SQLite writing want different pool sizes.</li>
+<li><strong><code>build_graph</code> scales to cores, not across machines.</strong> 207 chunks/s on 4 cores puts a million chunks at ~1.3 hours. The reduce is serial, so more cores keep helping until it dominates.</li>
+<li><strong><code>n_workers</code> with a small <code>batch</code> pays pool startup per drain</strong>, the queue drains once per batch, so the two interact: 4.87s unbatched against 5.33s at <code>batch=500</code>.</li>
+<li><strong><code>build_graph</code> memory is sublinear, not constant.</strong> What remains is entity vocabulary and the edge dict, both of which grow with a saturating curve rather than a flat one. Fine to 10⁶ on the measured slope; worth re-measuring before 10⁷.</li>
+<li><strong>spaCy is slower than the yake fallback</strong> (9.5 vs 16.4 chunks/s under tracemalloc) while extracting ~1.7x the entities. Which is the better trade has not been measured on retrieval quality, only on cost.</li>
+</ul>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
