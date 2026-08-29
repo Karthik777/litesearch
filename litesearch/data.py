@@ -51,13 +51,11 @@ def pdf_spans(doc:PdfDocument, st=0, end=None) -> L:
     return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_spans(i)).concat()
 
 # %% ../nbs/02_data.ipynb #9c0b11cb32e0d9a5
-from pdflite import (clean_md, fix_layout, needs_ocr, ocr_parse, orphan_vals, oxide_parse,
-                     pdf_doc, pdf_md, scrambled_layout)
+from pdflite import clean_md, fix_layout, needs_ocr, ocr_parse, orphan_vals, oxide_parse, pdf_doc, pdf_md, scrambled_layout
 
-# re-exported so a caller holding an Index has one import, not two
-_all_ = ['clean_md', 'fix_layout', 'needs_ocr', 'ocr_parse', 'orphan_vals', 'oxide_parse',
-         'pdf_doc', 'pdf_md', 'scrambled_layout']
+_all_ = ['clean_md', 'fix_layout', 'needs_ocr', 'ocr_parse', 'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
 
+# %% ../nbs/02_data.ipynb #6bdc58cc
 def pdf_parse(pdf:PdfDocument|str|Path|bytes,
               out_path:str|Path=None,       # dir holding the image subdir; links are relative to it
               image_dir:str='images',       # subdir for extracted images
@@ -65,8 +63,7 @@ def pdf_parse(pdf:PdfDocument|str|Path|bytes,
               ocr_selection:str='auto'      # auto | on | off
 ) -> list:
     'A PDF as one markdown string per page. The page split the tree and its chunk sizes are measured against.'
-    return pdf_md(pdf, out_path, pages=True, ocr=ocr_selection.lower(),
-                  preserve_layout=preserve_layout, image_dir=image_dir)
+    return pdf_md(pdf, out_path, pages=True, ocr=ocr_selection.lower(), preserve_layout=preserve_layout, image_dir=image_dir)
 
 # %% ../nbs/02_data.ipynb #4a33701ff7ff248b
 import chonkie_core

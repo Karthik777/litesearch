@@ -21,18 +21,13 @@ from .data import chunk_markdown
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
 _md_head  = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
 _fence    = re.compile(r'^\s{0,3}(```+|~~~+)')
-# A structural heading line, with an optional leading `#` — a PDF converter may already have
-# marked it up, and the word is a better signal than the markup either way.
 _STRUCT = ('BOOK','TITLE','PART','ANNEX','APPENDIX','CANTO','CHAPTER','ADHYAYA','SECTION','SUBTITLE',
            'ARTICLE','RULE','CLAUSE','LESSON','SCHEDULE')
 _chapter  = re.compile(r'^\s{0,6}#{0,6}\s*(' + '|'.join(_STRUCT) + r')\s+([IVXLCDM]+|\d+[A-Za-z]?)'
                        r'\b[\s.:—-]*(.{0,80})$', re.I)
-# Prior order of the usual hierarchy words. Lower sits higher in the tree. Anything not listed is
-# ranked by how often it occurs, since a rarer heading word names a bigger division.
 _STRUCT_RANK = {'book':0, 'title':0, 'part':0, 'annex':0, 'appendix':0, 'canto':0,
                 'chapter':1, 'adhyaya':1, 'section':2, 'subtitle':2,
                 'article':3, 'rule':3, 'clause':3, 'lesson':3, 'schedule':3}
-# Above this many markdown headings per page, `#` has stopped meaning "heading" — see `detect_mode`.
 MAX_HEAD_DENSITY = 4.0
 _ws = re.compile(r'\s+')
 
@@ -526,9 +521,6 @@ def toc(self:Database,
     'The document tree as nested dicts — titles, page ranges, summaries. No embeddings touched.'
     g = self.get_tree(store, prefix)
     docs = list(g.docs(where=f'id={doc!r} or title like {"%"+doc+"%"!r}') if doc else g.docs())
-    # every node for every document being listed, in one query and grouped here. One query per
-    # document made `toc()` cost a round trip per document to build a listing whose whole point is
-    # that it is the cheap, vectorless way to see the corpus.
     by_doc, ids = {}, [d['id'] for d in docs]
     for b in chunked(ids, 400):
         for r in g.nodes(where=_in('doc_id', b)): by_doc.setdefault(r['doc_id'], []).append(r)
@@ -642,12 +634,7 @@ def doc_search(self:Database,
                rerank:bool=False,     # reorder the candidates with a flashrank cross-encoder
                **kw                   # forwarded to Database.search
 ) -> list:
-    '''Hybrid search over a node-aware store: span merging and a breadcrumb per hit.
-
-    `rerank` fans out to `RERANK_FANOUT` candidates and reorders them with a cross-encoder before
-    trimming to `limit` — worth +0.026 to +0.077 weighted MRR, positive in all twelve paired cells
-    measured, at roughly 10x the latency. The fanout is the point: reranking `limit` candidates
-    only reorders `limit` of them.'''
+    'Hybrid search over a node-aware store: span merging and a breadcrumb per hit.'
     cols = list(dict.fromkeys((columns or ['content']) + ['node_id','page','heading','doc_id','rowid']))
     n = max(limit, RERANK_FANOUT) if rerank else limit
     base = self.search(q, emb, columns=cols, limit=max(n*3, 30), table_name=store, rrf=False, **kw)
@@ -656,12 +643,8 @@ def doc_search(self:Database,
     wf, wv = adaptive_weights(q, fts, vec) if adaptive else (1.0, 1.0)
     hits = rrf_all([fts, vec], k=rrf_k, limit=n*(3 if spans else 1), weights=[wf, wv])
     if spans: hits = merge_spans(hits, gap)
-    # after the rerank, not before: a breadcrumb is a lookup per hit, and only `limit` survive
     if rerank:
         hits = rerank_hits(q, hits[:n], None, limit)
-        # The cross-encoder is now the authority on order, so it has to be the authority on the
-        # score too. `sections` rolls its groups up by `_rrf_score`; leaving the fused score in
-        # place would reorder this list and change nothing downstream of it.
         for i, h in enumerate(hits): h['_rrf_score'] = 1.0/(rrf_k + i)
     for h in hits[:limit]: h['breadcrumb'] = h.get('heading') or self.breadcrumb(h.get('node_id') or '', store, prefix)
     return hits[:limit]
@@ -679,10 +662,7 @@ def sections(self:Database,
              rerank:bool=False,   # reorder the chunk hits before they are grouped into sections
              **kw                 # forwarded to doc_search
 ) -> list:
-    '''Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.
-
-    `rerank` acts on the chunk hits *before* the roll-up, so the grouping and the per-section
-    scores both see the reordered list rather than being computed and then shuffled.'''
+    'Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.'
     hits = self.doc_search(q, emb, limit=max(limit*fanout, 20), store=store, prefix=prefix,
                            spans=False, rerank=rerank, **kw)
     g, agg = self.get_tree(store, prefix), {}
@@ -747,23 +727,7 @@ def context(self:Database,
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
             graph_w:float=0.6,
             **kw):                  # forwarded to every retrieval leg, and on to Database.search
-    '''One composed retrieval over a document tree: the operative sections plus what they connect to.
-
-    `graph` is opt-in because the graph leg both helps and hurts, and which one depends on the
-    query rather than on the corpus. Measured over three genres (`evals/multihop.py`,
-    `evals/run.py eval_graph`):
-
-    - On **known-item** queries — the target passage contains the words you searched for — it is a
-      straight loss, monotonically worse as `graph_w` rises: p_mrr 0.8170 for plain hybrid against
-      0.7395 / 0.6859 / 0.6463 at `graph_w` 0.25 / 0.5 / 1.0 on regulation, at 2-4x the latency.
-    - On **bridge** queries — the target never uses the words you searched for and is relevant on
-      structural grounds — it is a significant *win*, monotonically better as `graph_w` rises, in
-      seven of nine paired-bootstrap comparisons (arXiv +0.0387 target MRR at `graph_w=1.0`,
-      95% CI [+0.0110, +0.0694]).
-
-    Most queries are known-item, so on as a default made most callers pay for a leg they do not
-    use. Turn it on when you expect the corpus to answer by connection rather than by wording, and
-    raise `graph_w` towards 1.0 when you do.'''
+    'One composed retrieval over a document tree: the operative sections plus what they connect to.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     N, D, src = self.t[f'{p}nodes'], self.t[f'{p}docs'], {}
     def doc_of(nid):

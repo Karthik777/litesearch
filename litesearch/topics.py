@@ -54,8 +54,6 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     df = {}
     for d in tf:
         for w in d: df[w] = df.get(w, 0) + 1
-    # one pass for every cluster's member count. Counting inside the loop below re-walked the whole
-    # `lab` array once per cluster, which is quadratic in the number of clusters for no reason.
     sz = {}
     for j in lab: sz[j] = sz.get(j, 0) + 1
     out = []
@@ -81,8 +79,6 @@ def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16)
     '(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.'
     keys = list(keys)
     if len(keys) < 4: return L()
-    # one batched lookup, not one per key: usearch reconstructs a whole key array in C++, and the
-    # search below is already handed the matrix rather than a query at a time
     vecs = np.asarray(idx[np.array(keys, dtype=np.int64)], dtype=dtype).reshape(len(keys), -1)
     res = idx.search(vecs, count=min(k+1, len(keys)))
     nbr, sims = {}, []
@@ -139,7 +135,6 @@ def topic_nodes(db,                # Database
     kept = [[rid2cid[r] for r in mem if r in rid2cid] for _, mem in groups]
     kept = [c for c in kept if len(c) >= min_size]
     if not kept: return dict(topics=0, method=method)
-    # labels are scored across all clusters at once, so gather members first
     txt = {r['id']: r['content'] for r in db.t[store](select='id, content',
                                                       where=_in('id', [c for g_ in kept for c in g_[:24]]))}
     texts, lab = [], []
@@ -148,7 +143,6 @@ def topic_nodes(db,                # Database
     names = ctfidf_labels(texts, lab, len(kept), label_k)
     ents, mens = [], []
     for j, cids in enumerate(kept):
-        # deliberately not _norm(): topic labels are multi-phrase and would trip its 5-token cap
         name = f'topic: {names[j]}'[:60] if names[j] else f'topic-{j}'
         eid = _slug(name)
         ents.append(dict(content=name, kind='topic', freq=len(cids), canon=eid))
