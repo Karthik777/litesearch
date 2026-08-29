@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.34
+vishalakshi simplification 
+
 ## 0.1.33
 fix api to add `where` to Index.
 

@@ -6,7 +6,7 @@ __all__ = ['DTYPE', 'HIT_COLS', 'Index']
 # %% ../nbs/07_api.ipynb #b0f50ba2adb2
 import numpy as np
 from fastcore.all import Path, patch
-from .core import database
+from .core import database, rerank_hits, RERANK_FANOUT
 from .data import dir2chunks, pkg2chunks
 from .tree import DOC_EXTS
 from .utils import static_embedder, doc_encoder, query_encoder
@@ -16,7 +16,10 @@ DTYPE, HIT_COLS = np.float16, ['content', 'metadata', 'node_id', 'page', 'headin
 
 # %% ../nbs/07_api.ipynb #9e17018e0b48
 class Index:
-    '''Ingest and search a corpus of files, code or text.'''
+    '''A corpus you can search: ingest files, code or text, then query with a string.
+
+    Every default is what `evals/` measures as best or tied-best across three genres. All of them
+    are overridable, and `self.db` is the plain `database()` underneath.'''
     def __init__(self,
                  path=':memory:',     # sqlite file; omit for in-memory
                  encoder=None,        # anything `doc_encoder` takes (default: static potion-multilingual-128M)
@@ -36,7 +39,7 @@ class Index:
         return np.asarray(self._doc(list(texts)), dtype=DTYPE)
 
     def qemb(self, q:str) -> bytes:
-        'One query vector as bytes.'
+        'One query vector, as the bytes the low-level `search` wants.'
         return np.asarray(self._qry([q]), dtype=DTYPE)[0].tobytes()
 
     def __len__(self): return self.db.q(f'select count(*) as n from [{self.name}]')[0]['n']
@@ -87,7 +90,7 @@ def add_code(self:Index,
             for c in chunks if (c.get('content') or '').strip()]
     if not rows: return 0
     for r, v in zip(rows, self.emb([r['content'] for r in rows])):
-        r['embedding'] = v.tobytes()
+        r['embedding'] = np.asarray(v, dtype=DTYPE).tobytes()
     self.store.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
     if self.ann: self.store.rebuild_index()
     return len(rows)
@@ -101,7 +104,7 @@ def search(self:Index,
            where:str=None,       # SQL over the chunk store, to search part of it
            **kw                  # forwarded to Database.doc_search
            ) -> list:
-    'Hybrid keyword and vector search with span merging and breadcrumbs.'
+    'Hybrid keyword + vector search: `doc_search`, so hits are span-merged and carry a breadcrumb.'
     if not (q or '').strip(): return []
     cols = list(dict.fromkeys(HIT_COLS + (kw.pop('columns', None) or [])))
     return self.db.doc_search(q, self.qemb(q), columns=cols, store=self.name, limit=limit,
