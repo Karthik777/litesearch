@@ -85,6 +85,14 @@ is a scan, which this measures by rasterising eight pages into a text-free PDF.
 | neomme-260m-late on the same page images | 2.276 |
 | neomme-800m-late on the same page images | 5.633 |
 
+Two runs, for the run-to-run spread: 1.743 and 1.739 for OCR, 2.276 and 2.359 for the 260M.
+
+One footgun found while measuring, not fixed here. `ocr_selection='auto'` never fires on this
+file. `needs_ocr` looks for a `> [OCR REQUIRED` marker from pdf-oxide, and on a PDF built by
+`images_to_pdf` pdf-oxide emits `![Image 1 from page 1](images/page1_1.png)` instead, so `auto`
+returns 408 characters of image links for 8 pages and reports success. Whether a real scanner PDF
+carries the marker is not tested here; the OCR numbers above use `ocr_selection='on'`.
+
 OCR is the cheaper of the two. Even against the whole OCR route, 1.743 plus 0.193 for bge-small at
 1.936 s/page, the 260M page encoder at 2.276 s/page does not pay. The synthetic scan renders larger
 than the born-digital page, so the visual figures here run about 1.6x their table-above values;
