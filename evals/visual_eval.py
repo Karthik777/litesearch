@@ -242,6 +242,44 @@ def visual_route(name, modality='image', dpi=DPI, force=False):
               f'hit1={rows[-1]["hit1"]:.3f} {t_q+t_s:.1f}ms', flush=True)
     return rows
 
+# ------------------------------------------------------------------ the OCR branch
+# Everything above runs on born-digital PDFs, where `pdf_parse` reads the text layer and costs
+# 0.006 s/page. The case for skipping the parse step is not that corpus, it is a scan: `needs_ocr`
+# fires, `ocr_parse` rasterises every page and runs a recogniser, and that is the number a page
+# encoder has to beat. This makes a scan out of pages that already parse, so the same pages are
+# timed down both branches.
+def scanned(n=8, dpi=200, out=None):
+    'A text-free PDF built from rendered pages, so `needs_ocr` fires on it.'
+    import pypdfium2 as pdfium
+    from litesearch.data import images_to_pdf
+    out = Path(out or CACHE/f'scanned_{n}p.pdf')
+    if out.exists(): return out
+    d = pdfium.PdfDocument(str(pdfs()[3]))
+    imgs = [d[i].render(scale=dpi/72).to_pil() for i in range(n)]
+    out.write_bytes(images_to_pdf(imgs))
+    return out
+
+
+def ocr_cost(n=8):
+    'Seconds per page for the OCR branch of `pdf_parse` against NeoMME on the same page images.'
+    from litesearch.data import pdf_parse, needs_ocr
+    p = scanned(n)
+    t0 = time.time(); pages = pdf_parse(str(p), ocr_selection='off'); t_off = time.time()-t0
+    t0 = time.time(); ocr = pdf_parse(str(p), ocr_selection='on'); t_on = time.time()-t0
+    chars = sum(len(x or '') for x in ocr)
+    print(f'  {n} scanned pages')
+    print(f'    text layer         {t_off/n:>7.3f} s/page  {sum(len(x or "") for x in pages):>7} chars  '
+          f'needs_ocr={any(needs_ocr(x or "") for x in pages)}')
+    print(f'    pdf_parse ocr=on   {t_on/n:>7.3f} s/page  {chars:>7} chars')
+    for name in ('neomme-260m-late', 'neomme-800m-late'):
+        m, kind = load_model(name)
+        import pypdfium2 as pdfium
+        d = pdfium.PdfDocument(str(p))
+        imgs = [d[i].render(scale=DPI/72).to_pil() for i in range(n)]
+        _, el, nb = encode_docs(m, kind, imgs)
+        print(f'    {name:<18} {el/n:>7.3f} s/page  {nb/n/1e3:>7.0f} kB/page')
+    return dict(n=n, s_page_text=t_off/n, s_page_ocr=t_on/n, ocr_chars=chars)
+
 
 # ------------------------------------------------------------------ report
 def label(r):
@@ -319,6 +357,7 @@ PHASES = dict(
                                                  ('potion-32M', 'page'))), [])),
     visual  = lambda: [save('visual_neomme', visual_route(n)) for n in NEOMME],
     text    = lambda: [save('visual_neomme', visual_route(n, 'text')) for n in NEOMME],
+    ocr     = lambda: ocr_cost(),
     report  = report,
 )
 
