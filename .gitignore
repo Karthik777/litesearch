@@ -174,3 +174,6 @@ evals/cache/qvec/
 evals/cache/synonyms.json
 evals/cache/pages_*.json
 evals/cache/build_stats.json
+evals/cache/neomme/
+evals/cache/synonyms_*.json
+evals/cache/parse_cost.json
