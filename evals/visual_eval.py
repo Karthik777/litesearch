@@ -200,12 +200,14 @@ def load_model(name):
     return SentenceTransformer(repo), kind
 
 
+def _size(x): return x.numel() if hasattr(x, 'numel') else x.size
+
 def encode_docs(m, kind, payload, batch=4):
-    'Embed page images or page texts, timed. Returns `(vectors, seconds, bytes)`.'
+    'Embed page images or page texts, timed. Returns `(vectors, seconds, float16 bytes)`.'
     t0 = time.time()
     v = m.encode_document(payload, batch_size=batch, show_progress_bar=False)
     el = time.time()-t0
-    nb = int(sum(x.numel() for x in v)*2) if kind == 'late' else int(v.numel()*2)
+    nb = int(sum(_size(x) for x in v)*2) if kind == 'late' else int(_size(v)*2)
     return v, el, nb
 
 
@@ -315,8 +317,8 @@ PHASES = dict(
     parse   = lambda: save('visual_parse', sum((parse_route(e, c)[0] for e, c in
                                                 (('bge-small', 'page'), ('bge-small', 'f512'),
                                                  ('potion-32M', 'page'))), [])),
-    visual  = lambda: save('visual_neomme', sum((visual_route(n) for n in NEOMME), [])),
-    text    = lambda: save('visual_neomme', sum((visual_route(n, 'text') for n in NEOMME), [])),
+    visual  = lambda: [save('visual_neomme', visual_route(n)) for n in NEOMME],
+    text    = lambda: [save('visual_neomme', visual_route(n, 'text')) for n in NEOMME],
     report  = report,
 )
 
