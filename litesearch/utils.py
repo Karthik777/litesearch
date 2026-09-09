@@ -4,7 +4,8 @@
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
            'static_code_embedder', 'static_embedder', 'download_model', 'FastEncode', 'doc_encoder', 'query_encoder',
-           'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images', 'hash_embed']
+           'encoder_id', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images',
+           'hash_embed']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -50,7 +51,9 @@ bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quanti
 @cache
 def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
     'A model2vec model, shared per name. potion-multilingual-128M is ~500MB, so every caller loading its own hurts.'
-    return StaticModel.from_pretrained(model_nm, force_download=False)
+    m = StaticModel.from_pretrained(model_nm, force_download=False)
+    m.ls_id = model_nm   # potion leaves base_model_name empty, so encoder_id has nothing else to read
+    return m
 
 static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M-v2')
 
@@ -198,6 +201,19 @@ def query_encoder(embedder:FastEncode|StaticModel):
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
+
+# %% ../nbs/03_utils.ipynb #59ee598ca21b474d
+_ENC_ID_ATTRS = ('ls_id', 'repo_id', 'base_model_name')
+
+def encoder_id(e) -> str:
+	"A stable name for whatever encoder wrote a store: the model repo, not the object. '' when it cannot be named."
+	if e is None: return ''
+	if isinstance(e, str): return e
+	nm = first(str(v) for v in (getattr(e, a, None) for a in _ENC_ID_ATTRS) if v)
+	if not nm: nm = str(getattr(getattr(e, 'model_dict', None), 'model', '') or '')
+	q = getattr(e, 'quantize', None)
+	return f'{nm}+{q}' if nm and q else nm
+
 
 # %% ../nbs/03_utils.ipynb #f690tylraad
 class FastEncodeImage:

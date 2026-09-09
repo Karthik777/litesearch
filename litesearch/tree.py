@@ -233,6 +233,7 @@ def get_tree(self:Database,
              store:str='store',   # chunk store the tree is built over
              prefix:str=None,     # table prefix (default: '' for 'store', else '<store>_')
              ann:bool=True,       # register an ANN index on the chunk store
+             encoder:str=None,    # the encoder whose vectors the chunk store holds; checked on reopen
              **kw                 # extra typed columns for the chunk store
 ) -> AttrDict:
     """Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.
@@ -242,7 +243,8 @@ def get_tree(self:Database,
     dt, nt = f'{p}docs', f'{p}nodes'
     key = ('tree', store, p, bool(ann))
     if key in self.ensured: return self.ensured[key]
-    st = self.get_store(store, hash=True, ann=ann, doc_id=str, node_id=str, page=int, heading=str, **kw)
+    st = self.get_store(store, hash=True, ann=ann, encoder=encoder, doc_id=str, node_id=str,
+                        page=int, heading=str, **kw)
     with write_txn(self):
         self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
                           pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
