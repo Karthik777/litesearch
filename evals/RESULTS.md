@@ -99,8 +99,8 @@ nothing here: co-occurrence cannot represent "Article X refers to Article Y".
 
 One directive, 18 source chunks, ~20 bridges, regulatory (cross-reference dense). The typed leg is
 a hand-built RRF expansion, not a productionised `graph_search`, and the graph was extracted over
-the 18 chunks, not the whole corpus. It costs an LLM pass at ingest, so it belongs in a layer that
-already has a model (vishalakshi), not in litesearch core. Before shipping it must hold on a full
+the 18 chunks, not the whole corpus. It costs an LLM pass at ingest, so it lives in vruksha (the typed-graph package,
+model injected by the caller), not in litesearch core. Before shipping it must hold on a full
 build across genres, on prose (arxiv) as well as legal, and against the same source-MRR
 regression check the PMI leg failed. But the direction is now measured: typed edges bridge, co-occurrence does not.
 
