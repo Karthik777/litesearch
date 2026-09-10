@@ -7,8 +7,8 @@
    "n": 600,
    "chunks": 4977,
    "mrr": 0.7166,
-   "ms_p50": 12.38,
-   "ms_p90": 15.18
+   "ms_p50": 10.68,
+   "ms_p90": 13.89
   },
   {
    "task": "generic",
@@ -17,8 +17,8 @@
    "n": 600,
    "chunks": 4977,
    "mrr": 0.8251,
-   "ms_p50": 141.85,
-   "ms_p90": 184.44
+   "ms_p50": 140.66,
+   "ms_p90": 324.76
   },
   {
    "task": "generic",
@@ -27,8 +27,18 @@
    "n": 600,
    "chunks": 4977,
    "mrr": 0.8309,
-   "ms_p50": 15.16,
-   "ms_p90": 18.37
+   "ms_p50": 12.12,
+   "ms_p90": 14.07
+  },
+  {
+   "task": "generic",
+   "corpus": "astrology",
+   "system": "fx-rerank",
+   "n": 600,
+   "chunks": 4977,
+   "mrr": 0.7718,
+   "ms_p50": 63.29,
+   "ms_p90": 90.18
   }
  ],
  "contrasts": {
@@ -44,6 +54,20 @@
     "delta": 0.1143,
     "lo": 0.0886,
     "hi": 0.1397,
+    "p": 0.0,
+    "diff": true
+   },
+   "fx-rerank": {
+    "delta": 0.0552,
+    "lo": 0.0295,
+    "hi": 0.0808,
+    "p": 0.0,
+    "diff": true
+   },
+   "cb-rerank_vs_fx-rerank": {
+    "delta": 0.0591,
+    "lo": 0.0396,
+    "hi": 0.079,
     "p": 0.0,
     "diff": true
    }

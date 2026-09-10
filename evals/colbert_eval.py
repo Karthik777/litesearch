@@ -20,7 +20,7 @@ import numpy as np
 
 from litesearch import database
 from litesearch.utils import static_embedder
-from litesearch.core import rrf_merge
+from litesearch.core import rrf_merge, rerank_hits
 
 from . import corpus as C
 from .build import flat_chunks
@@ -114,6 +114,11 @@ def rank_rerank(db, sm, qmv, cb_docs, cmap, q, limit=K, fanout=FANOUT):
     sc = maxsim_scores(qmv, D, M)
     return [cand[i] for i in np.argsort(-sc)[:limit]]
 
+def rank_flashrank(db, sm, q, limit=K, fanout=FANOUT):
+    'The same hybrid top-`fanout`, reordered by the shipped flashrank cross-encoder. The decisive arm.'
+    cand = rank_hybrid(db, sm, q, fanout)
+    return rerank_hits(q, cand, None, limit) if cand else []
+
 
 # ------------------------------------------------------------------ generic eval (refindex gold)
 def _generic_corpus(genre, chunking='c512'):
@@ -133,7 +138,7 @@ def eval_generic(genre, chunking='c512', flavours=FLAVOURS, limit=K):
     D, M = _pack(cb_docs); cmap = {t: i for i, t in enumerate(texts)}
     r, qs = ref(genre), build_queries(genre)
     kgs = [key_grams(q, r) for q in qs]
-    systems = ('hybrid', 'colbert', 'cb-rerank')
+    systems = ('hybrid', 'colbert', 'cb-rerank', 'fx-rerank')
     rr = {s: [] for s in systems}; lat = {s: [] for s in systems}
     for fl in flavours:
         qtexts = [q[fl] for q in qs]
@@ -141,9 +146,10 @@ def eval_generic(genre, chunking='c512', flavours=FLAVOURS, limit=K):
         for q, qmv, kg in zip(qs, qmvs, kgs):
             for s in systems:
                 t0 = time.time()
-                if s == 'hybrid':   hits = rank_hybrid(db, sm, q[fl], limit)
-                elif s == 'colbert':hits = rank_colbert(qmv, D, M, meta, limit)
-                else:               hits = rank_rerank(db, sm, qmv, cb_docs, cmap, q[fl], limit)
+                if s == 'hybrid':     hits = rank_hybrid(db, sm, q[fl], limit)
+                elif s == 'colbert':  hits = rank_colbert(qmv, D, M, meta, limit)
+                elif s == 'cb-rerank':hits = rank_rerank(db, sm, qmv, cb_docs, cmap, q[fl], limit)
+                else:                 hits = rank_flashrank(db, sm, q[fl], limit)
                 lat[s].append((time.time()-t0)*1000)
                 u = score_one(hits, q, r, limit, kg)[1]          # section-level rank (the headline axis)
                 rr[s].append(1.0/(u+1) if u is not None else 0.0)
@@ -164,16 +170,17 @@ def eval_code(corpus_path, flavours=('summary',), limit=K):
     db, sm = build_store(p, texts, ids, [0]*len(ch), STATIC['code'])
     cb_docs = cb_corpus('code', texts)
     D, M = _pack(cb_docs); cmap = {t: i for i, t in enumerate(texts)}
-    systems = ('hybrid', 'colbert', 'cb-rerank')
+    systems = ('hybrid', 'colbert', 'cb-rerank', 'fx-rerank')
     rr = {s: [] for s in systems}; hit = {s: [] for s in systems}; lat = {s: [] for s in systems}
     qtexts = [q['query'] for q in qs]; qmvs = cb_qry(qtexts)
     for q, qmv in zip(qs, qmvs):
         gold = q['doc_id']
         for s in systems:
             t0 = time.time()
-            if s == 'hybrid':   hits = rank_hybrid(db, sm, q['query'], limit)
-            elif s == 'colbert':hits = rank_colbert(qmv, D, M, meta, limit)
-            else:               hits = rank_rerank(db, sm, qmv, cb_docs, cmap, q['query'], limit)
+            if s == 'hybrid':     hits = rank_hybrid(db, sm, q['query'], limit)
+            elif s == 'colbert':  hits = rank_colbert(qmv, D, M, meta, limit)
+            elif s == 'cb-rerank':hits = rank_rerank(db, sm, qmv, cb_docs, cmap, q['query'], limit)
+            else:                 hits = rank_flashrank(db, sm, q['query'], limit)
             lat[s].append((time.time()-t0)*1000)
             ranks = [i for i, h in enumerate(hits) if h.get('doc_id') == gold]
             rr[s].append(1.0/(ranks[0]+1) if ranks else 0.0)
@@ -213,14 +220,15 @@ def _rows(name, task, systems, rr, lat, nq, nchunk, hit=None):
     return out
 
 
+def _pb(a, b):
+    d, lo, hi, pv = boot(np.array(a), np.array(b))
+    return dict(delta=round(d, 4), lo=round(lo, 4), hi=round(hi, 4), p=round(pv, 4), diff=not (lo <= 0 <= hi))
+
 def paired(rr, base='hybrid'):
-    'Paired bootstrap of each system minus the baseline. CI spanning zero = no difference.'
-    a = np.array(rr[base]); out = {}
-    for s, v in rr.items():
-        if s == base: continue
-        d, lo, hi, pv = boot(np.array(v), a)
-        out[s] = dict(delta=round(d, 4), lo=round(lo, 4), hi=round(hi, 4), p=round(pv, 4),
-                      diff=not (lo <= 0 <= hi))
+    'Each system minus the baseline, plus the decisive cb-rerank minus fx-rerank. CI over zero = no difference.'
+    out = {s: _pb(v, rr[base]) for s, v in rr.items() if s != base}
+    if 'cb-rerank' in rr and 'fx-rerank' in rr:
+        out['cb-rerank_vs_fx-rerank'] = _pb(rr['cb-rerank'], rr['fx-rerank'])
     return out
 
 
