@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "task": "generic",
+   "corpus": "regulatory",
+   "system": "hybrid",
+   "n": 600,
+   "chunks": 3080,
+   "mrr": 0.6007,
+   "ms_p50": 11.96,
+   "ms_p90": 16.78
+  },
+  {
+   "task": "generic",
+   "corpus": "regulatory",
+   "system": "colbert",
+   "n": 600,
+   "chunks": 3080,
+   "mrr": 0.6519,
+   "ms_p50": 105.6,
+   "ms_p90": 342.33
+  },
+  {
+   "task": "generic",
+   "corpus": "regulatory",
+   "system": "cb-rerank",
+   "n": 600,
+   "chunks": 3080,
+   "mrr": 0.6559,
+   "ms_p50": 14.07,
+   "ms_p90": 20.01
+  }
+ ],
+ "contrasts": {
+  "regulatory": {
+   "colbert": {
+    "delta": 0.0512,
+    "lo": 0.0309,
+    "hi": 0.0716,
+    "p": 0.0,
+    "diff": true
+   },
+   "cb-rerank": {
+    "delta": 0.0552,
+    "lo": 0.0353,
+    "hi": 0.0754,
+    "p": 0.0,
+    "diff": true
+   }
+  }
+ }
+}

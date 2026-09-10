@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "task": "generic",
+   "corpus": "arxiv",
+   "system": "hybrid",
+   "n": 555,
+   "chunks": 2416,
+   "mrr": 0.6922,
+   "ms_p50": 7.46,
+   "ms_p90": 10.09
+  },
+  {
+   "task": "generic",
+   "corpus": "arxiv",
+   "system": "colbert",
+   "n": 555,
+   "chunks": 2416,
+   "mrr": 0.7502,
+   "ms_p50": 78.77,
+   "ms_p90": 207.52
+  },
+  {
+   "task": "generic",
+   "corpus": "arxiv",
+   "system": "cb-rerank",
+   "n": 555,
+   "chunks": 2416,
+   "mrr": 0.7585,
+   "ms_p50": 9.45,
+   "ms_p90": 12.36
+  }
+ ],
+ "contrasts": {
+  "arxiv": {
+   "colbert": {
+    "delta": 0.058,
+    "lo": 0.0357,
+    "hi": 0.0802,
+    "p": 0.0,
+    "diff": true
+   },
+   "cb-rerank": {
+    "delta": 0.0663,
+    "lo": 0.0444,
+    "hi": 0.0884,
+    "p": 0.0,
+    "diff": true
+   }
+  }
+ }
+}

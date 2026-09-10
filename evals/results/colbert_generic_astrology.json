@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "task": "generic",
+   "corpus": "astrology",
+   "system": "hybrid",
+   "n": 600,
+   "chunks": 4977,
+   "mrr": 0.7166,
+   "ms_p50": 12.38,
+   "ms_p90": 15.18
+  },
+  {
+   "task": "generic",
+   "corpus": "astrology",
+   "system": "colbert",
+   "n": 600,
+   "chunks": 4977,
+   "mrr": 0.8251,
+   "ms_p50": 141.85,
+   "ms_p90": 184.44
+  },
+  {
+   "task": "generic",
+   "corpus": "astrology",
+   "system": "cb-rerank",
+   "n": 600,
+   "chunks": 4977,
+   "mrr": 0.8309,
+   "ms_p50": 15.16,
+   "ms_p90": 18.37
+  }
+ ],
+ "contrasts": {
+  "astrology": {
+   "colbert": {
+    "delta": 0.1085,
+    "lo": 0.0817,
+    "hi": 0.1353,
+    "p": 0.0,
+    "diff": true
+   },
+   "cb-rerank": {
+    "delta": 0.1143,
+    "lo": 0.0886,
+    "hi": 0.1397,
+    "p": 0.0,
+    "diff": true
+   }
+  }
+ }
+}

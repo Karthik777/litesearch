@@ -1,0 +1,55 @@
+{
+ "rows": [
+  {
+   "task": "code",
+   "corpus": "code",
+   "system": "hybrid",
+   "n": 442,
+   "chunks": 442,
+   "mrr": 0.9381,
+   "ms_p50": 3.31,
+   "ms_p90": 4.2,
+   "hit10": 1.0
+  },
+  {
+   "task": "code",
+   "corpus": "code",
+   "system": "colbert",
+   "n": 442,
+   "chunks": 442,
+   "mrr": 0.9903,
+   "ms_p50": 9.9,
+   "ms_p90": 11.41,
+   "hit10": 1.0
+  },
+  {
+   "task": "code",
+   "corpus": "code",
+   "system": "cb-rerank",
+   "n": 442,
+   "chunks": 442,
+   "mrr": 0.9903,
+   "ms_p50": 6.01,
+   "ms_p90": 7.03,
+   "hit10": 1.0
+  }
+ ],
+ "contrasts": {
+  "code": {
+   "colbert": {
+    "delta": 0.0522,
+    "lo": 0.034,
+    "hi": 0.0717,
+    "p": 0.0,
+    "diff": true
+   },
+   "cb-rerank": {
+    "delta": 0.0522,
+    "lo": 0.034,
+    "hi": 0.0717,
+    "p": 0.0,
+    "diff": true
+   }
+  }
+ }
+}
