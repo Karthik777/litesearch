@@ -720,12 +720,10 @@ def context(self:Database,
             prefix:str=None,
             sections:int=6,         # operative sections returned
             per:int=3,              # snippets kept per section
-            graph:bool=False,       # opt in to graph-reached related sections (see the note below)
             vector:bool=True,       # include embedding-nearest related sections
             related:int=8,          # max related sections
             max_read:int=6000,      # chars of assembled text per operative section
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
-            graph_w:float=0.6,
             **kw):                  # forwarded to every retrieval leg, and on to Database.search
     'One composed retrieval over a document tree: the operative sections plus what they connect to.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
@@ -754,11 +752,6 @@ def context(self:Database,
     def add(nid, via, score, heading=None):
         if not nid or nid in prim or nid in rel: return
         rel[nid] = AttrDict(node_id=nid, via=via, score=score or 0.0, breadcrumb=heading)
-    if graph and f'{p}entities' in self.t:
-        if not hasattr(self, 'graph_search'): raise ImportError('graph=True needs vruksha: pip install vruksha')
-        for h in self.graph_search(q, emb, columns=['content', 'heading', 'node_id'],
-                                   limit=related * 2, table_name=store, prefix=prefix, graph_w=graph_w, **kw):
-            add(h.get('node_id'), 'graph', h.get('_rrf_score'), h.get('heading'))
     if vector:
         for h in self.doc_search(q,emb,columns=['content'],limit=related * 2,store=store,prefix=prefix,spans=False,**kw):
             add(h.get('node_id'), 'vector', h.get('_rrf_score'), h.get('heading') or h.get('breadcrumb'))
