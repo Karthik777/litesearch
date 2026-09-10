@@ -48,20 +48,19 @@ def embed_chunk(chunk,      # iterable of dicts with a 'content' key
 _busy_lock, _busy_depth, _busy_saved = threading.Lock(), 0, None
 
 @contextmanager
-def busy_window(busy_ms=BUSY_TIMEOUT_MS, *dbs):
-    "Widen apsw's busy timeout for the duration of the block, then restore it."
+def busy_window(busy_ms=BUSY_TIMEOUT_MS):
+    '''Widen the busy timeout for the block, then restore it.
+    apsw's bestpractice hook sets the 100ms default *during* `Connection` construction, so covering a
+    concurrent open means moving that default; a per-connection `set_busy_timeout` lands too late.
+    `database(busy_timeout=)` is the sole caller and needs exactly that window.'''
     global _busy_depth, _busy_saved
     bp = apsw.bestpractice.connection_busy_timeout
     with _busy_lock:
         if not _busy_depth: _busy_saved = bp.__defaults__
         _busy_depth += 1
         bp.__defaults__ = (busy_ms,)
-    conns = [d.conn for d in dbs]
-    prev = [list(c.execute('PRAGMA busy_timeout'))[0][0] for c in conns]
-    for c in conns: c.set_busy_timeout(busy_ms)
     try: yield
     finally:
-        for c,p in zip(conns,prev): c.set_busy_timeout(p)
         with _busy_lock:
             _busy_depth -= 1
             if not _busy_depth: bp.__defaults__ = _busy_saved
@@ -90,11 +89,12 @@ def process_content(store,          # target Table (hash-id store)
                     embed=True,     # embed content before upsert
                     emb_fn=None,    # embedder, required when embed=True
                     hash_id_columns=('content',),  # columns the row id is hashed over; add 'node_id' to keep identical text in different sections distinct
-                    parallel=False, # widen the busy timeout so concurrent writers wait rather than fail
+                    parallel=False, # deprecated no-op; concurrent writers need `database(busy_timeout=...)`, which sets the wait on the connection
                     chunk=5_000,    # rows per transaction
                     **kw):          # forwarded to emb_fn
     '''Embed and upsert chunks in `chunk`-sized transactions.
-    `parallel=True` gives concurrent writers a 30-second busy timeout.'''
+    Writes always batch under `BEGIN IMMEDIATE`. Open the db with `database(busy_timeout=...)` for
+    concurrent writers; `parallel` is retained for compatibility and no longer changes behavior.'''
     content = list(content or [])
     if embed:
         assert emb_fn, 'emb_fn is required when embed=True'
@@ -103,8 +103,7 @@ def process_content(store,          # target Table (hash-id store)
     hc = list(hash_id_columns)
     for r in content:
         if not r.get('id'): r['id'] = hash_record(r, hc)
-    with (busy_window(BUSY_TIMEOUT_MS, store.db) if parallel else nullcontext()):
-        for b in chunked(content, chunk): upsert_all(store, b, 'id')
+    for b in chunked(content, chunk): upsert_all(store, b, 'id')
     return store
 
 
@@ -330,8 +329,8 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
          emb_fn=None,           # embedder for new/changed chunks
          embed:bool=True,       # embed before upsert
          force:bool=False,      # treat all content as new (skip diff)
-         parallel:bool=False,   # chunked BEGIN IMMEDIATE writes; needs database(busy_timeout=...)
-         chunk:int=5_000):      # rows per transaction when parallel=True
+         parallel:bool=False,   # deprecated no-op; concurrent writers need database(busy_timeout=...)
+         chunk:int=5_000):      # rows per write transaction
     'Smart hash-diff update: delete stale rows, embed+upsert changed, mirror into the ANN index. Returns {changed,same,removed}.'
     with db_lock(self.db):
         content = L(content).filter(lambda d: d.get('content') and d['content'].strip())
@@ -507,7 +506,6 @@ def search(self: Database,  # database connection
            quote:bool=True,  # quote FTS query to disable special chars (ignored when fts_pre=True)
            fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
-           parallel:bool=False, # not used. kept for backward compatability. to be removed in later releases
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
            rerank_model:str=None  # flashrank model name (None -> fast default)
            ):
@@ -530,3 +528,4 @@ def search(self: Database,  # database connection
         if reranking: hits = rerank_hits(q, hits, rerank_model, limit)
         return hits
     return dict(fts=fts, vec=vec)
+
