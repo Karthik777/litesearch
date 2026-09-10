@@ -120,3 +120,23 @@ cross-references but where it emits an edge the typed leg reaches the target eve
 still triples hybrid's hit and lifts MRR ~38x. A larger local model closes the gap toward Claude's
 0.61-0.81. So the local-model path is real, and extraction recall (model size, prompt, or a
 regex-assisted seed for article citations) is the lever, not the retrieval mechanism.
+
+### Model size is the lever; a 4B local model matches Claude
+
+Same 18 chunks, same bridges. `evaluate` on each extraction; `seed_regex` adds regex-detected
+`Article N` citations (perfect precision) before scoring.
+
+| extractor | refers_to recall | typed hit (raw) | typed hit (+regex seed) |
+|---|---|---|---|
+| Qwen2.5-1.5B | 0.11 | 0.17 | 0.74 |
+| Qwen3-4B-Instruct-2507 | 0.67 | 0.87 | 0.86 |
+| Claude | 1.00 | 0.65-0.81 | - |
+| hybrid / pmi baseline | - | 0.08-0.20 | - |
+
+Qwen3-4B (local, CPU, via rishi) matches or beats Claude on this set and needs no seed. The regex
+seed is what rescues a weak model: it lifts Qwen2.5-1.5B from 0.17 to 0.74, so citation extraction
+can be handed to a regex and the LLM left to type concepts. Fixtures: `typed_graph_qwen3-4b.json`.
+
+gemma-3n-E4B-it (Q4 GGUF) loads but emits gibberish under llama-cpp-python 0.3.30: its MatFormer /
+per-layer-embedding architecture is not correctly supported there. Run gemma on its native LiteRT
+runtime (rishi has one), not a llama.cpp GGUF.

@@ -77,6 +77,20 @@ def _bridges(sub, tg_by, allrows, ART, art_targets):
             if len(anc) >= 3: out.append(dict(query=' '.join(anc[:4]), target=set(tgt), art=a))
     return out
 
+def seed_regex(sub, tg):
+    "Augment each chunk's relations with regex-detected 'Article N' refers_to edges (perfect precision)."
+    art = re.compile(r'Article\s+(\d+)'); by = {x['id']:x for x in sub}
+    out = []
+    for t in tg:
+        x = by.get(t['id']); 
+        if not x: out.append(t); continue
+        own = set(art.findall(x['heading'] or ''))
+        seeds = [dict(src=x['id'], rel='refers_to', dst=f'Article {n}') for n in dict.fromkeys(art.findall(x['content'])) if n not in own]
+        have = {(r['rel'], _artnorm(r['dst'])) for r in t.get('relations',[])}
+        new = [s for s in seeds if ('refers_to', _artnorm(s['dst'])) not in have]
+        out.append(dict(t, relations=t.get('relations',[]) + new))
+    return out
+
 def evaluate(sub, tg, genre='regulatory', doc=None):
     "hybrid vs pmi-graph vs typed-graph on the bridges. Returns rows; prints a table."
     import vruksha  # noqa: applies graph_search
