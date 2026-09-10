@@ -3,8 +3,9 @@
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
-           'static_code_embedder', 'static_embedder', 'download_model', 'FastEncode', 'doc_encoder', 'query_encoder',
-           'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images', 'hash_embed']
+           'static_code_embedder', 'colbert_v1', 'static_embedder', 'download_model', 'FastEncode', 'doc_encoder',
+           'query_encoder', 'ColbertReranker', 'colbert_reranker', 'FastEncodeImage', 'FastEncodeMultimodal',
+           'encode_pdf_texts', 'encode_pdf_images', 'hash_embed']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
@@ -198,6 +199,84 @@ def query_encoder(embedder:FastEncode|StaticModel):
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
+
+# %% ../nbs/03_utils.ipynb #5d8c95c3
+colbert_v1 = AttrDict(model='answerdotai/answerai-colbert-small-v1', onnx_path='vespa_colbert.onnx', dim=96)
+
+class ColbertReranker:
+    '''ColBERT late-interaction reranker over ONNX: MaxSim of query tokens against candidate tokens.
+
+    Own onnxruntime path, no fastembed. Scores match fastembed to a max abs diff of 5e-7.'''
+    QUERY_MARKER, DOC_MARKER, QLEN = 1, 2, 31    # QLEN+1 markered = ColBERT's 32-token query
+    def __init__(self,
+                 model_dict=colbert_v1,  # model dict with HF repo and onnx file
+                 hf_token=None,          # HF token; or set HF_TOKEN
+                 max_seq_len=512,        # tokenizer truncation ceiling
+    ):
+        import string
+        store_attr('model_dict,max_seq_len')
+        try: self.md = download_model(repo_id=model_dict.model, md=model_dict.model, token=hf_token)
+        except Exception as ex: print(f'model download failed: {ex}. hint: is hf_token set'); self.md = None
+        self._punct = string.punctuation
+        self._load()
+    def _load(self):
+        ort = _ort()
+        so = ort.SessionOptions()
+        so.intra_op_num_threads = os.cpu_count() or 1
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        onnx_p = Path(self.md)/self.model_dict.onnx_path
+        pr = filter_ex(ort.get_available_providers(), lambda x: x in ['CUDAExecutionProvider','CPUExecutionProvider'])
+        try: self.sess = ort.InferenceSession(str(onnx_p), so, pr)
+        except Exception: self.sess = ort.InferenceSession(str(onnx_p), so, providers=['CPUExecutionProvider'])
+        self.tok = Tokenizer.from_file(str(Path(self.md)/'tokenizer.json'))
+        self.mask_id = self.tok.token_to_id('[MASK]')
+        self.pad_id = (self.tok.padding or {}).get('pad_id', 0)
+        self.maxlen = (self.tok.truncation or {}).get('max_length', self.max_seq_len) or self.max_seq_len
+        self.skip = {self.tok.encode(s, add_special_tokens=False).ids[0] for s in self._punct}
+    def _forward(self, ids, msk, marker):
+        'Insert the [Q]/[D] marker at position 1, run ONNX, return (ids, mask, (batch, seq, dim) embeddings).'
+        ids = np.insert(ids.astype(np.int64), 1, marker, axis=1)
+        msk = np.insert(msk.astype(np.int64), 1, 1, axis=1)
+        emb = self.sess.run(None, dict(input_ids=ids, attention_mask=msk))[0]
+        return ids, msk, emb
+    def doc_mv(self, texts):
+        'Per-document token matrices: punctuation and pad tokens dropped, each surviving token L2-normalised.'
+        self.tok.enable_truncation(max_length=self.maxlen-1)
+        self.tok.enable_padding(pad_token='[PAD]', pad_id=self.pad_id)   # pad to batch max; pads are dropped below
+        encs = self.tok.encode_batch(list(texts))
+        ids, msk, emb = self._forward(np.array([e.ids for e in encs]), np.array([e.attention_mask for e in encs]), self.DOC_MARKER)
+        out = []
+        for i in range(len(texts)):
+            keep = np.array([0 if (t in self.skip or t == self.pad_id) else m for t, m in zip(ids[i], msk[i])])
+            e = emb[i]*keep[:, None]
+            e = e/np.maximum(np.linalg.norm(e, axis=1, keepdims=True), 1e-12)
+            out.append(e[keep == 1].astype(np.float32))
+        return out
+    def qry_mv(self, text):
+        'Query token matrix: padded to 32 with [MASK] (query augmentation), all tokens kept, unnormalised.'
+        self.tok.enable_truncation(max_length=self.maxlen-1)
+        self.tok.enable_padding(pad_token='[MASK]', pad_id=self.mask_id, length=self.QLEN)
+        e = self.tok.encode_batch([text])[0]
+        _, _, emb = self._forward(np.array([e.ids]), np.array([e.attention_mask]), self.QUERY_MARKER)
+        return emb[0].astype(np.float32)
+    def scores(self, q, texts):
+        'MaxSim of the query against each text: sum over query tokens of the max over that text\'s tokens.'
+        if not texts: return []
+        Q = self.qry_mv(q)
+        return [float((D@Q.T).max(axis=1).sum()) for D in self.doc_mv(texts)]
+    def rerank(self, q, hits, text_col='content', limit=None):
+        'Reorder search hits by MaxSim; returns the top `limit`.'
+        if not hits: return hits
+        sc = self.scores(q, [h.get(text_col) or '' for h in hits])
+        out = [hits[i] for i in sorted(range(len(hits)), key=lambda i: -sc[i])]
+        return out[:limit] if limit else out
+
+_COLBERT = {}
+def colbert_reranker(model_dict=colbert_v1):
+    'Cached ColBERT reranker; the ONNX session is expensive to build and thread-safe to reuse.'
+    k = model_dict.model
+    if k not in _COLBERT: _COLBERT[k] = ColbertReranker(model_dict)
+    return _COLBERT[k]
 
 # %% ../nbs/03_utils.ipynb #f690tylraad
 class FastEncodeImage:

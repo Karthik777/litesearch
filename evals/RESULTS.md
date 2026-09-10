@@ -88,6 +88,10 @@ retriever and the multilingual vector leg as the default. It is better and faste
 leg it replaces. Do not switch the primary encoder to ColBERT. For kosha's code path the baseline is
 already at recall@10 = 1.000, so the reranker is a rank-quality nicety, not a fix.
 
+Wired as `reranker='colbert'` on `Database.search` / `doc_search` / `Index.search` (default stays
+`'flashrank'`): `ColbertReranker` in `litesearch/utils.py`, own onnxruntime path, no fastembed, its
+scores matching fastembed to 1e-6.
+
 Caveat on the flashrank comparison: this used flashrank's default `ms-marco-TinyBERT-L-2-v2`, the
 fastest and weakest of its models, which is litesearch's default. A heavier flashrank model would
 rerank better but be slower still, moving it further from ColBERT on latency, not closer on quality

@@ -631,7 +631,7 @@ def doc_search(self:Database,
                gap:int=1,             # span merge tolerance, in pages
                adaptive:bool=False,   # weight the RRF legs by query shape (measured inert — see below)
                rrf_k:int=60,
-               rerank:bool=False,     # reorder the candidates with a flashrank cross-encoder
+               rerank:bool|str=False, # reorder candidates: True/'flashrank' cross-encoder, or 'colbert' late interaction
                **kw                   # forwarded to Database.search
 ) -> list:
     'Hybrid search over a node-aware store: span merging and a breadcrumb per hit.'
@@ -644,7 +644,7 @@ def doc_search(self:Database,
     hits = rrf_all([fts, vec], k=rrf_k, limit=n*(3 if spans else 1), weights=[wf, wv])
     if spans: hits = merge_spans(hits, gap)
     if rerank:
-        hits = rerank_hits(q, hits[:n], None, limit)
+        hits = rerank_hits(q, hits[:n], None, limit, reranker=(rerank if isinstance(rerank,str) else 'flashrank'))
         for i, h in enumerate(hits): h['_rrf_score'] = 1.0/(rrf_k + i)
     for h in hits[:limit]: h['breadcrumb'] = h.get('heading') or self.breadcrumb(h.get('node_id') or '', store, prefix)
     return hits[:limit]
@@ -659,7 +659,7 @@ def sections(self:Database,
              prefix:str=None,
              fanout:int=8,        # chunk hits gathered before rolling up
              score:str='max',     # how a section scores from its hits: max | mean | sum
-             rerank:bool=False,   # reorder the chunk hits before they are grouped into sections
+             rerank:bool|str=False, # reorder chunk hits before grouping: True/'flashrank', or 'colbert'
              **kw                 # forwarded to doc_search
 ) -> list:
     'Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.'

@@ -100,7 +100,7 @@ def add_code(self:Index,
 def search(self:Index,
            q:str,                # query string
            limit:int=10,         # hits to return
-           rerank:bool=False,    # reorder with a flashrank cross-encoder (see above)
+           rerank:bool|str=False, # reorder hits: True/'flashrank' cross-encoder, or 'colbert' late interaction
            where:str=None,       # SQL over the chunk store, to search part of it
            **kw                  # forwarded to Database.doc_search
            ) -> list:

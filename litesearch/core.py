@@ -479,9 +479,15 @@ def _get_reranker(model=None):
     if key not in _RERANKERS: _RERANKERS[key] = Ranker(model_name=model) if model else Ranker()
     return _RERANKERS[key]
 
-def rerank_hits(q, hits, model=None, limit=None, text_col='content'):
-    'Reorder search hits by a flashrank cross-encoder on (q, hit[text_col]); returns the top `limit`.'
+def rerank_hits(q, hits, model=None, limit=None, text_col='content', reranker='flashrank'):
+    '''Reorder search hits by a cross-encoder over (q, hit[text_col]); returns the top `limit`.
+
+    `reranker='flashrank'` is the ms-marco cross-encoder; `'colbert'` is ColBERT late interaction,
+    which measures +0.02 to +0.06 section MRR over flashrank at 5-15x less latency (evals/RESULTS.md).'''
     if not hits: return hits
+    if reranker == 'colbert':
+        from .utils import colbert_reranker
+        return colbert_reranker().rerank(q, hits, text_col, limit)
     passages = [{'id':i, 'text':h.get(text_col) or ''} for i,h in enumerate(hits)]
     ranked = _get_reranker(model).rerank(_flashrank().RerankRequest(query=q, passages=passages))
     out = [hits[r['id']] for r in ranked]
@@ -508,8 +514,9 @@ def search(self: Database,  # database connection
            fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
            parallel:bool=False, # not used. kept for backward compatability. to be removed in later releases
-           reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
-           rerank_model:str=None  # flashrank model name (None -> fast default)
+           reranking:bool=False,  # rerank the merged (rrf) hits with a cross-encoder
+           rerank_model:str=None,  # flashrank model name (None -> fast default; ignored when reranker='colbert')
+           reranker:str='flashrank'  # 'flashrank' cross-encoder or 'colbert' late interaction
            ):
     'Search the litesearch store with fts and vector search combined.'
     if not q.strip(): return None
@@ -527,6 +534,6 @@ def search(self: Database,  # database connection
     fts, vec = L(exec_ls).map(lambda g: g())
     if rrf:
         hits = rrf_merge(fts, vec, rrf_k, lim, id_key)[ifnone(off, 0):]
-        if reranking: hits = rerank_hits(q, hits, rerank_model, limit)
+        if reranking: hits = rerank_hits(q, hits, rerank_model, limit, reranker=reranker)
         return hits
     return dict(fts=fts, vec=vec)

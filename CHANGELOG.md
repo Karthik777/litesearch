@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.35
+ColBERT late-interaction reranker as a `reranker='colbert'` option beside flashrank. Own
+onnxruntime path, no fastembed. Measures +0.02 to +0.06 section MRR over flashrank at 5-15x
+less latency (evals/RESULTS.md).
+
 ## 0.1.34
 vishalakshi simplification 
 
