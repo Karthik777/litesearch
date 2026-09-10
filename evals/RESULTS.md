@@ -140,3 +140,25 @@ can be handed to a regex and the LLM left to type concepts. Fixtures: `typed_gra
 gemma-3n-E4B-it (Q4 GGUF) loads but emits gibberish under llama-cpp-python 0.3.30: its MatFormer /
 per-layer-embedding architecture is not correctly supported there. Run gemma on its native LiteRT
 runtime (rishi has one), not a llama.cpp GGUF.
+
+### Do all three: comprehensive citation seed + better model + incremental
+
+"Article N" alone is flaky. The seed is now a pattern set over Article, Annex, Chapter, Title,
+Section and Regulation/Directive act numbers (`CITE` in `evals/typed_graph.py`), canonicalized so a
+reference collapses to one node. It runs beside the model, not instead of it, and the graph is
+built incrementally (new chunks upsert onto existing canonical nodes).
+
+Bridges now target every cited heading kind, so the set is larger and harder.
+
+| extractor | bridges | typed hit | hybrid | pmi |
+|---|---|---|---|---|
+| Qwen2.5-1.5B raw | 3 | 1.00 | 0.00 | 0.00 |
+| Qwen2.5-1.5B + comprehensive seed | 23 | 0.61 | 0.13 | 0.13 |
+| Qwen3-4B raw | 14 | 0.71 | 0.14 | 0.21 |
+| Qwen3-4B + comprehensive seed | 22 | 0.64 | 0.09 | 0.14 |
+| Claude + comprehensive seed | 27 | 0.63 | 0.07 | 0.11 |
+
+The seed is what lets a weak model cover the whole citation surface: Qwen2.5-1.5B goes from 3
+traversable bridges to 23 at 0.61 hit against 0.13 for hybrid. A strong model reaches most of them
+on its own; the seed guarantees the structured ones regardless of model. Loose references ("that
+Directive", "the preceding paragraph") still need the model, which is where its size earns out.

@@ -28,9 +28,23 @@ f"entities: {{name, type}}, type in {ENT_TYPES}. relations: {{src, rel, dst}}, r
 "to one node. Output STRICT JSON only: "
 '{"summary": str, "entities": [{"name": str, "type": str}], "relations": [{"src": str, "rel": str, "dst": str}]}')
 
+CITE = [
+    (re.compile(r'\bArticle\s+(\d+)', re.I), lambda m: f'Article {m.group(1)}'),
+    (re.compile(r'\bAnnex(?:es)?\s+([IVXLCDM]+|\d+)', re.I), lambda m: f'Annex {m.group(1).upper()}'),
+    (re.compile(r'\bChapter\s+([IVXLCDM]+|\d+)', re.I), lambda m: f'Chapter {m.group(1).upper()}'),
+    (re.compile(r'\bTitle\s+([IVXLCDM]+|\d+)', re.I), lambda m: f'Title {m.group(1).upper()}'),
+    (re.compile(r'\bSection\s+(\d+)', re.I), lambda m: f'Section {m.group(1)}'),
+    (re.compile(r'\b(Regulation|Directive)s?\s*\((?:EU|EC|EEC)\)\s*(?:No\s*)?(\d+/\d+)', re.I), lambda m: f'{m.group(1).title()} {m.group(2)}'),
+    (re.compile(r'\b(Regulation|Directive)s?\s+(\d+/\d+)/(?:EU|EC|EEC)', re.I), lambda m: f'{m.group(1).title()} {m.group(2)}'),
+]
 def _artnorm(x):
-    "'Article 3(1)' -> 'Article 3'."
-    m = re.search(r'Article\s+(\d+)', str(x)); return f'Article {m.group(1)}' if m else None
+    "Canonical citation for a name ('Article 3(1)'->'Article 3', 'Annexes I'->'Annex I', act numbers), else None."
+    for pat, f in CITE:
+        if (m := pat.search(str(x))): return f(m)
+    return None
+def _cites(text):
+    "Every canonical citation in a span, deduped, in order."
+    return list(dict.fromkeys(f(m) for pat, f in CITE for m in pat.finditer(text or '')))
 
 def _norm_rel(r):
     r = (r or '').lower().strip(); return r if r in REL_VOCAB else REL_MAP.get(r)
@@ -79,13 +93,13 @@ def _bridges(sub, tg_by, allrows, ART, art_targets):
 
 def seed_regex(sub, tg):
     "Augment each chunk's relations with regex-detected 'Article N' refers_to edges (perfect precision)."
-    art = re.compile(r'Article\s+(\d+)'); by = {x['id']:x for x in sub}
+    by = {x['id']:x for x in sub}
     out = []
     for t in tg:
         x = by.get(t['id']); 
         if not x: out.append(t); continue
-        own = set(art.findall(x['heading'] or ''))
-        seeds = [dict(src=x['id'], rel='refers_to', dst=f'Article {n}') for n in dict.fromkeys(art.findall(x['content'])) if n not in own]
+        own = set(_cites(x['heading'] or ''))
+        seeds = [dict(src=x['id'], rel='refers_to', dst=a) for a in _cites(x['content']) if a not in own]
         have = {(r['rel'], _artnorm(r['dst'])) for r in t.get('relations',[])}
         new = [s for s in seeds if ('refers_to', _artnorm(s['dst'])) not in have]
         out.append(dict(t, relations=t.get('relations',[]) + new))
@@ -101,7 +115,7 @@ def evaluate(sub, tg, genre='regulatory', doc=None):
     node_of = {i:allrows[i]['node_id'] for i in allrows}
     ART = {}
     for r in allrows.values():
-        if (m:=re.search(r'Article\s+(\d+)', r['heading'] or '')): ART.setdefault(f"Article {m.group(1)}", []).append(r['id'])
+        for a in _cites(r['heading'] or ''): ART.setdefault(a, []).append(r['id'])
     art_targets = lambda a: [i for i in ART.get(a,[])[:4] if i in allrows]
     tg_by = {t['id']:t for t in tg}
     refers = {t['id']:{a for r in t.get('relations',[]) if r.get('rel')=='refers_to' and (a:=_artnorm(r.get('dst')))} for t in tg}
