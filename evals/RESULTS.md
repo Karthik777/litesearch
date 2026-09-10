@@ -103,3 +103,20 @@ the 18 chunks, not the whole corpus. It costs an LLM pass at ingest, so it belon
 already has a model (vishalakshi), not in litesearch core. Before shipping it must hold on a full
 build across genres, on prose (arxiv) as well as legal, and against the same source-MRR
 regression check the PMI leg failed. But the direction is now measured: typed edges bridge, co-occurrence does not.
+
+### Reproducible: a local model builds the typed graph (rishi + llama.cpp)
+
+`evals/typed_graph.py` extracts the graph with a local model through rishi/urai (llama.cpp GGUF),
+prompt adapted from artifact-pyramids. Fixtures in `evals/cache/`: the 18 chunks (`typed_subset`)
+and two extractions, Claude and Qwen2.5-1.5B-Instruct. `evaluate(sub, tg)` scores the bridges.
+
+| extractor | refers_to recall vs regex | typed target hit | hybrid | pmi |
+|---|---|---|---|---|
+| Claude | 1.00 | 0.61-0.81 | 0.08-0.12 | 0.08-0.17 |
+| Qwen2.5-1.5B (local) | 0.11 | 0.17 (1.00 on its own edges) | 0.06 | 0.06 |
+
+The value tracks extraction quality. The 1.5B model, on CPU through rishi, recovers ~11% of
+cross-references but where it emits an edge the typed leg reaches the target every time; overall it
+still triples hybrid's hit and lifts MRR ~38x. A larger local model closes the gap toward Claude's
+0.61-0.81. So the local-model path is real, and extraction recall (model size, prompt, or a
+regex-assisted seed for article citations) is the lever, not the retrieval mechanism.

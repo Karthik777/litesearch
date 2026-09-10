@@ -1,0 +1,755 @@
+[
+ {
+  "id": "244a287d72ca087b9518c46f53cdb8320839d944",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "392509b476aa74dd06e2936827c22d812e6f494d",
+  "summary": "Article 2 defines terms and cross-references to Article 3.",
+  "entities": [
+   {
+    "name": "Article 2",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "means of transport",
+    "type": "goods_or_services"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 2",
+    "rel": "defines",
+    "dst": "means of transport"
+   },
+   {
+    "src": "Article 3",
+    "rel": "applies_to",
+    "dst": "Article 2"
+   }
+  ]
+ },
+ {
+  "id": "65c5edf704215f9878024afb31106733b703cbc3",
+  "summary": "Article 3(b) defines the intra-Community acquisition of goods and other specific conditions.",
+  "entities": [
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 4",
+    "type": "article_ref"
+   },
+   {
+    "name": "intra-Community acquisition",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "agricultural, forestry, or fisheries business",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "common flat-rate scheme for farmers",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "non-taxable legal person",
+    "type": "actor"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 3",
+    "rel": "defines",
+    "dst": "intra-Community acquisition"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "refers_to",
+    "dst": "Article 4"
+   },
+   {
+    "src": "Article 3",
+    "rel": "defines",
+    "dst": "taxable person"
+   },
+   {
+    "src": "taxable person",
+    "rel": "subject_to",
+    "dst": "agricultural, forestry, or fisheries business"
+   },
+   {
+    "src": "agricultural, forestry, or fisheries business",
+    "rel": "subject_to",
+    "dst": "common flat-rate scheme for farmers"
+   },
+   {
+    "src": "taxable person",
+    "rel": "subject_to",
+    "dst": "non-taxable legal person"
+   }
+  ]
+ },
+ {
+  "id": "bfa5a35445415d78f85d0ce4f46a5da03e886882",
+  "summary": "Article 3 defines the threshold for which taxable persons and non-taxable legal persons can opt for the general scheme provided for in Article 2.",
+  "entities": [
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "Member States",
+    "type": "actor"
+   },
+   {
+    "name": "taxable persons",
+    "type": "actor"
+   },
+   {
+    "name": "non-taxable legal persons",
+    "type": "actor"
+   },
+   {
+    "name": "Article 2",
+    "type": "article_ref"
+   },
+   {
+    "name": "general scheme",
+    "type": "legal_concept"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 3",
+    "rel": "defines",
+    "dst": "threshold"
+   },
+   {
+    "src": "threshold",
+    "rel": "refers_to",
+    "dst": "Article 2"
+   },
+   {
+    "src": "taxable persons",
+    "rel": "subject_to",
+    "dst": "Article 2"
+   },
+   {
+    "src": "non-taxable legal persons",
+    "rel": "subject_to",
+    "dst": "Article 2"
+   },
+   {
+    "src": "Article 2",
+    "rel": "part_of",
+    "dst": "Article 3"
+   }
+  ]
+ },
+ {
+  "id": "f9c3eb813de924a5588a467275fa9adef83d8653",
+  "summary": "Article 4 lists additional transactions that are not subject to VAT.",
+  "entities": [
+   {
+    "name": "Article 4",
+    "type": "article_ref"
+   },
+   {
+    "name": "intra-Community acquisition",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "second-hand goods",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "works of art",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "collectors' items",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "antiques",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "taxable dealer",
+    "type": "actor"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "dispatch or transport",
+    "type": "transaction_type"
+   },
+   {
+    "name": "margin scheme",
+    "type": "transaction_type"
+   },
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 311(1)",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 312",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 325",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "intra-Community acquisition"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "second-hand goods"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "works of art"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "collectors' items"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "antiques"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "Article 311(1)"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "Article 312"
+   },
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "Article 325"
+   },
+   {
+    "src": "Article 4",
+    "rel": "excludes",
+    "dst": "Article 3"
+   }
+  ]
+ },
+ {
+  "id": "7861742e541026ea626e00ca3b10ee9e4603a505",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "b1e5cf09b3e65aa664c3f6d2089d6fdd21b4fc34",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "79dbae2cd2b22050a22b13e42d8a6a1a105b3104",
+  "summary": "Article 5 defines 'Member State', 'territory of a Member State', 'third territories', and 'third country'. It also cross-references to Article 6.",
+  "entities": [
+   {
+    "name": "Article 5",
+    "type": "article_ref"
+   },
+   {
+    "name": "Member State",
+    "type": "legal_concept"
+   },
+   {
+    "name": "territory of a Member State",
+    "type": "legal_concept"
+   },
+   {
+    "name": "third territories",
+    "type": "legal_concept"
+   },
+   {
+    "name": "third country",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Article 6",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "Member State"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "territory of a Member State"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "third territories"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "third country"
+   }
+  ]
+ },
+ {
+  "id": "7f5d9b85ebefdbfeb4969e2b4521b7d0a995105b",
+  "summary": "Article 6 lists territories that are not subject to the Directive.",
+  "entities": [
+   {
+    "name": "Article 6",
+    "type": "article_ref"
+   },
+   {
+    "name": "Mount Athos",
+    "type": "place"
+   },
+   {
+    "name": "the Canary Islands",
+    "type": "place"
+   },
+   {
+    "name": "the French territories referred to in Article 349 and Article 355(1) of the Treaty on the Functioning of the European Union",
+    "type": "place"
+   },
+   {
+    "name": "the \u00c5land Islands",
+    "type": "place"
+   },
+   {
+    "name": "the Channel Islands",
+    "type": "place"
+   },
+   {
+    "name": "Campione d'Italia",
+    "type": "place"
+   },
+   {
+    "name": "Italian waters of Lake Lugano",
+    "type": "place"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 6",
+    "rel": "defines",
+    "dst": "territories"
+   },
+   {
+    "src": "Mount Athos",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "the Canary Islands",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "the French territories referred to in Article 349 and Article 355(1) of the Treaty on the Functioning of of the European Union",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "the \u00c5land Islands",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "the Channel Islands",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "Campione d'Italia",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "Italian waters of Lake Lugano",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   }
+  ]
+ },
+ {
+  "id": "7b31cadc208ecd7c3ce658300ad2ab1f5f35598d",
+  "summary": "Article 9 defines a taxable person who supplies a new means of transport.",
+  "entities": [
+   {
+    "name": "Article 9",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "legal_concept"
+   },
+   {
+    "name": "new means of transport",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "vendor",
+    "type": "actor"
+   },
+   {
+    "name": "customer",
+    "type": "actor"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "Community",
+    "type": "place"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 9",
+    "rel": "defines",
+    "dst": "taxable person"
+   }
+  ]
+ },
+ {
+  "id": "8f7b300e343227c4c557a62978c4f1aeb00292ea",
+  "summary": "Member States may regard as a taxable person anyone who carries out, on an occasional basis, a transaction relating to the activities referred to in Article 9(1) and in particular one of the following transactions.",
+  "entities": [
+   {
+    "name": "Article 12",
+    "type": "article_ref"
+   },
+   {
+    "name": "Member States",
+    "type": "actor"
+   },
+   {
+    "name": "taxable person",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Article 9(1)",
+    "type": "article_ref"
+   },
+   {
+    "name": "building",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "building parts",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "land",
+    "type": "goods_or_services"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 12",
+    "rel": "defines",
+    "dst": "taxable person"
+   },
+   {
+    "src": "taxable person",
+    "rel": "subject_to",
+    "dst": "Article 9(1)"
+   },
+   {
+    "src": "Article 9(1)",
+    "rel": "defines",
+    "dst": "building"
+   },
+   {
+    "src": "Article 9(1)",
+    "rel": "defines",
+    "dst": "building parts"
+   },
+   {
+    "src": "Article 9(1)",
+    "rel": "defines",
+    "dst": "land"
+   }
+  ]
+ },
+ {
+  "id": "e44282ea549a8ce7eaaa2c49f3232942c88df14c",
+  "summary": "Article 12 defines 'building land' and provides definitions for 'building' and 'land on which a building stands'.",
+  "entities": [
+   {
+    "name": "Article 12",
+    "type": "article_ref"
+   },
+   {
+    "name": "building land",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "building",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "land on which a building stands",
+    "type": "goods_or_services"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 12",
+    "rel": "defines",
+    "dst": "building land"
+   },
+   {
+    "src": "building",
+    "rel": "defines",
+    "dst": "building"
+   },
+   {
+    "src": "land on which a building stands",
+    "rel": "defines",
+    "dst": "land on which a building stands"
+   }
+  ]
+ },
+ {
+  "id": "fdfad8e11c12c518603dbc4484642de2f5d8aed2",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "0679203f60fb931d7dd2a42bd8b1a4594af03245",
+  "summary": "Article 14 defines the term 'supply of goods' and cross-references to Article 2.",
+  "entities": [
+   {
+    "name": "Article 14",
+    "type": "article_ref"
+   },
+   {
+    "name": "supply of goods",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Article 2",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 14",
+    "rel": "defines",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "refers_to",
+    "dst": "Article 2"
+   }
+  ]
+ },
+ {
+  "id": "ada7612f5986586822c9e15cc7388a2a2c759849",
+  "summary": "Article 17 defines the supply of goods by a taxable person within the territory of a Member State.",
+  "entities": [
+   {
+    "name": "Article 17",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "dispatch or transport",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Article 33",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 36",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17",
+    "rel": "defines",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "subject_to",
+    "dst": "Article 33"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "subject_to",
+    "dst": "Article 36"
+   }
+  ]
+ },
+ {
+  "id": "9cd914009112119fede1ab44ae50810d7039e0d4",
+  "summary": "Article 17 defines the supply of gas, electricity, heat, and cooling energy through natural gas systems and heating and cooling networks, and the supply of goods by a taxable person within a Member State.",
+  "entities": [
+   {
+    "name": "Article 17",
+    "type": "article_ref"
+   },
+   {
+    "name": "natural gas system",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "electricity",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "heat",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "cooling energy",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "heating network",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "cooling network",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17",
+    "rel": "defines",
+    "dst": "supply of gas, electricity, heat, and cooling energy through natural gas systems and heating and cooling networks"
+   },
+   {
+    "src": "Article 17",
+    "rel": "defines",
+    "dst": "supply of goods by the taxable person within the territory of the Member State"
+   },
+   {
+    "src": "supply of gas through a natural gas system situated within the territory of the Community or any network connected to such a system",
+    "rel": "refers_to",
+    "dst": "Article 17"
+   },
+   {
+    "src": "supply of electricity or the supply of heat or cooling energy through heating or cooling networks",
+    "rel": "refers_to",
+    "dst": "Article 17"
+   },
+   {
+    "src": "supply of the goods by the taxable person within the territory of the Member State",
+    "rel": "refers_to",
+    "dst": "Article 17"
+   },
+   {
+    "src": "supply of the goods by the taxable person within the territory of the Member State",
+    "rel": "subject_to",
+    "dst": "Articles 138, 146, 147, 148, 151, 152"
+   }
+  ]
+ },
+ {
+  "id": "adeb3d0ce6722b2b476765570eaefedbf091b9fe",
+  "summary": "Article 17a defines the taxable person dispatching or transporting goods and requires them to record the transfer and include the identity of of the acquiring taxable person and the VAT identification number.",
+  "entities": [
+   {
+    "name": "Article 17a",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "goods",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Member State",
+    "type": "actor"
+   },
+   {
+    "name": "recapitulative statement",
+    "type": "transaction_type"
+   },
+   {
+    "name": "VAT identification number",
+    "type": "goods_or_services"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17a",
+    "rel": "defines",
+    "dst": "taxable person"
+   }
+  ]
+ },
+ {
+  "id": "883a951b9bc6c96b7b9f94b770b0aba3b231f563",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ }
+]
