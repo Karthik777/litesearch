@@ -130,7 +130,7 @@ Above the line is on by default. Below it is off and stays off.
 | heading prefix on the chunk | ±0.02, sign flips by genre | a wash |
 | deeper fanout alone | −0.014 to −0.068 | pays only with a reranker |
 | late chunking | −0.033 to −0.053 | deleted; the code is in `evals/latechunk.py` |
-| entity graph leg | −0.070 to −0.160 | [vruksha](https://github.com/vedicreader/vruksha), opt-in |
+| entity graph leg | −0.070 to −0.160 | removed from `context`; [vruksha](https://github.com/vedicreader/vruksha) only, see `evals/RESULTS.md` |
 
 Three findings worth more than a table row.
 
@@ -162,7 +162,8 @@ the target at rank 1 between 53% and 84% of the time.
 
 Three things live in their own packages: [pdflite](https://github.com/vedicreader/pdflite) reads
 PDFs, [ganapati](https://github.com/vedicreader/ganapati) does Sanskrit metre, verse chunking and
-lemmas, and [vruksha](https://github.com/vedicreader/vruksha) builds the entity graph.
+lemmas, and [vruksha](https://github.com/vedicreader/vruksha) builds an entity graph (external; it measures
+negative for retrieval and is no longer wired into `context`, see `evals/RESULTS.md`).
 
 **Cross-script search is on for every store**, not only Sanskrit ones. The `sanskrit` FTS5
 tokenizer emits an ASCII fold of each token beside it, so `श्रीमाता`, `śrīmātā` and `srimata` all
