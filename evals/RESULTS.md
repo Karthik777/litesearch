@@ -59,3 +59,47 @@ separately (`evals/results/cluster.json`). `vruksha` remains an external package
 wants to build the graph directly. A typed graph (relation edges, not co-occurrence) built with an
 LLM is the only version that could clear this bar, and it must clear it on this same harness
 without the source-MRR regression before it ships.
+
+## A typed (LLM-built) graph does clear the bar, on cross-reference bridges
+
+Prototype, not shipped. The PMI graph loses because its edges are co-occurrence. A graph whose
+edges are typed relations extracted by an LLM is a different artifact, and on the one query class
+the whole graph idea exists for (word-disjoint cross-reference bridges) it wins by a wide margin.
+
+### Method
+
+18 cross-reference-dense chunks of one EU directive (dir_2006_112) handed to Claude, which
+extracted typed entities and relations (`refers_to`, `defines`, `part_of`, `subject_to`, ...) plus
+a node summary per chunk, canonicalizing article and concept names so a reference collapses to one
+node. 117 entities, 106 relations over 18 chunks. Retrieval over the full regulatory store (3585
+chunks). Bridges: query = distinctive tokens of a referencing chunk absent from the referenced
+article; target = that article's chunks. `typed` = hybrid RRF-fused with a leg that follows the
+LLM `refers_to` edges from the top hybrid seeds. Reciprocal rank over top 50.
+
+Ground truth built two ways: from the LLM edges (25 bridges) and, to remove circularity, from a
+regex over the raw text independent of the LLM (18 bridges).
+
+### Cross-reference bridge retrieval, full regulatory store
+
+| ground truth | method | target MRR | target hit |
+|---|---|---|---|
+| LLM edges | hybrid | 0.0066 | 0.12 |
+| LLM edges | pmi-graph w=1 | 0.0091 | 0.08 |
+| LLM edges | typed-graph | 0.2069 | 0.72 |
+| regex (independent) | hybrid | 0.0028 | 0.11 |
+| regex (independent) | pmi-graph w=1 | 0.0053 | 0.17 |
+| regex (independent) | typed-graph | 0.1942 | 0.61 |
+
+The typed leg reaches the referenced article 61-72% of the time against 8-17% for hybrid and the
+PMI graph, ~30-70x the MRR. On the regex ground truth the LLM's `refers_to` recall was 1.00: it
+extracted every cross-reference a regex finds, plus looser ones a regex misses. The PMI graph adds
+nothing here: co-occurrence cannot represent "Article X refers to Article Y".
+
+### Caveats and the bar for shipping
+
+One directive, 18 source chunks, ~20 bridges, regulatory (cross-reference dense). The typed leg is
+a hand-built RRF expansion, not a productionised `graph_search`, and the graph was extracted over
+the 18 chunks, not the whole corpus. It costs an LLM pass at ingest, so it belongs in a layer that
+already has a model (vishalakshi), not in litesearch core. Before shipping it must hold on a full
+build across genres, on prose (arxiv) as well as legal, and against the same source-MRR
+regression check the PMI leg failed. But the direction is now measured: typed edges bridge, co-occurrence does not.
