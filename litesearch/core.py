@@ -5,7 +5,7 @@ __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'RERANK_FANOUT', 'sql_in', 'content_id
            'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge', 'database', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
-from fastcore.all import Path, Generator, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_, parallel as fcp
+from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict, hash_record
