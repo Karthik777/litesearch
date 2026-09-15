@@ -17,11 +17,12 @@ def get_graph(self:Database,
               store:str='store',   # chunk store the graph is built over
               prefix:str=None,     # table prefix (default: '' for 'store', else '<store>_')
               ann:bool=True,       # register an ANN index on the entity store (needed for resolution)
+              encoder:str=None,    # the encoder whose vectors the entity store holds; checked on reopen
               **kw):               # extra typed columns for the entity store
     'Create the entity/mention/edge tables for a chunk store. Idempotent; returns the tables.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     en, mn, eg = f'{p}entities', f'{p}mentions', f'{p}edges'
-    ents = self.get_store(en, hash=True, ann=ann, kind=str, canon=str, freq=int, **kw)
+    ents = self.get_store(en, hash=True, ann=ann, encoder=encoder, kind=str, canon=str, freq=int, **kw)
     self.t[mn].create(chunk_id=str, entity_id=str, surface=str, n=int,
                       pk=('chunk_id', 'entity_id'), if_not_exists=True)
     self.t[eg].create(src=str, dst=str, rel=str, weight=float, n=int,

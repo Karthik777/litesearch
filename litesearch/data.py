@@ -9,7 +9,7 @@ __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'PROFILES
            'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
-from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_,fdelegates,defaults
+from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_,fdelegates,defaults,find_file_parents
 from pdf_oxide import PdfDocument
 import struct as _struct, re
 
@@ -135,7 +135,7 @@ file_exts = code_exts + ',.md,.txt,.pdf,.ipynb'
 
 def repo_root() -> Path:
 	'Find the root of the current git repository, or None if not in a repo.'
-	return first((Path.cwd(), *Path.cwd().parents), lambda p: (p/'.git').exists())
+	return find_file_parents('.git')
 
 def _pkg_name(pkg:str) -> str:
 	'Base distribution/import name from a requirement string.'

@@ -8,7 +8,7 @@ __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embed
            'hash_embed']
 
 # %% ../nbs/03_utils.ipynb #initial_id
-from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first
+from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first, num_cpus
 from fastcore.parallel import parallel as fc_parallel
 import json, os, re, warnings, zlib
 from functools import cache
@@ -126,7 +126,7 @@ class FastEncode:
 			onnx_p = self._maybe_quantize(Path(self.md) / self.md_nm)
 			ort = _ort()
 			sess_opt = ort.SessionOptions()
-			sess_opt.intra_op_num_threads = os.cpu_count() or 1
+			sess_opt.intra_op_num_threads = num_cpus()
 			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 			sess_opt.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 			self._load_tok()
@@ -236,7 +236,7 @@ class FastEncodeImage:
 			onnx_p = Path(self.md) / self.model_dict.onnx_path
 			ort = _ort()
 			sess_opt = ort.SessionOptions()
-			sess_opt.intra_op_num_threads = os.cpu_count() or 1
+			sess_opt.intra_op_num_threads = num_cpus()
 			sess_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 			sess_opt.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 			pr = filter_ex(ort.get_available_providers(), lambda x: x in ['CUDAExecutionProvider', 'CPUExecutionProvider'])

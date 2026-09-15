@@ -172,8 +172,7 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
             flush(p)
             cur_page = p
     elif mode == 'window':
-        for i in range(0, len(pages), window):
-            grp = pages[i:i+window]
+        for grp in chunked(pages, window):
             lead = next((l.strip() for _, t in grp for l in t.splitlines() if l.strip()), '')
             open_node(f'Pages {grp[0][0]+1}–{grp[-1][0]+1}: {lead[:60]}', 1, grp[0][0])
             for p, t in grp:
