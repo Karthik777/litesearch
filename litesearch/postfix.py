@@ -18,10 +18,8 @@ def usearch_fix(v:bool=False):
             if v: print('Not on macOS, skipping usearch fix.')
             return
         cmd = ['install_name_tool', '-add_rpath', '/usr/lib', dylib_path]
-        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if r.returncode == 0:
-	        if v: print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
-        else: print(f'✗ Failed to apply fix: {r.stderr}')
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        if v: print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
     except ImportError as ie:
         print('Warning: usearch not installed or import failed. you might need to install libsqlite3-dev. '
               'For macs do `brew install libsqlite3-dev`. For linux `apt install libsqlite3-dev`. ', ie)

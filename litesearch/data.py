@@ -349,7 +349,6 @@ def installed_packages(nms:list=None,    # list of package names
         p = repo_root().joinpath('pyproject.toml')
         if not p.exists(): return L()
         from tomllib import load
-        from fastcore.basics import filter_keys, in_
         toml_data = load(p.open('rb'))
         fn = lambda s: re.split(r'[>=<!;\[]', s)[0].strip()
         tlp = L(toml_data.get('project',{}).get('dependencies',[])).map(fn)
@@ -368,7 +367,6 @@ def clean(q:str,  # query to be passed for fts search
           pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
           ):
     'Clean the query by removing * and returning None for empty queries.'
-    import re
     return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
 _BARE = re.compile(r'^[A-Za-z0-9_]+$')

@@ -65,7 +65,7 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     return out
 
 def _usearch_clusters(idx, min_count, max_count):
-    '(centroid, members) straight off the HNSW graph. usearch walks the index levels, so it needs'
+    "(centroid, members) from usearch's index cluster() over the HNSW graph."
     kw = {k: v for k, v in dict(min_count=min_count, max_count=max_count).items() if v}
     cl = idx.cluster(**kw)
     keys, _ = cl.centroids_popularity

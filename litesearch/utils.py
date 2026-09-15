@@ -315,7 +315,7 @@ def encode_pdf_images(doc,             # PdfDocument
                       enc,             # FastEncodeImage instance
                       ) -> L:
 	'Extract and encode every PDF image; yields (page, img_bytes, emb) — caller owns the storage schema.'
-	import os, tempfile
+	import tempfile
 	with tempfile.TemporaryDirectory() as tmp:
 		page_imgs = {}
 		for pg in range(doc.page_count()):

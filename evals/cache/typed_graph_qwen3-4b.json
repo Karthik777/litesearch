@@ -1,0 +1,1062 @@
+[
+ {
+  "id": "244a287d72ca087b9518c46f53cdb8320839d944",
+  "summary": "Annexes I, II, and III list activities, services, and supplies related to Articles 13(1) and 58(1)(c) and Article 98, respectively, and reference VAT rates.",
+  "entities": [
+   {
+    "name": "Annex I",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Annex II",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Annex III",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Article 13(1)",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 58(1)(c)",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 98",
+    "type": "article_ref"
+   },
+   {
+    "name": "VAT",
+    "type": "legal_concept"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Annex I",
+    "rel": "refers_to",
+    "dst": "Article 13(1)"
+   },
+   {
+    "src": "Annex II",
+    "rel": "refers_to",
+    "dst": "Article 58(1)(c)"
+   },
+   {
+    "src": "Annex III",
+    "rel": "refers_to",
+    "dst": "Article 98"
+   }
+  ]
+ },
+ {
+  "id": "392509b476aa74dd06e2936827c22d812e6f494d",
+  "summary": "Article 2(c) and (d) define taxable supply activities, including services within a Member State and importation of goods; point (ii) of paragraph 1(b) includes motorised land vehicles exceeding 48 cubic centimetres or 7.2 kilowatts as 'means of transport'.",
+  "entities": [
+   {
+    "name": "Article 2",
+    "type": "article_ref"
+   },
+   {
+    "name": "services",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "importation of goods",
+    "type": "transaction_type"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "means of transport",
+    "type": "legal_concept"
+   },
+   {
+    "name": "motorised land vehicles",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "48 cubic centimetres",
+    "type": "condition"
+   },
+   {
+    "name": "7.2 kilowatts",
+    "type": "condition"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 2",
+    "rel": "refers_to",
+    "dst": "Article 3(1)"
+   },
+   {
+    "src": "Article 2",
+    "rel": "defines",
+    "dst": "services"
+   },
+   {
+    "src": "Article 2",
+    "rel": "defines",
+    "dst": "importation of goods"
+   },
+   {
+    "src": "Article 2",
+    "rel": "applies_to",
+    "dst": "taxable person"
+   },
+   {
+    "src": "point (ii) of paragraph 1(b)",
+    "rel": "defines",
+    "dst": "means of transport"
+   },
+   {
+    "src": "means of transport",
+    "rel": "applies_to",
+    "dst": "motorised land vehicles"
+   },
+   {
+    "src": "motorised land vehicles",
+    "rel": "subject_to",
+    "dst": "48 cubic centimetres"
+   },
+   {
+    "src": "motorised land vehicles",
+    "rel": "subject_to",
+    "dst": "7.2 kilowatts"
+   }
+  ]
+ },
+ {
+  "id": "65c5edf704215f9878024afb31106733b703cbc3",
+  "summary": "Article 3(b) defines the conditions under which intra-Community acquisition of goods is exempt, excluding certain goods and activities, and specifies taxable persons involved in agricultural, forestry, fisheries businesses or non-deductible supplies.",
+  "entities": [
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "intra-Community acquisition of goods",
+    "type": "transaction_type"
+   },
+   {
+    "name": "agricultural, forestry or fisheries business",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "common flat-rate scheme for farmers",
+    "type": "legal_concept"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "non-taxable legal person",
+    "type": "actor"
+   },
+   {
+    "name": "new means of transport",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "products subject to excise duty",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "supplies of goods or services",
+    "type": "transaction_type"
+   },
+   {
+    "name": "VAT",
+    "type": "legal_concept"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 3",
+    "rel": "defines",
+    "dst": "intra-Community acquisition of goods"
+   },
+   {
+    "src": "intra-Community acquisition of goods",
+    "rel": "excludes",
+    "dst": "new means of transport"
+   },
+   {
+    "src": "intra-Community acquisition of goods",
+    "rel": "excludes",
+    "dst": "products subject to excise duty"
+   },
+   {
+    "src": "intra-Community acquisition of goods",
+    "rel": "applies_to",
+    "dst": "taxable person"
+   },
+   {
+    "src": "intra-Community acquisition of goods",
+    "rel": "applies_to",
+    "dst": "agricultural, forestry or fisheries business"
+   },
+   {
+    "src": "intra-Community acquisition of goods",
+    "rel": "applies_to",
+    "dst": "non-taxable legal person"
+   },
+   {
+    "src": "taxable person",
+    "rel": "subject_to",
+    "dst": "common flat-rate scheme for farmers"
+   },
+   {
+    "src": "supplies of goods or services",
+    "rel": "subject_to",
+    "dst": "VAT not deductible"
+   }
+  ]
+ },
+ {
+  "id": "bfa5a35445415d78f85d0ce4f46a5da03e886882",
+  "summary": "Article 3 defines the threshold for reference as the total value of intra-Community acquisitions excluding VAT, and references point (b) of paragraph 1; it also states that Member States shall allow eligible taxable persons and non-taxable legal persons to opt for the general scheme under Article 2(1)(b)(i).",
+  "entities": [
+   {
+    "name": "Article 3",
+    "type": "article_ref"
+   },
+   {
+    "name": "threshold",
+    "type": "legal_concept"
+   },
+   {
+    "name": "total value",
+    "type": "legal_concept"
+   },
+   {
+    "name": "VAT",
+    "type": "legal_concept"
+   },
+   {
+    "name": "intra-Community acquisitions",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "point (b) of paragraph 1",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Article 2(1)(b)(i)",
+    "type": "article_ref"
+   },
+   {
+    "name": "Member States",
+    "type": "actor"
+   },
+   {
+    "name": "taxable persons",
+    "type": "actor"
+   },
+   {
+    "name": "non-taxable legal persons",
+    "type": "actor"
+   },
+   {
+    "name": "general scheme",
+    "type": "transaction_type"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 3",
+    "rel": "defines",
+    "dst": "threshold"
+   },
+   {
+    "src": "threshold",
+    "rel": "applies_to",
+    "dst": "intra-Community acquisitions"
+   },
+   {
+    "src": "threshold",
+    "rel": "excludes",
+    "dst": "VAT"
+   },
+   {
+    "src": "point (b) of paragraph 1",
+    "rel": "refers_to",
+    "dst": "Article 3"
+   },
+   {
+    "src": "Article 3",
+    "rel": "amends",
+    "dst": "Article 2(1)(b)(i)"
+   },
+   {
+    "src": "taxable persons",
+    "rel": "subject_to",
+    "dst": "right to opt for"
+   },
+   {
+    "src": "non-taxable legal persons",
+    "rel": "subject_to",
+    "dst": "right to opt for"
+   },
+   {
+    "src": "right to opt for",
+    "rel": "part_of",
+    "dst": "general scheme"
+   }
+  ]
+ },
+ {
+  "id": "f9c3eb813de924a5588a467275fa9adef83d8653",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "7861742e541026ea626e00ca3b10ee9e4603a505",
+  "summary": "Article 4(b) describes a specific intra-Community acquisition scenario involving second-hand transport, referencing Article 327(3) and transitional VAT arrangements.",
+  "entities": [
+   {
+    "name": "Article 4",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 327",
+    "type": "article_ref"
+   },
+   {
+    "name": "intra-Community acquisition",
+    "type": "transaction_type"
+   },
+   {
+    "name": "second-hand means of transport",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "taxable dealer",
+    "type": "actor"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "VAT",
+    "type": "legal_concept"
+   },
+   {
+    "name": "transitional arrangements",
+    "type": "condition"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "intra-Community acquisition"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "second-hand means of transport"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "subject_to",
+    "dst": "VAT"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "refers_to",
+    "dst": "Article 327"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "subject_to",
+    "dst": "transitional arrangements"
+   }
+  ]
+ },
+ {
+  "id": "b1e5cf09b3e65aa664c3f6d2089d6fdd21b4fc34",
+  "summary": "Article 4(c) specifies conditions under which intra-Community acquisition of second-hand goods is exempt from VAT, referencing the definition in points (1) to (4) of Article 311(1) and the role of an auction organiser.",
+  "entities": [
+   {
+    "name": "Article 4",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 311",
+    "type": "article_ref"
+   },
+   {
+    "name": "intra-Community acquisition",
+    "type": "transaction_type"
+   },
+   {
+    "name": "second-hand goods",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "works of art",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "collectors' items",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "antiques",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "auction organiser",
+    "type": "actor"
+   },
+   {
+    "name": "VAT",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 4",
+    "rel": "defines",
+    "dst": "intra-Community acquisition"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "second-hand goods"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "works of art"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "collectors' items"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "antiques"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "subject_to",
+    "dst": "VAT"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "excludes",
+    "dst": "VAT"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "applies_to",
+    "dst": "auction organiser"
+   },
+   {
+    "src": "intra-Community acquisition",
+    "rel": "refers_to",
+    "dst": "Article 311"
+   },
+   {
+    "src": "Article 311",
+    "rel": "defines",
+    "dst": "points (1) to (4)"
+   }
+  ]
+ },
+ {
+  "id": "79dbae2cd2b22050a22b13e42d8a6a1a105b3104",
+  "summary": "Article 5 defines 'Member State', 'territory of a Member State', 'third territories', and 'third country', with references to Article 299 and Article 6 of the Treaty or this Directive.",
+  "entities": [
+   {
+    "name": "Article 5",
+    "type": "article_ref"
+   },
+   {
+    "name": "Member State",
+    "type": "legal_concept"
+   },
+   {
+    "name": "territory of a Member State",
+    "type": "legal_concept"
+   },
+   {
+    "name": "third territories",
+    "type": "legal_concept"
+   },
+   {
+    "name": "third country",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Article 299",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 6",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "Member State"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "territory of a Member State"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "third territories"
+   },
+   {
+    "src": "Article 5",
+    "rel": "defines",
+    "dst": "third country"
+   },
+   {
+    "src": "territory of a Member State",
+    "rel": "refers_to",
+    "dst": "Article 299"
+   },
+   {
+    "src": "third territories",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   },
+   {
+    "src": "third country",
+    "rel": "refers_to",
+    "dst": "Article 6"
+   }
+  ]
+ },
+ {
+  "id": "7f5d9b85ebefdbfeb4969e2b4521b7d0a995105b",
+  "summary": "Article 6 excludes specific territories from its application, referencing Articles 349 and 355(1) of the Treaty on the Functioning of the European Union.",
+  "entities": [
+   {
+    "name": "Article 6",
+    "type": "article_ref"
+   },
+   {
+    "name": "Mount Athos",
+    "type": "place"
+   },
+   {
+    "name": "Canary Islands",
+    "type": "place"
+   },
+   {
+    "name": "French territories",
+    "type": "place"
+   },
+   {
+    "name": "Article 349",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 355(1)",
+    "type": "article_ref"
+   },
+   {
+    "name": "\u00c5land Islands",
+    "type": "place"
+   },
+   {
+    "name": "Channel Islands",
+    "type": "place"
+   },
+   {
+    "name": "Campione d'Italia",
+    "type": "place"
+   },
+   {
+    "name": "Italian waters of Lake Lugano",
+    "type": "place"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "Mount Athos"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "Canary Islands"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "French territories"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "\u00c5land Islands"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "Channel Islands"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "Campione d'Italia"
+   },
+   {
+    "src": "Article 6",
+    "rel": "excludes",
+    "dst": "Italian waters of Lake Lugano"
+   },
+   {
+    "src": "French territories",
+    "rel": "refers_to",
+    "dst": "Article 349"
+   },
+   {
+    "src": "French territories",
+    "rel": "refers_to",
+    "dst": "Article 355(1)"
+   }
+  ]
+ },
+ {
+  "id": "7b31cadc208ecd7c3ce658300ad2ab1f5f35598d",
+  "summary": "Article 9(2) defines a taxable person who occasionally supplies a new means of transport dispatched or transported to a destination outside a Member State but within the Community.",
+  "entities": [
+   {
+    "name": "Article 9",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "legal_concept"
+   },
+   {
+    "name": "new means of transport",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "Community",
+    "type": "place"
+   },
+   {
+    "name": "occasional basis",
+    "type": "condition"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 9",
+    "rel": "defines",
+    "dst": "taxable person"
+   },
+   {
+    "src": "taxable person",
+    "rel": "applies_to",
+    "dst": "new means of transport"
+   },
+   {
+    "src": "occasional basis",
+    "rel": "subject_to",
+    "dst": "taxable person"
+   }
+  ]
+ },
+ {
+  "id": "8f7b300e343227c4c557a62978c4f1aeb00292ea",
+  "summary": "Article 12(1) allows Member States to consider certain occasional transactions as taxable activities, specifically those involving supply before first occupation of buildings or land, and refers to transactions in Article 9(1).",
+  "entities": [
+   {
+    "name": "Article 12",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "legal_concept"
+   },
+   {
+    "name": "transaction",
+    "type": "transaction_type"
+   },
+   {
+    "name": "building",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "land",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "Article 9(1)",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 12",
+    "rel": "defines",
+    "dst": "taxable person"
+   },
+   {
+    "src": "Article 12",
+    "rel": "applies_to",
+    "dst": "transaction"
+   },
+   {
+    "src": "transaction",
+    "rel": "refers_to",
+    "dst": "Article 9(1)"
+   },
+   {
+    "src": "Article 12",
+    "rel": "subject_to",
+    "dst": "Article 9(1)"
+   }
+  ]
+ },
+ {
+  "id": "e44282ea549a8ce7eaaa2c49f3232942c88df14c",
+  "summary": "Article 12(b) specifies the supply of building land and defines 'building' as any structure fixed to or in the ground; Member States may establish detailed rules for applying the criterion in paragraph 1(a) and define 'the land on which a building stands'.",
+  "entities": [
+   {
+    "name": "Article 12",
+    "type": "article_ref"
+   },
+   {
+    "name": "building land",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "building",
+    "type": "legal_concept"
+   },
+   {
+    "name": "Member States",
+    "type": "actor"
+   },
+   {
+    "name": "paragraph 1(a)",
+    "type": "legal_concept"
+   },
+   {
+    "name": "land on which a building stands",
+    "type": "legal_concept"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 12",
+    "rel": "defines",
+    "dst": "building"
+   },
+   {
+    "src": "Article 12",
+    "rel": "refers_to",
+    "dst": "Article 12"
+   },
+   {
+    "src": "paragraph 1(a)",
+    "rel": "subject_to",
+    "dst": "Article 12"
+   }
+  ]
+ },
+ {
+  "id": "fdfad8e11c12c518603dbc4484642de2f5d8aed2",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "0679203f60fb931d7dd2a42bd8b1a4594af03245",
+  "summary": "Article 14 defines a supply of goods to include transfers of ownership by public authorities in pursuance of law, with compensation, as an additional transaction to that in paragraph 1.",
+  "entities": [
+   {
+    "name": "Article 14",
+    "type": "article_ref"
+   },
+   {
+    "name": "supply of goods",
+    "type": "legal_concept"
+   },
+   {
+    "name": "public authority",
+    "type": "actor"
+   },
+   {
+    "name": "transfer",
+    "type": "transaction_type"
+   },
+   {
+    "name": "ownership of property",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "compensation",
+    "type": "condition"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 14",
+    "rel": "defines",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "applies_to",
+    "dst": "transfer"
+   },
+   {
+    "src": "transfer",
+    "rel": "subject_to",
+    "dst": "public authority"
+   },
+   {
+    "src": "transfer",
+    "rel": "subject_to",
+    "dst": "compensation"
+   },
+   {
+    "src": "transfer",
+    "rel": "refers_to",
+    "dst": "Article 14"
+   },
+   {
+    "src": "Article 14",
+    "rel": "refers_to",
+    "dst": "Article 14"
+   }
+  ]
+ },
+ {
+  "id": "ada7612f5986586822c9e15cc7388a2a2c759849",
+  "summary": "Article 17(a) and (b) define two types of supply of goods by a taxable person, each subject to conditions set out in Articles 33 and 36 respectively.",
+  "entities": [
+   {
+    "name": "Article 17",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 33",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 36",
+    "type": "article_ref"
+   },
+   {
+    "name": "supply of goods",
+    "type": "transaction_type"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "Member State",
+    "type": "place"
+   },
+   {
+    "name": "dispatch or transport",
+    "type": "condition"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17",
+    "rel": "defines",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "Article 17(a)",
+    "rel": "applies_to",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "Article 17(b)",
+    "rel": "applies_to",
+    "dst": "supply of goods"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "subject_to",
+    "dst": "Article 33"
+   },
+   {
+    "src": "supply of goods",
+    "rel": "subject_to",
+    "dst": "Article 36"
+   },
+   {
+    "src": "Article 17(a)",
+    "rel": "refers_to",
+    "dst": "Article 33"
+   },
+   {
+    "src": "Article 17(b)",
+    "rel": "refers_to",
+    "dst": "Article 36"
+   }
+  ]
+ },
+ {
+  "id": "9cd914009112119fede1ab44ae50810d7039e0d4",
+  "summary": "",
+  "entities": [],
+  "relations": []
+ },
+ {
+  "id": "adeb3d0ce6722b2b476765570eaefedbf091b9fe",
+  "summary": "Article 17a(d) specifies that a taxable person must record goods transfer in a register and include certain details in a recapitulative statement, referencing Articles 243(3) and 262(2).",
+  "entities": [
+   {
+    "name": "Article 17a",
+    "type": "article_ref"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "goods",
+    "type": "goods_or_services"
+   },
+   {
+    "name": "register",
+    "type": "legal_concept"
+   },
+   {
+    "name": "identity of taxable person",
+    "type": "legal_concept"
+   },
+   {
+    "name": "VAT identification number",
+    "type": "legal_concept"
+   },
+   {
+    "name": "recapitulative statement",
+    "type": "transaction_type"
+   },
+   {
+    "name": "Article 243",
+    "type": "article_ref"
+   },
+   {
+    "name": "Article 262",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17a",
+    "rel": "defines",
+    "dst": "taxable person dispatching or transporting the goods"
+   },
+   {
+    "src": "recapitulative statement",
+    "rel": "refers_to",
+    "dst": "Article 262(2)"
+   },
+   {
+    "src": "register",
+    "rel": "refers_to",
+    "dst": "Article 243(3)"
+   }
+  ]
+ },
+ {
+  "id": "883a951b9bc6c96b7b9f94b770b0aba3b231f563",
+  "summary": "Article 17a, paragraph 3, specifies that certain rules apply at the time of transfer of ownership rights to a taxable person under specific conditions and within a deadline set in paragraph 4.",
+  "entities": [
+   {
+    "name": "Article 17a",
+    "type": "article_ref"
+   },
+   {
+    "name": "conditions",
+    "type": "condition"
+   },
+   {
+    "name": "rules",
+    "type": "legal_concept"
+   },
+   {
+    "name": "transfer of the right to dispose of the goods",
+    "type": "transaction_type"
+   },
+   {
+    "name": "taxable person",
+    "type": "actor"
+   },
+   {
+    "name": "paragraph 2",
+    "type": "article_ref"
+   },
+   {
+    "name": "paragraph 4",
+    "type": "article_ref"
+   }
+  ],
+  "relations": [
+   {
+    "src": "Article 17a",
+    "rel": "refers_to",
+    "dst": "paragraph 2"
+   },
+   {
+    "src": "Article 17a",
+    "rel": "refers_to",
+    "dst": "paragraph 4"
+   },
+   {
+    "src": "conditions",
+    "rel": "applies_to",
+    "dst": "transfer of the right to dispose of the goods"
+   },
+   {
+    "src": "transfer of the right to dispose of the goods",
+    "rel": "applies_to",
+    "dst": "taxable person"
+   },
+   {
+    "src": "paragraph 2",
+    "rel": "defines",
+    "dst": "taxable person"
+   },
+   {
+    "src": "paragraph 4",
+    "rel": "defines",
+    "dst": "deadline"
+   }
+  ]
+ }
+]

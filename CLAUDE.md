@@ -10,8 +10,10 @@ ganapati, vruksha and kosha import litesearch. litesearch names none of them, in
 group, dev included: a dev-group entry is still a cycle at install time. `evals/` may use one,
 imported inside the function that needs it so the rest of `evals/` runs without it.
 
-`Database.context(graph=True)` raises `ImportError` naming vruksha rather than `AttributeError`.
-That is the shape any future seam should take.
+The `context(graph=True)` seam that dispatched to vruksha was removed: the graph leg measures
+negative for retrieval (`evals/RESULTS.md`). vruksha stays an external package. A future optional
+seam should still take the shape that one did, raising `ImportError` naming the package rather
+than `AttributeError`.
 
 ## The two routes
 

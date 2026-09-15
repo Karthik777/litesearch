@@ -23,6 +23,5 @@ def main():
         print('Usage: litesearch <command>')
         print('Commands: ' + ', '.join(CMDS))
         sys.exit(0)
-        return
     cmd = sys.argv.pop(1)
     CMDS[cmd]()
