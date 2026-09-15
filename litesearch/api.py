@@ -9,7 +9,7 @@ from fastcore.all import Path, patch
 from .core import database, rerank_hits, RERANK_FANOUT
 from .data import dir2chunks, pkg2chunks
 from .tree import DOC_EXTS
-from .utils import static_embedder, doc_encoder, query_encoder
+from .utils import static_embedder, doc_encoder, query_encoder, encoder_id
 
 # %% ../nbs/07_api.ipynb #ce3d9743bc59
 DTYPE, HIT_COLS = np.float16, ['content', 'metadata', 'node_id', 'page', 'heading', 'doc_id']
@@ -31,7 +31,7 @@ class Index:
         self.db = db if db is not None else database(path)
         self.encoder = static_embedder() if encoder is None else encoder
         self._doc, self._qry = doc_encoder(self.encoder), query_encoder(self.encoder)
-        self.t = self.db.get_tree(name, ann=ann)
+        self.t = self.db.get_tree(name, ann=ann, encoder=encoder_id(self.encoder))
         self.store = self.t.store
 
     def emb(self, texts) -> np.ndarray:
