@@ -1,7 +1,9 @@
 # Release notes <!-- do not remove -->
 
 ## 0.1.35
-
+stores are stamped with their encoder; mismatch raises `StoreMismatch`. `get_store`, `get_tree`, `get_graph` and `Index` take `encoder=`.
+`Database.context(graph=)` and `graph_search` removed; the typed graph is vruksha's. `search(parallel=)` and `process_content(parallel=)` are no-ops.
+`repo_root`, thread counts and page windows use fastcore `find_file_parents`, `num_cpus`, `chunked`.
 
 ## 0.1.34
 vishalakshi simplification 
