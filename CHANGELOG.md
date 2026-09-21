@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.35
+A store records the encoder and tokenizer that wrote it, and reopening it with another raises `StoreMismatch`; `get_store`, `get_tree`, `get_graph` and `Index` take `encoder=`.
+The typed entity graph is vruksha's: `Database.context(graph=)` and `graph_search` are gone from here. `search(parallel=)` and `process_content(parallel=)` are no-ops kept for callers.
+`repo_root`, thread counts and page windows come from fastcore (`find_file_parents`, `num_cpus`, `chunked`).
+
 ## 0.1.34
 vishalakshi simplification 
 
