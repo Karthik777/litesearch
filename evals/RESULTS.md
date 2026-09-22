@@ -162,3 +162,125 @@ The seed is what lets a weak model cover the whole citation surface: Qwen2.5-1.5
 traversable bridges to 23 at 0.61 hit against 0.13 for hybrid. A strong model reaches most of them
 on its own; the seed guarantees the structured ones regardless of model. Loose references ("that
 Directive", "the preceding paragraph") still need the model, which is where its size earns out.
+
+## A static-embedding query router does not beat a coin flip (prototype, not shipped)
+
+Prototype in `evals/router_spike.py`, not wired into `Index` or `database()`. A static embedder
+classifies each query and escalates the hard ones to a dearer encoder. Against random escalation at
+the same rate the router measures +0.0028 at best and -0.0147 at worst, every interval that matters
+spanning zero. `python -m evals.router_spike` reproduces it.
+
+### The premise it started from is wrong about Laya
+
+convaiinnovations/laya is not an embedding model and not a Jina competitor. It is a
+ModernBERT-large backbone (421M) trained with RLCD to answer typed yes/no and scoring questions in
+one forward pass, and its Router is a sub-millisecond language and script detector that sends Latin
+text to the ModernBERT checkpoint and non-Latin scripts to an mmBERT-base one. It routes between
+two classifiers by language, not between embedding models by content. minishlab/potion-multilingual-128M
+is a real static embedder, Model2Vec distilled from BAAI/bge-m3, 256 dimensions, 101 languages, and
+it needs no new dependency because `model2vec` is already a core one. The regulatory corpus is 9
+English EU documents, so there is no language to route on. What does carry over from Laya is the
+shape: a near-zero-cost classifier over the input gates an expensive resource. That is the version
+measured here.
+
+### Method
+
+genre `regulatory`, `c512`, flat stores, `hybrid-pre`, k=10, section-level reciprocal rank per
+query from `score_one`. 120 source sentences x 5 flavours = 600 query instances, weighted by
+`report.WEIGHTS`. Oracle label per instance: 1 where the dear encoder's RR is strictly higher.
+Ties stay cheap (81% of instances on the first pair, 79% on the second), which is the tie-break
+that favours the cheap arm and therefore the conservative one for a cost router.
+
+Router features are the L2-normalised static query vector of the raw query text. Two classifiers,
+neither needing a new dependency: nearest centroid over the two classes, and closed-form ridge
+least squares on +-1 labels. 5-fold cross-validation grouped by source sentence, so the five
+flavours of one sentence never straddle the split. The escalation threshold is a quantile of the
+training scores, so the operating point is out of sample too. Paired bootstrap over source
+sentences, 10,000 resamples, a CI spanning zero reported as no difference.
+
+Two encoder pairs. The first is the one the idea is about. The second exists because the encoder
+sweep above already puts `egemma-300m` below `bge-small` on all five regulatory flavours, so the
+first pair has no quality gradient to climb and a null result there would say nothing about
+routing.
+
+### Quality against cost, held out
+
+`index s` is the embedding cost of the store or stores the arm needs; a routed arm needs both.
+
+| pair | arm | escalation | weighted u_mrr | query ms | index s |
+|---|---|---|---|---|---|
+| bge-small -> egemma-300m | fixed cheap | 0.00 | 0.7814 | 16.0 | 159 |
+| bge-small -> egemma-300m | fixed dear | 1.00 | 0.7819 | 68.9 | 868 |
+| bge-small -> egemma-300m | routed, potion-32M + ridge | 0.10 | 0.7761 | 21.3 | 1027 |
+| bge-small -> egemma-300m | random escalation at 0.10 | 0.10 | 0.7814 | 21.3 | 1027 |
+| bge-small -> egemma-300m | oracle | 0.10 | 0.8288 | 21.3 | 1027 |
+| potion-32M -> bge-small | fixed cheap | 0.00 | 0.7513 | 0.11 | 0.3 |
+| potion-32M -> bge-small | fixed dear | 1.00 | 0.7814 | 16.0 | 159 |
+| potion-32M -> bge-small | routed, potion-32M + ridge | 0.12 | 0.7575 | 2.1 | 159 |
+| potion-32M -> bge-small | random escalation at 0.12 | 0.12 | 0.7547 | 2.1 | 159 |
+| potion-32M -> bge-small | oracle | 0.13 | 0.8266 | 2.1 | 159 |
+
+On the first pair `egemma-300m` is worth +0.0005 weighted section MRR over `bge-small`, 95% CI
+[-0.0248, +0.0253], at 4.3x the query cost and 5.5x the index cost. There is nothing to escalate
+to. On the second pair the gradient is real, +0.0301 [+0.0018, +0.0580], and a perfect router would
+reach 0.8266 for 2.1 ms a query, which is the headroom the whole idea is after.
+
+### The random-escalation check, which is the finding
+
+The bar is `(1-r)*cheap + r*dear`, what a coin flip at the same escalation rate `r` earns in
+expectation. Natural rate is the training base rate.
+
+| pair | router | clf | rate | precision | routed | random | diff | 95% CI |
+|---|---|---|---|---|---|---|---|---|
+| bge-small -> egemma-300m | potion-32M | centroid | 0.057 | 0.059 | 0.7790 | 0.7814 | -0.0024 | [-0.0078, +0.0020] |
+| bge-small -> egemma-300m | potion-32M | ridge | 0.097 | 0.034 | 0.7761 | 0.7814 | -0.0054 | [-0.0120, +0.0004] |
+| bge-small -> egemma-300m | potion-multilingual-128M | centroid | 0.068 | 0.073 | 0.7759 | 0.7814 | -0.0055 | [-0.0128, +0.0005] |
+| bge-small -> egemma-300m | potion-multilingual-128M | ridge | 0.083 | 0.120 | 0.7812 | 0.7814 | -0.0002 | [-0.0056, +0.0052] |
+| potion-32M -> bge-small | potion-32M | centroid | 0.085 | 0.235 | 0.7548 | 0.7538 | +0.0010 | [-0.0086, +0.0106] |
+| potion-32M -> bge-small | potion-32M | ridge | 0.115 | 0.275 | 0.7575 | 0.7547 | +0.0028 | [-0.0087, +0.0143] |
+| potion-32M -> bge-small | potion-multilingual-128M | centroid | 0.097 | 0.190 | 0.7514 | 0.7542 | -0.0028 | [-0.0121, +0.0068] |
+| potion-32M -> bge-small | potion-multilingual-128M | ridge | 0.120 | 0.222 | 0.7543 | 0.7549 | -0.0006 | [-0.0128, +0.0109] |
+
+Base rates are 0.098 and 0.130. Escalation precision on the first pair is 0.03 to 0.12, at or below
+chance. On the second pair it is 0.19 to 0.28, above chance, and still not enough to move the
+weighted score past the coin flip. Forcing the rate to 0.05, 0.15, 0.30 and 0.55 does not rescue
+it: the best cell over all 32 (pair, router, classifier, rate) combinations is +0.0085
+[-0.0028, +0.0197] and the worst is -0.0147 [-0.0253, -0.0045], the losing cells all on the pair
+with no gradient, where escalating at all is a tax.
+
+The multilingual router buys nothing on English text, as expected. Its eight cells lie inside the
+same intervals as `potion-32M`'s.
+
+### What the router actually learns is the flavour
+
+Escalation rate by flavour, `potion-32M` + ridge, second pair, beside the oracle rate and the
+lexical overlap `queries.overlap` computes:
+
+| flavour | escalated | oracle | lexical overlap |
+|---|---|---|---|
+| verbatim | 0.058 | 0.033 | 1.000 |
+| degraded | 0.008 | 0.050 | 0.760 |
+| keyword | 0.167 | 0.183 | 0.260 |
+| paraphrase | 0.083 | 0.075 | 0.302 |
+| kw_para | 0.258 | 0.308 | 0.041 |
+
+corr(escalate, overlap) is -0.221 against corr(oracle, overlap) -0.258. The router has learned that
+queries with little surface overlap are the ones a better encoder might save, which is the flavour
+axis restated. That signal is real and it is also the only one: within a flavour the per-query
+decision is noise, which is why an above-chance precision produces a weighted score on the coin
+flip line. 81% of instances are ties, so the classifier is fitting a 10-13% minority class from 480
+training instances of a 512-dimensional lookup vector.
+
+### Decision
+
+Off. The spike stays in `evals/`; nothing in `litesearch/` changed and no default moved. The
+direction measures negative on the pair it was proposed for and no better than random on the pair
+that has a gradient, so it does not clear the bar the graph leg failed either.
+
+What would have to change before it is worth another run. A query signal that is not the query's
+own surface form, since a static lookup vector of the query text carries the flavour and little
+else. A quality gap that is worth routing across, which regulatory does not have between
+`bge-small` and `egemma-300m`, so the gap has to be found on another genre first. And a label with
+more than 10% positives, since 81% ties means most queries do not care which encoder answers them.
+Routing also doubles the index, 1027 s of embedding against 159 s, which a +0.047 oracle ceiling
+has to pay for before any classifier is discussed.

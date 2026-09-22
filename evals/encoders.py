@@ -1,10 +1,11 @@
 """The encoders under test, wrapped so every store in the eval is float16 and comparable.
 
-Five, spanning three orders of magnitude of cost per chunk:
+Six, spanning three orders of magnitude of cost per chunk:
 
 | name          | params | dim | ctx  | what it is                                        |
 |---------------|--------|-----|------|---------------------------------------------------|
 | `potion-32M`  | 32M*   | 512 |  ∞   | model2vec static vectors — a lookup table, no ONNX |
+| `potion-multilingual-128M` | 128M* | 256 | ∞ | the multilingual static table, distilled from bge-m3 |
 | `bge-small`   | 33M    | 384 |  512 | the ordinary small ONNX retriever                  |
 | `jina-v2-sm`  | 33M    | 512 | 8192 | small *and* long-context — the late-chunking model  |
 | `egemma-300m` | 300M   | 768 | 2048 | a real quality ceiling on CPU                       |
@@ -68,6 +69,9 @@ def _static(name, repo, dim, note=''):
 BUILDERS = {
     'potion-32M':  lambda: _static('potion-32M', 'minishlab/potion-retrieval-32M', 512,
                                    'static lookup table; no context, no late chunking'),
+    'potion-multilingual-128M': lambda: _static('potion-multilingual-128M',
+                                   'minishlab/potion-multilingual-128M', 256,
+                                   'static lookup table, 101 languages; router features only'),
     'bge-small':   lambda: _onnx('bge-small', bge_small_md, 384, 512,
                                  note='the default small retriever'),
     'jina-v2-sm':  lambda: _onnx('jina-v2-sm', jina_v2_sm_md, 512, 8192,

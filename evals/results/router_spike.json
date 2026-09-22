@@ -1,0 +1,1124 @@
+{
+ "arms": [
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.056666666666666664,
+   "base_rate": 0.09833333333333333,
+   "precision": 0.058823529411764705,
+   "cheap_mrr": 0.7813660714285715,
+   "dear_mrr": 0.7818725198412699,
+   "routed_mrr": 0.7790099206349207,
+   "random_mrr": 0.7813947701719577,
+   "oracle_mrr": 0.8287838955026455,
+   "routed_vs_cheap": {
+    "diff": -0.0023561507936507935,
+    "lo": -0.008085317460317461,
+    "hi": 0.0020833333333333333,
+    "p": 0.363,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.0028625992063492107,
+    "lo": -0.02698595403439154,
+    "hi": 0.02168969080687829,
+    "p": 0.8192,
+    "significant": false
+   },
+   "routed_vs_random": {
+    "diff": -0.002384849537037036,
+    "lo": -0.00782624586640212,
+    "hi": 0.002001153563161377,
+    "p": 0.3428,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.0005064484126984181,
+    "lo": -0.024810218253968255,
+    "hi": 0.0253226314484127,
+    "p": 0.9724,
+    "significant": false
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.025,
+     "oracle": 0.016666666666666666,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.058333333333333334,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.05,
+     "oracle": 0.14166666666666666,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.041666666666666664,
+     "oracle": 0.08333333333333333,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.15833333333333333,
+     "oracle": 0.19166666666666668,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.17952920536506453,
+   "corr_oracle_overlap": -0.18927181682142274,
+   "ms": {
+    "potion-32M": 0.11706352233886719,
+    "bge-small": 17.602205276489258,
+    "egemma-300m": 68.91787052154541
+   },
+   "routed_ms": 20.627156496047974
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.09666666666666666,
+   "base_rate": 0.09833333333333333,
+   "precision": 0.034482758620689655,
+   "cheap_mrr": 0.7813660714285715,
+   "dear_mrr": 0.7818725198412699,
+   "routed_mrr": 0.7760535714285715,
+   "random_mrr": 0.7814150281084656,
+   "oracle_mrr": 0.8287838955026455,
+   "routed_vs_cheap": {
+    "diff": -0.0053124999999999995,
+    "lo": -0.012605034722222222,
+    "hi": 0.0010416666666666675,
+    "p": 0.1102,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.005818948412698414,
+    "lo": -0.02845353422619048,
+    "hi": 0.017695300099206345,
+    "p": 0.6216,
+    "significant": false
+   },
+   "routed_vs_random": {
+    "diff": -0.005361456679894183,
+    "lo": -0.011968592413470017,
+    "hi": 0.0004407369516093391,
+    "p": 0.0686,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.0005064484126984181,
+    "lo": -0.024810218253968255,
+    "hi": 0.0253226314484127,
+    "p": 0.9724,
+    "significant": false
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.03333333333333333,
+     "oracle": 0.016666666666666666,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.025,
+     "oracle": 0.058333333333333334,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.125,
+     "oracle": 0.14166666666666666,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.1,
+     "oracle": 0.08333333333333333,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.2,
+     "oracle": 0.19166666666666668,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.20902898435998454,
+   "corr_oracle_overlap": -0.18927181682142274,
+   "ms": {
+    "potion-32M": 0.1100301742553711,
+    "bge-small": 16.002297401428223,
+    "egemma-300m": 69.3291425704956
+   },
+   "routed_ms": 21.267255942026775
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.06833333333333333,
+   "base_rate": 0.09833333333333333,
+   "precision": 0.07317073170731707,
+   "cheap_mrr": 0.7813660714285715,
+   "dear_mrr": 0.7818725198412699,
+   "routed_mrr": 0.7759345238095238,
+   "random_mrr": 0.7814006787367725,
+   "oracle_mrr": 0.8287838955026455,
+   "routed_vs_cheap": {
+    "diff": -0.00543154761904762,
+    "lo": -0.013194444444444446,
+    "hi": 0.0006448412698412685,
+    "p": 0.0992,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.005937996031746038,
+    "lo": -0.029494498181216938,
+    "hi": 0.017620969742063473,
+    "p": 0.6302,
+    "significant": false
+   },
+   "routed_vs_random": {
+    "diff": -0.005466154927248668,
+    "lo": -0.01276803588651895,
+    "hi": 0.0004642259975749644,
+    "p": 0.0788,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.0005064484126984181,
+    "lo": -0.024810218253968255,
+    "hi": 0.0253226314484127,
+    "p": 0.9724,
+    "significant": false
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.016666666666666666,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.0,
+     "oracle": 0.058333333333333334,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.125,
+     "oracle": 0.14166666666666666,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.08333333333333333,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.2,
+     "oracle": 0.19166666666666668,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.24386357330249608,
+   "corr_oracle_overlap": -0.18927181682142274,
+   "ms": {
+    "potion-multilingual-128M": 0.18203258514404297,
+    "bge-small": 18.897294998168945,
+    "egemma-300m": 71.6620683670044
+   },
+   "routed_ms": 22.68492043018341
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.08333333333333333,
+   "base_rate": 0.09833333333333333,
+   "precision": 0.12,
+   "cheap_mrr": 0.7813660714285715,
+   "dear_mrr": 0.7818725198412699,
+   "routed_mrr": 0.7812387566137566,
+   "random_mrr": 0.781408275462963,
+   "oracle_mrr": 0.8287838955026455,
+   "routed_vs_cheap": {
+    "diff": -0.0001273148148148153,
+    "lo": -0.0056539351851851855,
+    "hi": 0.005434027777777776,
+    "p": 0.9824,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.0006337632275132339,
+    "lo": -0.024809250992063492,
+    "hi": 0.02407726934523808,
+    "p": 0.9658,
+    "significant": false
+   },
+   "routed_vs_random": {
+    "diff": -0.00016951884920633948,
+    "lo": -0.005583364679783941,
+    "hi": 0.005240759341931224,
+    "p": 0.9648,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.0005064484126984181,
+    "lo": -0.024810218253968255,
+    "hi": 0.0253226314484127,
+    "p": 0.9724,
+    "significant": false
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.025,
+     "oracle": 0.016666666666666666,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.016666666666666666,
+     "oracle": 0.058333333333333334,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.10833333333333334,
+     "oracle": 0.14166666666666666,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.041666666666666664,
+     "oracle": 0.08333333333333333,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.225,
+     "oracle": 0.19166666666666668,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.2169939236134268,
+   "corr_oracle_overlap": -0.18927181682142274,
+   "ms": {
+    "potion-multilingual-128M": 0.11217594146728516,
+    "bge-small": 15.987157821655273,
+    "egemma-300m": 68.37105751037598
+   },
+   "routed_ms": 20.464658737182617
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.085,
+   "base_rate": 0.13,
+   "precision": 0.23529411764705882,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7547842261904764,
+   "random_mrr": 0.7538166741071428,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_cheap": {
+    "diff": 0.003526785714285714,
+    "lo": -0.006493303571428571,
+    "hi": 0.013576884920634915,
+    "p": 0.4948,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.026581845238095238,
+    "lo": -0.05294499834656085,
+    "hi": -0.00027569857804233454,
+    "p": 0.0482,
+    "significant": true
+   },
+   "routed_vs_random": {
+    "diff": 0.0009675520833333349,
+    "lo": -0.008560262690145506,
+    "hi": 0.010649367373511904,
+    "p": 0.844,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.030108630952380953,
+    "lo": 0.001796937003968255,
+    "hi": 0.057991137566137566,
+    "p": 0.037,
+    "significant": true
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.025,
+     "oracle": 0.03333333333333333,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.03333333333333333,
+     "oracle": 0.05,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.11666666666666667,
+     "oracle": 0.18333333333333332,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.058333333333333334,
+     "oracle": 0.075,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.19166666666666668,
+     "oracle": 0.30833333333333335,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.19804123803628237,
+   "corr_oracle_overlap": -0.2583820610098915,
+   "ms": {
+    "potion-32M": 0.11420249938964844,
+    "bge-small": 12.686848640441895
+   },
+   "routed_ms": 1.2970799207687378
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.115,
+   "base_rate": 0.13,
+   "precision": 0.2753623188405797,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7575024801587301,
+   "random_mrr": 0.7547199330357144,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_cheap": {
+    "diff": 0.006245039682539683,
+    "lo": -0.00647333829365079,
+    "hi": 0.019226686507936498,
+    "p": 0.3402,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.023863591269841264,
+    "lo": -0.04786888227513228,
+    "hi": -0.0002831183862433926,
+    "p": 0.047,
+    "significant": true
+   },
+   "routed_vs_random": {
+    "diff": 0.002782547123015871,
+    "lo": -0.008658857514880955,
+    "hi": 0.014262818121693112,
+    "p": 0.6464,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.030108630952380953,
+    "lo": 0.001796937003968255,
+    "hi": 0.057991137566137566,
+    "p": 0.037,
+    "significant": true
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.058333333333333334,
+     "oracle": 0.03333333333333333,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.05,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.16666666666666666,
+     "oracle": 0.18333333333333332,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.08333333333333333,
+     "oracle": 0.075,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.25833333333333336,
+     "oracle": 0.30833333333333335,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.22087703486458754,
+   "corr_oracle_overlap": -0.2583820610098915,
+   "ms": {
+    "potion-32M": 0.11360645294189453,
+    "bge-small": 15.991687774658203
+   },
+   "routed_ms": 2.0531922578811646
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.09666666666666666,
+   "base_rate": 0.13,
+   "precision": 0.1896551724137931,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.751364914021164,
+   "random_mrr": 0.7541679414682539,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_cheap": {
+    "diff": 0.00010747354497354274,
+    "lo": -0.01004145998677249,
+    "hi": 0.010466559193121686,
+    "p": 0.9852,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.030001157407407407,
+    "lo": -0.05558232886904761,
+    "hi": -0.004620791997354499,
+    "p": 0.021,
+    "significant": true
+   },
+   "routed_vs_random": {
+    "diff": -0.002803027447089949,
+    "lo": -0.012073729332010584,
+    "hi": 0.006767104993386236,
+    "p": 0.5274,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.030108630952380953,
+    "lo": 0.001796937003968255,
+    "hi": 0.057991137566137566,
+    "p": 0.037,
+    "significant": true
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.03333333333333333,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.016666666666666666,
+     "oracle": 0.05,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.2,
+     "oracle": 0.18333333333333332,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.008333333333333333,
+     "oracle": 0.075,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.25,
+     "oracle": 0.30833333333333335,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.25842976032676873,
+   "corr_oracle_overlap": -0.2583820610098915,
+   "ms": {
+    "potion-multilingual-128M": 0.10144710540771484,
+    "potion-32M": 0.10776519775390625,
+    "bge-small": 16.00027084350586
+   },
+   "routed_ms": 1.7454878489176433
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.12,
+   "base_rate": 0.13,
+   "precision": 0.2222222222222222,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7543138227513227,
+   "random_mrr": 0.7548704761904762,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_cheap": {
+    "diff": 0.0030563822751322745,
+    "lo": -0.010439153439153439,
+    "hi": 0.01565147569444444,
+    "p": 0.6304,
+    "significant": false
+   },
+   "routed_vs_dear": {
+    "diff": -0.027052248677248678,
+    "lo": -0.051941265707671956,
+    "hi": -0.002541311177248677,
+    "p": 0.0296,
+    "significant": true
+   },
+   "routed_vs_random": {
+    "diff": -0.000556653439153439,
+    "lo": -0.012760241236772486,
+    "hi": 0.01091663541666666,
+    "p": 0.9194,
+    "significant": false
+   },
+   "dear_vs_cheap": {
+    "diff": 0.030108630952380953,
+    "lo": 0.001796937003968255,
+    "hi": 0.057991137566137566,
+    "p": 0.037,
+    "significant": true
+   },
+   "by_flavour": {
+    "verbatim": {
+     "escalated": 0.03333333333333333,
+     "oracle": 0.03333333333333333,
+     "overlap": 1.0
+    },
+    "degraded": {
+     "escalated": 0.016666666666666666,
+     "oracle": 0.05,
+     "overlap": 0.7602126112118291
+    },
+    "keyword": {
+     "escalated": 0.225,
+     "oracle": 0.18333333333333332,
+     "overlap": 0.2600539048613211
+    },
+    "paraphrase": {
+     "escalated": 0.03333333333333333,
+     "oracle": 0.075,
+     "overlap": 0.3019730636739881
+    },
+    "kw_para": {
+     "escalated": 0.2916666666666667,
+     "oracle": 0.30833333333333335,
+     "overlap": 0.041449857408716824
+    }
+   },
+   "corr_escalate_overlap": -0.2567172621977553,
+   "corr_oracle_overlap": -0.2583820610098915,
+   "ms": {
+    "potion-multilingual-128M": 0.10323524475097656,
+    "potion-32M": 0.10991096496582031,
+    "bge-small": 19.622087478637695
+   },
+   "routed_ms": 2.554607391357422
+  }
+ ],
+ "sweep": [
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.06166666666666667,
+   "routed": 0.7788363095238094,
+   "random": 0.7813973024140212,
+   "gain": -0.0025609928902116425,
+   "lo": -0.00796257359871032,
+   "hi": 0.0018327829103284789,
+   "p": 0.2996,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.16666666666666666,
+   "routed": 0.7713015873015875,
+   "random": 0.7814504794973546,
+   "gain": -0.010148892195767208,
+   "lo": -0.01958416005291006,
+   "hi": -0.0018500978284832594,
+   "p": 0.0142,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.2816666666666667,
+   "routed": 0.7698928571428572,
+   "random": 0.7815087210648148,
+   "gain": -0.01161586392195766,
+   "lo": -0.02149813828262786,
+   "hi": -0.002063859850363742,
+   "p": 0.019,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.485,
+   "routed": 0.7740190145502646,
+   "random": 0.7816116989087302,
+   "gain": -0.007592684358465607,
+   "lo": -0.01838391276041667,
+   "hi": 0.0030600047743055635,
+   "p": 0.1602,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.105,
+   "routed": 0.7760535714285715,
+   "random": 0.7814192485119047,
+   "gain": -0.005365677083333335,
+   "lo": -0.01194659895833334,
+   "hi": 0.0004017217881944449,
+   "p": 0.069,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.2783333333333333,
+   "routed": 0.7719761904761905,
+   "random": 0.7815070329034391,
+   "gain": -0.009530842427248673,
+   "lo": -0.01927752622767857,
+   "hi": -0.000164238791060405,
+   "p": 0.0458,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.4116666666666667,
+   "routed": 0.76691583994709,
+   "random": 0.7815745593584656,
+   "gain": -0.014658719411375662,
+   "lo": -0.02530254112240961,
+   "hi": -0.004451961240630515,
+   "p": 0.0036,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.5583333333333333,
+   "routed": 0.7691058201058202,
+   "random": 0.7816488384589948,
+   "gain": -0.012543018353174598,
+   "lo": -0.023385450045469575,
+   "hi": -0.0017054153576939969,
+   "p": 0.0236,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.07666666666666666,
+   "routed": 0.7748928571428572,
+   "random": 0.7814048991402117,
+   "gain": -0.006512041997354497,
+   "lo": -0.013973098145392413,
+   "hi": -0.0002839980709876487,
+   "p": 0.0384,
+   "significant": true
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.17333333333333334,
+   "routed": 0.7756038359788361,
+   "random": 0.7814538558201057,
+   "gain": -0.005850019841269843,
+   "lo": -0.015145649801587311,
+   "hi": 0.0028704762455908205,
+   "p": 0.192,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.2683333333333333,
+   "routed": 0.7747010582010583,
+   "random": 0.7815019684193121,
+   "gain": -0.006800910218253973,
+   "lo": -0.017692788104883162,
+   "hi": 0.003942146356922395,
+   "p": 0.2116,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.49666666666666665,
+   "routed": 0.7788305224867725,
+   "random": 0.7816176074735449,
+   "gain": -0.00278708498677249,
+   "lo": -0.01454977259700177,
+   "hi": 0.008508835620590832,
+   "p": 0.6534,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.08,
+   "routed": 0.7812098214285715,
+   "random": 0.7814065873015873,
+   "gain": -0.00019676587301587962,
+   "lo": -0.005563434523809525,
+   "hi": 0.005206567460317449,
+   "p": 0.9552,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.24833333333333332,
+   "routed": 0.7805319113756614,
+   "random": 0.7814918394510583,
+   "gain": -0.0009599280753968274,
+   "lo": -0.011154030643738981,
+   "hi": 0.008992437031525562,
+   "p": 0.8782,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.39,
+   "routed": 0.7773870701058201,
+   "random": 0.7815635863095238,
+   "gain": -0.004176516203703699,
+   "lo": -0.01482700851521163,
+   "hi": 0.006604457671957675,
+   "p": 0.447,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "bge-small",
+   "dear": "egemma-300m",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.5783333333333334,
+   "routed": 0.7737089947089949,
+   "random": 0.7816589674272488,
+   "gain": -0.007949972718253965,
+   "lo": -0.018021570760306437,
+   "hi": 0.0020947042755180803,
+   "p": 0.122,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.05333333333333334,
+   "routed": 0.7506175595238095,
+   "random": 0.7528632341269841,
+   "gain": -0.0022456746031745797,
+   "lo": -0.010469822200176343,
+   "hi": 0.006231421626984152,
+   "p": 0.5826,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.15166666666666667,
+   "routed": 0.7570122354497355,
+   "random": 0.755823916170635,
+   "gain": 0.0011883192791005076,
+   "lo": -0.009179707237929912,
+   "hi": 0.01180693755511461,
+   "p": 0.8248,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.3,
+   "routed": 0.7633325066137566,
+   "random": 0.7602900297619047,
+   "gain": 0.0030424768518518682,
+   "lo": -0.010516132192460295,
+   "hi": 0.015828104745370376,
+   "p": 0.66,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "centroid",
+   "rate": 0.5483333333333333,
+   "routed": 0.7762549603174604,
+   "random": 0.7677670064484128,
+   "gain": 0.008487953869047613,
+   "lo": -0.002792543885030867,
+   "hi": 0.01974148907352291,
+   "p": 0.1396,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.07166666666666667,
+   "routed": 0.7562375992063493,
+   "random": 0.7534152256944445,
+   "gain": 0.0028223735119047443,
+   "lo": -0.006474778549382743,
+   "hi": 0.01224148555307538,
+   "p": 0.5642,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.25166666666666665,
+   "routed": 0.7550396825396827,
+   "random": 0.7588347792658731,
+   "gain": -0.0037950967261904727,
+   "lo": -0.017582688547178125,
+   "hi": 0.009731690593309087,
+   "p": 0.5774,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.38333333333333336,
+   "routed": 0.767296626984127,
+   "random": 0.7627990823412698,
+   "gain": 0.004497544642857143,
+   "lo": -0.009883116663910932,
+   "hi": 0.018478164406966487,
+   "p": 0.5292,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "ridge",
+   "rate": 0.565,
+   "routed": 0.7723313492063492,
+   "random": 0.7682688169642856,
+   "gain": 0.004062532242063504,
+   "lo": -0.008369413008432528,
+   "hi": 0.015972729662698422,
+   "p": 0.5116,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.07666666666666666,
+   "routed": 0.7524065806878307,
+   "random": 0.7535657688492065,
+   "gain": -0.001159188161375654,
+   "lo": -0.009277223751653426,
+   "hi": 0.00750907076719577,
+   "p": 0.754,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.175,
+   "routed": 0.7598346560846562,
+   "random": 0.7565264508928571,
+   "gain": 0.0033082051917989507,
+   "lo": -0.007949035838293645,
+   "hi": 0.014944841993220907,
+   "p": 0.5906,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.27166666666666667,
+   "routed": 0.7565707671957672,
+   "random": 0.7594369518849206,
+   "gain": -0.002866184689153437,
+   "lo": -0.017481254340277783,
+   "hi": 0.0113859382853836,
+   "p": 0.6878,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "centroid",
+   "rate": 0.5283333333333333,
+   "routed": 0.7711855158730159,
+   "random": 0.7671648338293651,
+   "gain": 0.004020682043650801,
+   "lo": -0.008190999703758807,
+   "hi": 0.016055323192239863,
+   "p": 0.52,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.08333333333333333,
+   "routed": 0.754333664021164,
+   "random": 0.7537664930555555,
+   "gain": 0.000567170965608485,
+   "lo": -0.008722764756944428,
+   "hi": 0.010625432305445336,
+   "p": 0.9442,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.215,
+   "routed": 0.7595916005291005,
+   "random": 0.7577307961309524,
+   "gain": 0.001860804398148156,
+   "lo": -0.012469704241071423,
+   "hi": 0.015580585214120365,
+   "p": 0.7962,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.35,
+   "routed": 0.7641749338624338,
+   "random": 0.7617954613095237,
+   "gain": 0.0023794725529100646,
+   "lo": -0.012380658482142842,
+   "hi": 0.01652257998511904,
+   "p": 0.754,
+   "significant": false
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-multilingual-128M",
+   "clf": "ridge",
+   "rate": 0.5933333333333334,
+   "routed": 0.7671172288359789,
+   "random": 0.7691218948412699,
+   "gain": -0.002004666005291011,
+   "lo": -0.014258536100088193,
+   "hi": 0.010269788828262775,
+   "p": 0.7446,
+   "significant": false
+  }
+ ]
+}
