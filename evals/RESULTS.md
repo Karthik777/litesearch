@@ -168,7 +168,9 @@ Directive", "the preceding paragraph") still need the model, which is where its 
 Prototype in `evals/router_spike.py`, not wired into `Index` or `database()`. A static embedder
 classifies each query and escalates the hard ones to a dearer encoder. Against random escalation at
 the same rate the router measures +0.0028 at best and -0.0147 at worst, every interval that matters
-spanning zero. `python -m evals.router_spike` reproduces it.
+spanning zero. Training the static vectors on the label instead of a generic vector plus a
+post-hoc classifier (part 2, below) does not change that: +0.0093 at best, still spanning zero.
+`python -m evals.router_spike` reproduces part 1, `python -m evals.router_spike --m2v` part 2.
 
 ### The premise it started from is wrong about Laya
 
@@ -284,3 +286,68 @@ else. A quality gap that is worth routing across, which regulatory does not have
 more than 10% positives, since 81% ties means most queries do not care which encoder answers them.
 Routing also doubles the index, 1027 s of embedding against 159 s, which a +0.047 oracle ceiling
 has to pay for before any classifier is discussed.
+
+### Part 2: task-training the static vectors instead of bolting a classifier on after
+
+Part 1's router features were a generic `potion-32M` vector, never trained for this task, plus a
+centroid or ridge classifier on top. `model2vec.train.StaticModelForClassification` can instead
+fine-tune the embedding table itself on the escalation label and export back to a static lookup
+model, so the question is whether tuning the representation, not just the head, closes the gap.
+Tested only on `potion-32M -> bge-small`, the pair with a real quality gradient; `bge-small ->
+egemma-300m` still has none, per part 1.
+
+Reuses part 1's label construction (`labels`, dear strictly beats cheap, ties stay cheap), 5-fold
+CV grouped by source sentence (`folds`), the escalation-rate-quantile threshold, the weighted
+section-MRR scoring (`arms`), and the paired bootstrap over sentences (`boot`) from
+`evals/router_spike.py`. The only change is the router: `StaticModelForClassification.from_static_model`
+wraps the same `minishlab/potion-retrieval-32M` vectors the `potion-32M` router arm used, `fit()`
+runs with its own defaults (early stopping, its own internal 90/10 train/val split, nested inside
+the outer fold's training fold), and inference is `predict_proba` in place of the closed-form
+scorer. Two arms: vectors frozen (only the classifier head trains) and vectors trained (the
+library default). Three fit seeds (42, 20260803, 7) per arm, since ~96 training sentences per fold
+is a small sample for a trained head.
+
+A footgun in the API worth naming: the constructor's `freeze_weights` argument does not freeze the
+embedding table. It freezes a separate per-token importance scalar used in the mean-pooling
+(`self.w`, all zero at init here since `potion-retrieval-32M` ships no token weights). The argument
+that actually gates the embedding table is `freeze`, passed to the underlying
+`nn.Embedding.from_pretrained(..., freeze=...)`, and that is what the two arms below vary.
+
+### Comparison, held out
+
+| pair | arm | seed | rate | precision | routed | random | gain | 95% CI |
+|---|---|---|---|---|---|---|---|---|
+| potion-32M -> bge-small | part 1: generic vectors + ridge | – | 0.115 | 0.275 | 0.7575 | 0.7547 | +0.0028 | [-0.0087, +0.0143] |
+| potion-32M -> bge-small | frozen vectors, trained head | 42 | 0.120 | 0.264 | 0.7641 | 0.7549 | +0.0093 | [-0.0008, +0.0207] |
+| potion-32M -> bge-small | frozen vectors, trained head | 20260803 | 0.135 | 0.210 | 0.7577 | 0.7553 | +0.0024 | [-0.0078, +0.0133] |
+| potion-32M -> bge-small | frozen vectors, trained head | 7 | 0.120 | 0.208 | 0.7558 | 0.7549 | +0.0009 | [-0.0103, +0.0117] |
+| potion-32M -> bge-small | trained vectors | 42 | 0.125 | 0.240 | 0.7616 | 0.7550 | +0.0066 | [-0.0038, +0.0181] |
+| potion-32M -> bge-small | trained vectors | 20260803 | 0.133 | 0.225 | 0.7577 | 0.7553 | +0.0024 | [-0.0080, +0.0137] |
+| potion-32M -> bge-small | trained vectors | 7 | 0.125 | 0.213 | 0.7553 | 0.7550 | +0.0003 | [-0.0113, +0.0114] |
+
+No cell excludes zero, the frozen-head control included. Mean gain over the three seeds is +0.0042
+(range +0.0009 to +0.0093) for the frozen-vectors arm and +0.0031 (range +0.0003 to +0.0066) for
+the trained-vectors arm, both on the same order as part 1's ridge result and both smaller than the
+seed-to-seed spread within each arm. The frozen-head control, which trains only the classifier head
+(a 512-wide hidden layer, model2vec's default) on the unmodified generic vectors, reaches the
+single closest-to-significant cell of the six (seed 42, p=0.074), ahead of every trained-vectors
+seed. Task-tuning the embedding table does not outperform leaving it alone.
+
+### The trained router still tracks overlap, more so
+
+corr(escalate, overlap): -0.267, -0.266, -0.281 for the frozen-head arm, -0.295, -0.288, -0.293
+for the trained-vectors arm. Part 1's `potion-32M` + ridge number was -0.221 (oracle: -0.258). The
+trained router correlates with lexical overlap more strongly than part 1's post-hoc classifier
+did, not less. Task-training the vectors moved the router closer to the overlap axis, not away
+from it: the failure mode part 1 diagnosed (the router learns the flavour, not per-query
+difficulty) survives training the representation.
+
+### Decision, updated
+
+Still off. Neither arm's bootstrap CI excludes zero against random escalation, the trained-vectors
+arm does not beat its own frozen-head control, and both sit within noise of part 1's already-tried
+generic-vector ridge classifier. Task-training the static weights on the escalation label, not
+just the classifier on top of them, was the open question part 1 left, and it does not close the
+gap: this is not a promising prototype to pursue further on this corpus and pair. It stays in
+`evals/`; nothing in `litesearch/` or a default changed. `python -m evals.router_spike --m2v`
+reproduces it.

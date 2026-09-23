@@ -101,6 +101,96 @@ def fit_ridge(X, y, lam=1.0):
 CLASSIFIERS = {'centroid': fit_centroid, 'ridge': fit_ridge}
 
 
+# ------------------------------------------------------------------ trained static router (model2vec)
+# Part 2: instead of generic potion-32M vectors + a classifier bolted on after, fine-tune the vectors
+# themselves on the escalation label with `model2vec.train.StaticModelForClassification`, then it is
+# still a static (lookup-table) model at inference time. Same starting point as the `potion-32M`
+# router arm above, so the only variable is whether the weights are task-tuned.
+M2V_BASE = 'minishlab/potion-retrieval-32M'
+M2V_SEEDS = (42, 20260803, 7)
+
+
+def texts_all(genre):
+    'Query text, flavour-major, same order as `per_query_u` and `features`.'
+    qs = build_queries(genre)
+    return np.array([q[fl] for fl in FLAVOURS for q in qs])
+
+
+def fit_m2v(X_txt, y, freeze, seed):
+    '''Fit `StaticModelForClassification` from potion-32M's vectors, return a `predict_proba` scorer.
+
+    `freeze` gates the embedding table (`nn.Embedding.from_pretrained(..., freeze=freeze)`); the
+    constructor's `freeze_weights` arg is a false friend, it only freezes a per-token weighting
+    scalar, not the vectors, so it is left at its default and `freeze` is the real toggle here.
+    '''
+    from model2vec import StaticModel
+    from model2vec.train import StaticModelForClassification
+    sm = StaticModel.from_pretrained(M2V_BASE)
+    clf = StaticModelForClassification.from_static_model(model=sm, freeze=freeze)
+    clf.fit(list(X_txt), [int(v) for v in y], random_seed=seed)
+    idx1 = list(clf.classes_).index(1) if 1 in clf.classes_ else 1
+    return lambda Z: clf.predict_proba(list(Z))[:, idx1]
+
+
+def oof_escalate_m2v(texts, y, n_q, freeze, seed, rate=None, k=FOLDS, fold_seed=SEED):
+    'Held-out escalate/keep decision from a fold-local `StaticModelForClassification` fit, no leakage.'
+    fold_q = folds(n_q, k, fold_seed)
+    fold = np.tile(fold_q, len(FLAVOURS))
+    esc = np.zeros(len(y), bool)
+    for i in range(k):
+        tr, te = fold != i, fold == i
+        s = fit_m2v(texts[tr], y[tr], freeze, seed)
+        r = float(y[tr].mean()) if rate is None else rate
+        st = s(texts[tr])
+        thr = np.quantile(st, 1-r) if 0 < r < 1 else (np.inf if r <= 0 else -np.inf)
+        esc[te] = s(texts[te]) > thr
+    return esc
+
+
+def run_m2v(genre=GENRE, pair=('potion-32M', 'bge-small'), freeze=False, seeds=M2V_SEEDS, rate=None):
+    'One arm (frozen or trained), a handful of seeds, same scoring as `run`.'
+    cheap, dear = pair
+    qs = build_queries(genre); n_q = len(qs)
+    rr_c, rr_d = per_query_u(genre, cheap), per_query_u(genre, dear)
+    y = labels(rr_c, rr_d)
+    texts = texts_all(genre)
+    ov = np.array([overlap(q[fl], q['key']) for fl in FLAVOURS for q in qs])
+    tag = 'frozen-vectors (head-only)' if freeze else 'trained-vectors'
+
+    print(f'\n== {genre} · {cheap} -> {dear} · model2vec router, {tag} ==')
+    rows = []
+    for sd in seeds:
+        esc = oof_escalate_m2v(texts, y, n_q, freeze, sd, rate)
+        a = arms(rr_c, rr_d, esc, n_q)
+        m, lo, hi, p = boot(a['routed'], a['random'])
+        prec = float(y[esc].mean()) if esc.any() else float('nan')
+        rec = float(esc[y.astype(bool)].mean()) if y.any() else float('nan')
+        r_esc = float(np.corrcoef(esc.astype(float), ov)[0, 1])
+        row = dict(genre=genre, cheap=cheap, dear=dear, router='model2vec', freeze=freeze, seed=sd,
+                   strategy=STRATEGY, n=len(y), rate=a['rate'], base_rate=float(y.mean()),
+                   precision=prec, recall=rec,
+                   **{f'{k}_mrr': float(a[k].mean()) for k in ('cheap', 'dear', 'routed', 'random', 'oracle')},
+                   routed_vs_random=dict(diff=m, lo=lo, hi=hi, p=p, significant=bool(lo > 0 or hi < 0)),
+                   corr_escalate_overlap=r_esc)
+        print(f'   seed {sd:<10} rate {a["rate"]:.3f} precision {prec:.3f} recall {rec:.3f}  '
+              f'routed {a["routed"].mean():.4f}  random {a["random"].mean():.4f}  '
+              f'gain {m:+.4f} [{lo:+.4f}, {hi:+.4f}] p={p:.3f}  corr(esc,overlap) {r_esc:+.3f}')
+        rows.append(row)
+    return rows
+
+
+def run_m2v_suite(genre=GENRE, pair=('potion-32M', 'bge-small'), seeds=M2V_SEEDS):
+    'Both arms (frozen control, trained), merged additively into router_spike.json under "m2v".'
+    rows = run_m2v(genre, pair, freeze=True, seeds=seeds) + run_m2v(genre, pair, freeze=False, seeds=seeds)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    f = RESULTS/'router_spike.json'
+    out = json.loads(f.read_text()) if f.exists() else dict(arms=[], sweep=[])
+    out['m2v'] = rows
+    f.write_text(json.dumps(out, indent=1))
+    print(f'\n  -> {f}')
+    return rows
+
+
 # ------------------------------------------------------------------ held-out routing
 def folds(n_q, k=FOLDS, seed=SEED):
     'Fold id per source sentence. Splitting on the sentence keeps its five flavours on one side.'
@@ -266,7 +356,12 @@ def main(argv=None):
     p.add_argument('--rate', type=float, default=None, help='escalation rate; default: the base rate')
     p.add_argument('--no-cost', action='store_true')
     p.add_argument('--no-sweep', action='store_true')
+    p.add_argument('--m2v', action='store_true',
+                    help='run the trained-static-vectors arm (model2vec) instead of the generic-router sweep')
     a = p.parse_args(argv)
+    if a.m2v:
+        pr = tuple(a.pair.split(',')) if a.pair else ('potion-32M', 'bge-small')
+        return run_m2v_suite(a.genre, pr)
     pairs = [tuple(a.pair.split(','))] if a.pair else list(PAIRS)
     routers = [a.router] if a.router else list(ROUTERS)
     clfs = [a.clf] if a.clf else list(CLASSIFIERS)
