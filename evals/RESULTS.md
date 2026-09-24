@@ -169,8 +169,10 @@ Prototype in `evals/router_spike.py`, not wired into `Index` or `database()`. A 
 classifies each query and escalates the hard ones to a dearer encoder. Against random escalation at
 the same rate the router measures +0.0028 at best and -0.0147 at worst, every interval that matters
 spanning zero. Training the static vectors on the label instead of a generic vector plus a
-post-hoc classifier (part 2, below) does not change that: +0.0093 at best, still spanning zero.
-`python -m evals.router_spike` reproduces part 1, `python -m evals.router_spike --m2v` part 2.
+post-hoc classifier (part 2, below) does not change that: +0.0093 at best, still spanning zero. A
+third learning rule with nothing backprop-shaped about it, equilibrium detuning over a settled
+recurrent net (part 3, below), does not change it either: +0.0021 at best. `python -m
+evals.router_spike` reproduces part 1, `--m2v` part 2, `--cadence` part 3.
 
 ### The premise it started from is wrong about Laya
 
@@ -351,3 +353,42 @@ just the classifier on top of them, was the open question part 1 left, and it do
 gap: this is not a promising prototype to pursue further on this corpus and pair. It stays in
 `evals/`; nothing in `litesearch/` or a default changed. `python -m evals.router_spike --m2v`
 reproduces it.
+
+### Part 3: a settling-brain router (cadence-net), same features and labels
+
+Parts 1 and 2 both learn by backpropagation or a closed form. `cadence-net`
+(github.com/muellerberndt/cadence, MIT, a from-scratch research library, `pip install cadence-net`,
+not a project dependency) settles a small recurrent net to equilibrium instead of a forward pass and
+learns by equilibrium detuning: a free settle is the net's own answer, a nudged settle pulls the
+output toward the label, and every synapse moves on the contrast of the two settled states, no
+backward pass. It is the one part of the library, `cadence.layered` + `Learner`, whose input is a
+fixed-length vector and whose output is a class choice, so it takes the same `potion-32M` query
+vectors `features()` already builds for part 1, unchanged.
+
+Tested only on `potion-32M -> bge-small`, same as part 2. `cadence.layered(512, 32, 2)` wires the 512
+query dimensions to 32 hidden and 2 output neurons; `Learner.calibrate` sets the gain, then 30 epochs
+of batch-32 `Learner.step` on the fold's training rows; the score is the settled margin between the
+two output neurons, read the same way `fit_ridge`'s score is. Reuses `labels`, `folds` (5-fold CV
+grouped by source sentence), the escalation-rate-quantile threshold, `arms` and `boot` from part 1.
+Three fit seeds (42, 20260803, 7), one CPU, no GPU: about 40 s per fold-fit, 10 minutes for all three
+seeds.
+
+| pair | arm | seed | rate | precision | routed | random | gain | 95% CI |
+|---|---|---|---|---|---|---|---|---|
+| potion-32M -> bge-small | cadence settling brain | 42 | 0.107 | 0.203 | 0.7546 | 0.7545 | +0.0001 | [-0.0115, +0.0111] |
+| potion-32M -> bge-small | cadence settling brain | 20260803 | 0.115 | 0.188 | 0.7569 | 0.7547 | +0.0021 | [-0.0091, +0.0134] |
+| potion-32M -> bge-small | cadence settling brain | 7 | 0.093 | 0.161 | 0.7484 | 0.7541 | -0.0057 | [-0.0154, +0.0038] |
+
+No cell excludes zero. Mean gain over the three seeds is -0.0011 (range -0.0057 to +0.0021), inside
+part 1's ridge result and part 2's two arms. corr(escalate, overlap) is -0.267, -0.240, -0.217, the
+same band as part 1's -0.221 and part 2's -0.267 to -0.295: a third, unrelated learning rule, given
+the same 512-dimensional lookup vector and the same 480-odd training rows a fold holds, converges on
+the same flavour axis the first two did. That is the signature of a data ceiling, not a method
+ceiling: equilibrium detuning is not closer-to-backprop than ridge or a trained static embedding, and
+it lands in the same place they did.
+
+### Decision
+
+Off, for the same reason as parts 1 and 2. `evals/router_spike.py --cadence` reproduces it;
+`cadence-net` is not added to `pyproject.toml`, importable only where `fit_cadence` calls it, per the
+project's rule against speculative optional dependencies.

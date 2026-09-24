@@ -191,6 +191,103 @@ def run_m2v_suite(genre=GENRE, pair=('potion-32M', 'bge-small'), seeds=M2V_SEEDS
     return rows
 
 
+# ------------------------------------------------------------------ a settling-brain router (cadence)
+# Part 3: a third, unrelated learning rule on the exact same features and labels as part 1, in place
+# of a closed-form classifier (part 1) or a task-tuned static embedder (part 2). `cadence-net`
+# (github.com/muellerberndt/cadence) settles a small recurrent net to equilibrium instead of a forward
+# pass, and learns by settling twice more with the label nudged in and reading the two equilibria's
+# difference off the synapses, no backward pass. It is a scratch-venv dependency, not a project one:
+# imported here only, never added to pyproject.toml.
+CADENCE_SEEDS = (42, 20260803, 7)
+CADENCE_HIDDEN, CADENCE_EPOCHS, CADENCE_BATCH = 32, 30, 32
+
+
+def fit_cadence(X, y, seed, hidden=CADENCE_HIDDEN, epochs=CADENCE_EPOCHS, batch=CADENCE_BATCH):
+    '''A `cadence.layered` settling brain, input neurons pinned to the query vector, 2 output neurons.
+
+    `pip install cadence-net`, not a project dependency. Trained by equilibrium detuning
+    (`Learner.step`): a free settle is the net's own answer, a nudged settle pulls the output toward
+    the label, and every synapse moves on the contrast of the two equilibria. The score is the
+    settled margin between the two output neurons, read the same way `fit_ridge`'s score is.
+    '''
+    import cadence as cd
+    n_in = X.shape[1]
+    connectome = cd.layered(n_in, hidden, 2, density=0.3, seed=seed)
+    learner = cd.Learner(cd.Brain(connectome, cd.learning_neuron_model()),
+                         connectome.populations['output'], cd.LearnerConfig(eta=2.0))
+    pad = connectome.n - n_in
+    to_drive = lambda Z: learner.brain.stimulus_levels(np.pad(np.asarray(Z, np.float32), ((0, 0), (0, pad))))
+    drive = to_drive(X)
+    learner.calibrate(drive)
+    rng = np.random.default_rng(seed)
+    for _ in range(epochs):
+        order = rng.permutation(len(y))
+        for start in range(0, len(y), batch):
+            idx = order[start:start+batch]
+            learner.step(drive[idx], y[idx])
+    out = np.asarray(connectome.populations['output'])
+    return lambda Z: np.diff(learner.free(to_drive(Z)).activation[:, out], axis=1)[:, 0]
+
+
+def oof_escalate_cadence(X, y, n_q, seed, rate=None, k=FOLDS, fold_seed=SEED):
+    'Held-out escalate/keep decision from a fold-local settling-brain fit, no leakage.'
+    fold_q = folds(n_q, k, fold_seed)
+    fold = np.tile(fold_q, len(FLAVOURS))
+    esc = np.zeros(len(y), bool)
+    for i in range(k):
+        tr, te = fold != i, fold == i
+        s = fit_cadence(X[tr], y[tr], seed)
+        r = float(y[tr].mean()) if rate is None else rate
+        st = s(X[tr])
+        thr = np.quantile(st, 1-r) if 0 < r < 1 else (np.inf if r <= 0 else -np.inf)
+        esc[te] = s(X[te]) > thr
+    return esc
+
+
+def run_cadence(genre=GENRE, pair=('potion-32M', 'bge-small'), router='potion-32M',
+                seeds=CADENCE_SEEDS, rate=None):
+    'One arm, a handful of fit seeds, same features, labels, folds and scoring as `run`.'
+    cheap, dear = pair
+    qs = build_queries(genre); n_q = len(qs)
+    rr_c, rr_d = per_query_u(genre, cheap), per_query_u(genre, dear)
+    y = labels(rr_c, rr_d)
+    X = features(genre, router)
+    ov = np.array([overlap(q[fl], q['key']) for fl in FLAVOURS for q in qs])
+
+    print(f'\n== {genre} · {cheap} -> {dear} · cadence settling-brain router ({router}) ==')
+    rows = []
+    for sd in seeds:
+        esc = oof_escalate_cadence(X, y, n_q, sd, rate)
+        a = arms(rr_c, rr_d, esc, n_q)
+        m, lo, hi, p = boot(a['routed'], a['random'])
+        prec = float(y[esc].mean()) if esc.any() else float('nan')
+        rec = float(esc[y.astype(bool)].mean()) if y.any() else float('nan')
+        r_esc = float(np.corrcoef(esc.astype(float), ov)[0, 1])
+        row = dict(genre=genre, cheap=cheap, dear=dear, router=router, clf='cadence-settling-brain',
+                   seed=sd, strategy=STRATEGY, n=len(y), rate=a['rate'], base_rate=float(y.mean()),
+                   precision=prec, recall=rec,
+                   **{f'{k}_mrr': float(a[k].mean()) for k in ('cheap', 'dear', 'routed', 'random', 'oracle')},
+                   routed_vs_random=dict(diff=m, lo=lo, hi=hi, p=p, significant=bool(lo > 0 or hi < 0)),
+                   corr_escalate_overlap=r_esc)
+        print(f'   seed {sd:<10} rate {a["rate"]:.3f} precision {prec:.3f} recall {rec:.3f}  '
+              f'routed {a["routed"].mean():.4f}  random {a["random"].mean():.4f}  '
+              f'gain {m:+.4f} [{lo:+.4f}, {hi:+.4f}] p={p:.3f}  corr(esc,overlap) {r_esc:+.3f}')
+        rows.append(row)
+    return rows
+
+
+def run_cadence_suite(genre=GENRE, pair=('potion-32M', 'bge-small'), seeds=CADENCE_SEEDS):
+    'The cadence arm, merged additively into router_spike.json under "cadence".'
+    rows = run_cadence(genre, pair, seeds=seeds)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    f = RESULTS/'router_spike.json'
+    out = json.loads(f.read_text()) if f.exists() else dict(arms=[], sweep=[])
+    out['cadence'] = rows
+    f.write_text(json.dumps(out, indent=1))
+    print(f'\n  -> {f}')
+    return rows
+
+
 # ------------------------------------------------------------------ held-out routing
 def folds(n_q, k=FOLDS, seed=SEED):
     'Fold id per source sentence. Splitting on the sentence keeps its five flavours on one side.'
@@ -358,10 +455,15 @@ def main(argv=None):
     p.add_argument('--no-sweep', action='store_true')
     p.add_argument('--m2v', action='store_true',
                     help='run the trained-static-vectors arm (model2vec) instead of the generic-router sweep')
+    p.add_argument('--cadence', action='store_true',
+                    help='run the settling-brain arm (cadence-net, a scratch dependency) instead of the sweep')
     a = p.parse_args(argv)
     if a.m2v:
         pr = tuple(a.pair.split(',')) if a.pair else ('potion-32M', 'bge-small')
         return run_m2v_suite(a.genre, pr)
+    if a.cadence:
+        pr = tuple(a.pair.split(',')) if a.pair else ('potion-32M', 'bge-small')
+        return run_cadence_suite(a.genre, pr)
     pairs = [tuple(a.pair.split(','))] if a.pair else list(PAIRS)
     routers = [a.router] if a.router else list(ROUTERS)
     clfs = [a.clf] if a.clf else list(CLASSIFIERS)

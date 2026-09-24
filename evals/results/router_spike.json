@@ -1284,5 +1284,88 @@
    },
    "corr_escalate_overlap": -0.2930108866344415
   }
+ ],
+ "cadence": [
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "cadence-settling-brain",
+   "seed": 42,
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.10666666666666667,
+   "base_rate": 0.13,
+   "precision": 0.203125,
+   "recall": 0.16666666666666666,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7546164021164022,
+   "random_mrr": 0.7544690277777779,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_random": {
+    "diff": 0.00014737433862433794,
+    "lo": -0.011527608300264548,
+    "hi": 0.011130996307319225,
+    "p": 0.9744,
+    "significant": false
+   },
+   "corr_escalate_overlap": -0.26654987921944007
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "cadence-settling-brain",
+   "seed": 20260803,
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.115,
+   "base_rate": 0.13,
+   "precision": 0.18840579710144928,
+   "recall": 0.16666666666666666,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7568675595238096,
+   "random_mrr": 0.7547199330357144,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_random": {
+    "diff": 0.0021476264880952362,
+    "lo": -0.00906994318369709,
+    "hi": 0.013396638992228836,
+    "p": 0.7044,
+    "significant": false
+   },
+   "corr_escalate_overlap": -0.23983618408254043
+  },
+  {
+   "genre": "regulatory",
+   "cheap": "potion-32M",
+   "dear": "bge-small",
+   "router": "potion-32M",
+   "clf": "cadence-settling-brain",
+   "seed": 7,
+   "strategy": "hybrid-pre",
+   "n": 600,
+   "rate": 0.09333333333333334,
+   "base_rate": 0.13,
+   "precision": 0.16071428571428573,
+   "recall": 0.11538461538461539,
+   "cheap_mrr": 0.7512574404761904,
+   "dear_mrr": 0.7813660714285715,
+   "routed_mrr": 0.7483606150793651,
+   "random_mrr": 0.7540675793650794,
+   "oracle_mrr": 0.8266170634920635,
+   "routed_vs_random": {
+    "diff": -0.005706964285714282,
+    "lo": -0.01537975887345678,
+    "hi": 0.0038242124118165756,
+    "p": 0.2416,
+    "significant": false
+   },
+   "corr_escalate_overlap": -0.2171861181343322
+  }
  ]
 }
