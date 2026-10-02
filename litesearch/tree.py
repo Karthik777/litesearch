@@ -183,8 +183,7 @@ def build_tree(pages,                  # [(page_no, text)] — markdown or plain
         for p, txt in pages:
             for ln, code in _md_lines(txt):
                 m = None if code else (_md_head.match(ln) if mode == 'markdown' else _chapter.match(ln))
-                # a lowercase first character usually means a `#` that was punctuation, not a heading
-                if m and (mode == 'chapter' or (len(t := _clean_title(m.group(2))) >= 2 and not t[0].islower())):
+                if m and (mode == 'chapter' or _clean_title(m.group(2))):
                     flush(cur_page)
                     open_node(ln.strip() if mode == 'chapter' else m.group(2),
                               slev.get(m.group(1).lower(), 1) if mode == 'chapter'

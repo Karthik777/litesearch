@@ -167,7 +167,8 @@ negative for retrieval and is no longer wired into `context`, see `evals/RESULTS
 
 **Cross-script search is on for every store**, not only Sanskrit ones. The `sanskrit` FTS5
 tokenizer emits an ASCII fold of each token beside it, so `श्रीमाता`, `śrīmātā` and `srimata` all
-reach the same row. Purely additive, ordinary English tokenises identically, and it is the largest
+reach the same row; a plain-English fold beside it lets `Bheeshma` and `Bhishma` reach `भीष्म` and
+`Bhīṣma` too. Purely additive: English keeps its tokens, the second fold grows the index 14.7%, and it is the largest
 measured retrieval win here: 1.000 Devanagari to verse recall for every encoder tested. One cost:
 a store built with this chain cannot be opened by a connection that has not registered the
 tokenizer, plain `sqlite3` included.

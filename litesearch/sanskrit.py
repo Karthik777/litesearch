@@ -2,7 +2,8 @@
 
 # %% auto #0
 __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'VIRAMA', 'DEVA_DIGITS', 'DEVANAGARI', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'strip_vedic',
-           'deva2ascii', 'detect_script', 'fold_token', 'sanskrit_tokenizer', 'register_sanskrit', 'cite_parts']
+           'deva2ascii', 'detect_script', 'fold_token', 'roman_fold', 'sanskrit_tokenizer', 'register_sanskrit',
+           'cite_parts']
 
 # %% ../nbs/09_sanskrit.ipynb #70d62e22df04
 import re, unicodedata
@@ -85,6 +86,17 @@ def fold_token(s:str) -> str:
     s = strip_vedic(s)
     return _latn_fold(deva2ascii(s) if DEVANAGARI.search(s) else s)
 
+_VOCALIC_R = re.compile(r'ri(?=[bcdfghjklmnpqstvxz])')   # Krishna's `ri` is IAST `ṛ`
+_ASPIRATE = re.compile(r'(?<=[bcdfgjklmnpqrstvxz])h')    # sh, th, dh, bh, ch: the h goes
+_LONG = re.compile(r'([aeiou])\1+')
+
+@lru_cache(maxsize=1<<16)
+def roman_fold(s:str) -> str:
+    "`fold_token` plus plain-English spellings: sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, aa/ā to a, w to v."
+    k = _VOCALIC_R.sub('r', fold_token(s).replace('w', 'v'))
+    return _LONG.sub(r'\1', _ASPIRATE.sub('', k).replace('ee', 'i').replace('oo', 'u'))
+
+
 # %% ../nbs/09_sanskrit.ipynb #244ccce093e3
 SANSKRIT_TOKENIZE = 'sanskrit'
 
@@ -101,6 +113,7 @@ def sanskrit_tokenizer(con, args):
             for t in toks:
                 if keep_orig and t not in out: out.append(t)
                 if (f := fold_token(t)) and f not in out: out.append(f)
+                if len(f) >= 4 and (r := roman_fold(t)) not in out: out.append(r)
             if out: yield (start, end, *out)
     return tok
 
