@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.36
+`roman_fold`: plain-English spellings fold with IAST and Devanagari (sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, Krishna's ri to ṛ); the `sanskrit` tokenizer emits it as a third colocated token, so `Bheeshma` finds `भीष्म`. Index +14.7% on English.
+`build_tree` keeps a markdown heading that starts lowercase (`## verses 6`).
+
 ## 0.1.35
 stores are stamped with their encoder; mismatch raises `StoreMismatch`. `get_store`, `get_tree`, `get_graph` and `Index` take `encoder=`.
 `Database.context(graph=)` and `graph_search` removed; the typed graph is vruksha's. `search(parallel=)` and `process_content(parallel=)` are no-ops.
