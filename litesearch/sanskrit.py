@@ -88,13 +88,20 @@ def fold_token(s:str) -> str:
 
 _VOCALIC_R = re.compile(r'ri(?=[bcdfghjklmnpqstvxz])')   # Krishna's `ri` is IAST `ṛ`
 _ASPIRATE = re.compile(r'(?<=[bcdfgjklmnpqrstvxz])h')    # sh, th, dh, bh, ch: the h goes
-_LONG = re.compile(r'([aeiou])\1+')
+_LONG, _DOUBLE = re.compile(r'([aeiou])\1+'), re.compile(r'(.)\1+')
+_ENDINGS = ('ies', 'ied', 'ing', 'ed', 'es', 's', 'y')
 
 @lru_cache(maxsize=1<<16)
-def roman_fold(s:str) -> str:
+def roman_fold(s:str,
+               doubles:bool=False,  # a doubled letter single: Lakshmana and Lakṣmaṇa, Raghuvamsha and Raghuvaṃśa
+               endings:bool=False   # an English plural or past ending off, leaving three letters: duties and duty
+              ) -> str:
     "`fold_token` plus plain-English spellings: sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, aa/ā to a, w to v."
     k = _VOCALIC_R.sub('r', fold_token(s).replace('w', 'v'))
-    return _LONG.sub(r'\1', _ASPIRATE.sub('', k).replace('ee', 'i').replace('oo', 'u'))
+    k = _LONG.sub(r'\1', _ASPIRATE.sub('', k).replace('ee', 'i').replace('oo', 'u'))
+    if doubles: k = _DOUBLE.sub(r'\1', k)
+    if endings: k = next((k[:-len(e)] for e in _ENDINGS if k.endswith(e) and len(k) - len(e) >= 3), k)
+    return k
 
 
 # %% ../nbs/09_sanskrit.ipynb #244ccce093e3

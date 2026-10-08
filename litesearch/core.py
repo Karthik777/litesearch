@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_in', 'StoreMismatch', 'content_id', 'embed_chunk',
            'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge',
-           'database', 'rerank_hits']
+           'database', 'fts_or', 'fts_phrases', 'rank_fts', 'correct', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
@@ -13,8 +13,9 @@ from apswutils.utils import cursor_row2dict, hash_record
 from apsw.fts5 import register_tokenizers, map_tokenizers
 from contextlib import contextmanager, nullcontext
 import apsw, apsw.bestpractice, threading, weakref
-import numpy as np, warnings
-from .data import pre
+import numpy as np, warnings, math, re
+from .data import pre, kw
+from .sanskrit import fold_token
 BUSY_TIMEOUT_MS = 30_000   # lock wait during a busy_window; apsw's stock default is 100ms
 
 # %% ../nbs/01_core.ipynb #65d70b81c9fc026c
@@ -494,6 +495,111 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     return _db
 
 
+# %% ../nbs/01_core.ipynb #55b9bb9c96df
+def _fts_q(t): return '"' + str(t).replace('"', '""') + '"'
+
+def fts_or(terms,       # terms or phrases; each is quoted
+           column=None  # a column name or a list of them to restrict the match to
+          ) -> str:
+    "An FTS5 MATCH string OR-ing every term as a quoted phrase."
+    q = ' OR '.join(map(_fts_q, dict.fromkeys(t for t in terms if t and str(t).strip())))
+    if not q or not column: return q
+    cs = _fts_q(column) if isinstance(column, str) else '{' + ' '.join(map(_fts_q, column)) + '}'
+    return f'{cs} : ({q})'
+
+def fts_phrases(terms,       # terms, each followed by every suffix
+                suffixes,    # words that follow a term: `('is', 'means')` finds definitions
+                column=None  # a column name or a list of them
+               ) -> str:
+    "An FTS5 MATCH string OR-ing the phrase `term suffix` for every pair."
+    return fts_or([f'{t} {s}' for t in terms for s in suffixes], column)
+
+# %% ../nbs/01_core.ipynb #2becd38f4dfb
+@patch
+def fts_vocab(self:Table) -> dict:
+    "Every term in this table's FTS index: `{term: (documents, occurrences)}`."
+    fts, c = self.detect_fts(), self.db.__dict__.setdefault('_fts_vocabs', {})
+    stamp = (self.db.conn.total_changes(), self.db.q('pragma data_version')[0]['data_version'])
+    if fts in c and c[fts][0] == stamp: return c[fts][1]
+    self.db.execute(f'create virtual table if not exists temp.[{fts}_vocab] using fts5vocab(main, [{fts}], row)')
+    v = {r['term']: (r['doc'], r['cnt']) for r in self.db.q(f'select term, doc, cnt from temp.[{fts}_vocab]')}
+    c[fts] = (stamp, v)
+    return v
+
+_TOKENIZE_RE = re.compile(r"""tokenize\s*=\s*(['"])(.*?)\1""", re.I | re.S)
+
+@patch
+def fts_tokens(self:Table, text:str) -> list:
+    "`text` as this table's FTS index tokenizes it: a tuple of colocated tokens per position, the first unfolded."
+    fts, c = self.detect_fts(), self.db.__dict__.setdefault('_fts_toks', {})
+    if fts not in c:
+        m = _TOKENIZE_RE.search(self.db.q('select sql from sqlite_master where name=?', [fts])[0]['sql'])
+        nm, *args = (m.group(2) if m else 'unicode61').split()
+        c[fts] = self.db.conn.fts5_tokenizer(nm, args)
+    return [tuple(t) for t in c[fts]((text or '').encode(), apsw.FTS5_TOKENIZE_DOCUMENT, None, include_offsets=False)]
+
+# %% ../nbs/01_core.ipynb #a47f8868bd9c
+_WORD_RE = re.compile(r'[^\W\d_]+')
+def _word_keys(t): return {fold_token(w) for w in _WORD_RE.findall(t or '')}
+def _docs(v): return v[0] if isinstance(v, tuple) else v
+
+def rank_fts(hits,              # FTS rows, or a list of lists of them, one per table
+             terms,             # query terms: each a key or a set of keys counted once
+             df=None,           # key -> document count, occurrence count or `(documents, occurrences)`
+             n=None,            # corpus size for IDF; None sums `df`
+             text_col='content',# the column the terms are found in
+             keys=None,         # text -> set of keys; None folds each word with `fold_token`
+             rank_col='rank',   # bm25 column, lower is better
+             drop=False         # leave out hits holding none of the terms
+            ) -> list:
+    "Order FTS hits by query terms held, then their summed IDF, then bm25 against the best of their own list."
+    lists, keys, df = (hits if hits and isinstance(hits[0], list) else [hits]), keys or _word_keys, df or {}
+    ts = [{t} if isinstance(t, str) else set(t) for t in terms]
+    n = ifnone(n, sum(map(_docs, df.values())))
+    idf = [math.log((n + 1)/(sum(_docs(df.get(k, 0)) for k in t) + 1)) for t in ts]
+    out = []
+    for lst in lists:
+        top = min((h.get(rank_col) or 0 for h in lst), default=-1) or -1
+        for h in lst:
+            tk = keys(h.get(text_col) or '')
+            got = [i for t, i in zip(ts, idf) if t & tk]
+            if got or not drop: out.append(((-len(got), -round(sum(got), 3), -(h.get(rank_col) or 0)/top), h))
+    return [h for _, h in sorted(out, key=lambda x: x[0])]
+
+# %% ../nbs/01_core.ipynb #ef879d7082f6
+def _swapped(a, b):
+    "Whether `a` is `b` with two adjacent letters swapped."
+    i = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), len(a))
+    return len(a) == len(b) and a != b and a[i+2:] == b[i+2:] and a[i:i+2] == b[i:i+2][::-1]
+
+def _within(a, b, k):
+    "Whether the optimal string alignment distance between `a` and `b` is at most `k`."
+    if abs(len(a) - len(b)) > k: return False
+    pp, p = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        c = [i] + [0]*len(b)
+        for j in range(1, len(b) + 1):
+            c[j] = min(p[j] + 1, c[j-1] + 1, p[j-1] + (a[i-1] != b[j-1]))
+            if pp and i > 1 and j > 1 and a[i-1] == b[j-2] and a[i-2] == b[j-1]: c[j] = min(c[j], pp[j-2] + 1)
+        if min(c) > k: return False
+        pp, p = p, c
+    return p[-1] <= k
+
+def correct(word,        # a query word, folded the way `vocab`'s terms are
+            vocab,       # term -> count or `(documents, occurrences)`, or an iterable of terms
+            swaps=True,  # try two adjacent letters swapped
+            edits=1,     # edits allowed when no swap is found
+            min_len=7,   # shortest word edits apply to
+            top=2        # corrections returned
+           ) -> list:
+    "The index terms `word` may be a typo of, most frequent first: `[word]` when it is indexed."
+    if word in vocab: return [word]
+    fq = vocab if isinstance(vocab, dict) else dict.fromkeys(vocab, 0)
+    pool = [t for t in fq if t[:1] == word[:1]]
+    got = [t for t in pool if _swapped(word, t)] if swaps else []
+    if not got and edits and len(word) >= min_len: got = [t for t in pool if _within(word, t, edits)]
+    return sorted(got, key=lambda t: (-(fq[t][-1] if isinstance(fq[t], tuple) else fq[t]), t))[:top]
+
 # %% ../nbs/01_core.ipynb #571724f3bc9bcf44
 RERANK_FANOUT, _RERANKERS = 30, {}
 def _flashrank():
@@ -536,21 +642,30 @@ def search(self: Database,  # database connection
            fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
            ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
            reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
-           rerank_model:str=None  # flashrank model name (None -> fast default)
+           rerank_model:str=None,  # flashrank model name (None -> fast default)
+           term_rank:bool=False,  # reorder the FTS leg by `rank_fts`: query terms held, their rarity, then bm25
+           fts_depth:int=None  # FTS candidates read before `term_rank` keeps the best `limit`; None means `limit`
            ):
     'Search the litesearch store with fts and vector search combined.'
     if not q.strip(): return None
     tbl = self.t[table_name]
     cols = list(columns or [])
     if rrf and id_key not in cols: cols = [id_key] + cols
-    if reranking and 'content' not in cols: cols = cols + ['content']  # need text for the cross-encoder
+    if (reranking or term_rank) and 'content' not in cols: cols = cols + ['content']  # the text the cross-encoder and term ranking read
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
     use_ann = ann and not where
     fts_q, fts_quote = q, quote
     if fts_pre and (p := pre(q)): fts_q, fts_quote = p, False
     vec_leg = lambda t: (lambda: t.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else t.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off))
-    exec_ls = [lambda: tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote), vec_leg(tbl)]
+    def fts_leg():
+        if not term_rank: return tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote)
+        o = ifnone(off, 0)
+        hs = tbl.fts_search(fts_q, cols, 'rank', lim and max(ifnone(fts_depth, 0), lim + o), None, where, where_args, fts_quote)
+        ts, v = tbl.fts_tokens(kw(q)), tbl.fts_vocab()
+        hs = rank_fts(hs, ts, {t[0]: v.get(t[0], (0, 0)) for t in ts}, tbl.count, keys=lambda c: {k for t in tbl.fts_tokens(c) for k in t})
+        return hs[o:o + lim] if lim else hs[o:]
+    exec_ls = [fts_leg, vec_leg(tbl)]
     fts, vec = L(exec_ls).map(lambda g: g())
     if rrf:
         hits = rrf_merge(fts, vec, rrf_k, lim, id_key)[ifnone(off, 0):]

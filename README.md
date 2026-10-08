@@ -178,7 +178,7 @@ tokenizer, plain `sqlite3` included.
 - **[examples/01_simple_rag.ipynb](examples/01_simple_rag.ipynb)**, ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank
 - **[examples/02_tool_use.ipynb](examples/02_tool_use.ipynb)**, wire litesearch into an LLM tool-use loop
 - **[api docs](https://Karthik777.github.io/litesearch/api.html)**, [`Index`](https://Karthik777.github.io/litesearch/api.html#index), and what each default is worth
-- **[core docs](https://Karthik777.github.io/litesearch/core.html)**, [`database`](https://Karthik777.github.io/litesearch/core.html#database), `get_store`, `search`, [`rrf_all`](https://Karthik777.github.io/litesearch/core.html#rrf_all), `vec_search`
+- **[core docs](https://Karthik777.github.io/litesearch/core.html)**, [`database`](https://Karthik777.github.io/litesearch/core.html#database), `get_store`, `search`, [`rrf_all`](https://Karthik777.github.io/litesearch/core.html#rrf_all), [`rank_fts`](https://Karthik777.github.io/litesearch/core.html#rank_fts), [`correct`](https://Karthik777.github.io/litesearch/core.html#correct), [`fts_or`](https://Karthik777.github.io/litesearch/core.html#fts_or), `vec_search`
 - **[tree docs](https://Karthik777.github.io/litesearch/tree.html)**, `add_dir`, `toc`, `read`, `sections`, `context`
 - **[vishalakshi](https://github.com/vedicreader/vishalakshi)**, a litesearch-backed vault, and the first caller nominated to port onto [`Index`](https://Karthik777.github.io/litesearch/api.html#index); see the [api page](07_api.ipynb) for what that port should test
 
