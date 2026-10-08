@@ -1,5 +1,12 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.37
+`rank_fts(hits, terms, df, n)` orders FTS hits by query terms held, then their summed IDF, then bm25 against the best hit of their own list; `search(term_rank=True, fts_depth=)` uses it in the FTS leg. Off by default.
+`Table.fts_vocab()` gives `{term: (documents, occurrences)}` from FTS5's `fts5vocab`, built in `temp` and cached until a write; `Table.fts_tokens(text)` runs the table's own tokenizer.
+`correct(word, vocab)`: index terms a typo may mean, adjacent swaps at any length and one edit from seven letters, most frequent first.
+`fts_or(terms, column)` and `fts_phrases(terms, suffixes, column)` build quoted FTS5 MATCH strings.
+`roman_fold(s, doubles=, endings=)`: a doubled letter single, an English plural or past ending off. The tokenizer keeps both off.
+
 ## 0.1.36
 `roman_fold`: plain-English spellings fold with IAST and Devanagari (sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, Krishna's ri to ṛ); the `sanskrit` tokenizer emits it as a third colocated token, so `Bheeshma` finds `भीष्म`. Index +14.7% on English.
 `build_tree` keeps a markdown heading that starts lowercase (`## verses 6`).
