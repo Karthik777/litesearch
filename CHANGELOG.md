@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.38
+`load_plugins()` calls every function named by a `litesearch.profiles` entry point, once, from `profile_for`; an installed package registers its profiles that way without litesearch importing it or it importing litesearch. A broken plugin warns and the rest still load. ganapati 0.1.0 registers its Sanskrit profiles through it.
+
 ## 0.1.37
 `rank_fts(hits, terms, df, n)` orders FTS hits by query terms held, then their summed IDF, then bm25 against the best hit of their own list; `search(term_rank=True, fts_depth=)` uses it in the FTS leg. Off by default.
 `Table.fts_vocab()` gives `{term: (documents, occurrences)}` from FTS5's `fts5vocab`, built in `temp` and cached until a write; `Table.fts_tokens(text)` runs the table's own tokenizer.
