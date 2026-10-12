@@ -13,8 +13,6 @@ from fastcore.parallel import parallel as fc_parallel
 import json, os, re, warnings, zlib
 from functools import cache
 import numpy as np
-from tokenizers import Tokenizer, AddedToken
-from model2vec import StaticModel
 def _ort():
 	"onnxruntime, which only the ONNX encoders want. A model2vec static model needs none of it."
 	try: import onnxruntime as ort; return ort
@@ -51,6 +49,7 @@ bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quanti
 @cache
 def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
     'A model2vec model, shared per name. potion-multilingual-128M is ~500MB, so every caller loading its own hurts.'
+    from model2vec import StaticModel
     m = StaticModel.from_pretrained(model_nm, force_download=False)
     m.ls_id = model_nm   # potion leaves base_model_name empty, so encoder_id has nothing else to read
     return m
@@ -141,6 +140,7 @@ class FastEncode:
 		cfg = (Path(self.md)/'config.json').read_json()
 		tok_cfg = (Path(self.md)/'tokenizer_config.json').read_json()
 		tok_map = (Path(self.md)/'special_tokens_map.json').read_json()
+		from tokenizers import Tokenizer, AddedToken
 		self.tok = Tokenizer.from_file(str(Path(self.md)/'tokenizer.json'))
 		pad_token = tok_cfg["pad_token"]
 		pad_id = ifnone(cfg.get("pad_token_id"), self.tok.token_to_id(pad_token) or 0)
@@ -192,12 +192,12 @@ class FastEncode:
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
-def doc_encoder(embedder:FastEncode|StaticModel):
+def doc_encoder(embedder:'FastEncode|StaticModel'):
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_document(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
 
-def query_encoder(embedder:FastEncode|StaticModel):
+def query_encoder(embedder:'FastEncode|StaticModel'):
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
