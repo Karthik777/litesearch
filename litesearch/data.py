@@ -2,11 +2,11 @@
 
 # %% auto #0
 __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'PROFILES', 'PLUGIN_GROUP', 'MIN_PARALLEL_FILES',
-           'pdf_parse', 'SafeFastChunker', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse',
-           'ipynb_parse', 'non_py_sigs', 'chunk_texts', 'Profile', 'load_plugins', 'register_profile', 'profile_for',
-           'file_parse', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc',
-           'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md', 'clean_md', 'fix_layout',
-           'needs_ocr', 'ocr_parse', 'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
+           'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs',
+           'chunk_texts', 'Profile', 'load_plugins', 'register_profile', 'profile_for', 'file_parse', 'pkg2files',
+           'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre',
+           'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md', 'clean_md', 'fix_layout', 'needs_ocr', 'ocr_parse',
+           'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_,fdelegates,defaults,find_file_parents
@@ -66,37 +66,47 @@ def pdf_parse(pdf:PdfDocument|str|Path|bytes,
     return pdf_md(pdf, out_path, pages=True, ocr=ocr_selection.lower(), preserve_layout=preserve_layout, image_dir=image_dir)
 
 # %% ../nbs/02_data.ipynb #4a33701ff7ff248b
-import chonkie_core
-from chonkie import RecursiveChunker, FastChunker, BaseChunker
-from chonkie.types import Chunk
+from functools import cache
 
 def _char_start(b:bytes, i:int) -> int:
     'Back a byte offset up to the first byte of the UTF-8 character it lands inside.'
     while 0 < i < len(b) and b[i] & 0xC0 == 0x80: i -= 1
     return i
 
-class SafeFastChunker(FastChunker):
-    '`FastChunker` whose cuts land on character boundaries.'
-    def chunk(self, text:str) -> list:
-        if not text: return []
-        kw = dict(size=self.chunk_size, prefix=self.prefix, consecutive=self.consecutive,
-                  forward_fallback=self.forward_fallback)
-        kw |= dict(pattern=self.pattern) if self.pattern else dict(delimiters=self.delimiters)
-        b, out, pos = text.encode(), [], 0
-        for s, e in chonkie_core.chunk_offsets(b, **kw):
-            t = b[_char_start(b, s):_char_start(b, e)].decode()
-            if not t: continue
-            out.append(Chunk(text=t, start_index=pos, end_index=pos+len(t), token_count=0))
-            pos += len(t)
-        return out
+@cache
+def _safe_chunker():
+    'Build `SafeFastChunker` on first use: importing chonkie costs ~190ms, and a search-only process never chunks.'
+    import chonkie_core
+    from chonkie import FastChunker
+    from chonkie.types import Chunk
+    class SafeFastChunker(FastChunker):
+        '`FastChunker` whose cuts land on character boundaries.'
+        def chunk(self, text:str) -> list:
+            if not text: return []
+            kw = dict(size=self.chunk_size, prefix=self.prefix, consecutive=self.consecutive,
+                      forward_fallback=self.forward_fallback)
+            kw |= dict(pattern=self.pattern) if self.pattern else dict(delimiters=self.delimiters)
+            b, out, pos = text.encode(), [], 0
+            for s, e in chonkie_core.chunk_offsets(b, **kw):
+                t = b[_char_start(b, s):_char_start(b, e)].decode()
+                if not t: continue
+                out.append(Chunk(text=t, start_index=pos, end_index=pos+len(t), token_count=0))
+                pos += len(t)
+            return out
+    SafeFastChunker.__module__, SafeFastChunker.__qualname__ = __name__, 'SafeFastChunker'
+    return SafeFastChunker
+
+def __getattr__(nm):
+    if nm == 'SafeFastChunker': return _safe_chunker()
+    raise AttributeError(f'module {__name__!r} has no attribute {nm!r}')
 
 
 # %% ../nbs/02_data.ipynb #4ddbb058066ad269
 def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
-                   chunker:BaseChunker=None
+                   chunker:'BaseChunker'=None
 ) -> L:
 	'Split markdown into paragraph chunks on blank lines'
-	r = chunker or SafeFastChunker(chunk_size=512)
+	r = chunker or _safe_chunker()(chunk_size=512)
 	return L(r(text)).map(lambda c: c.text)
 
 @patch
@@ -111,10 +121,10 @@ def pdf_chunks(self:PdfDocument, # PDF document
 
 # %% ../nbs/02_data.ipynb #bd59b59ae64cea17
 def chunk_spans(text:str,            # text to split
-                chunker:BaseChunker=None
+                chunker:'BaseChunker'=None
 ) -> L:
     'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
-    r = chunker or SafeFastChunker(chunk_size=512)
+    r = chunker or _safe_chunker()(chunk_size=512)
     return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
 # %% ../nbs/02_data.ipynb #d47391264283f71c
@@ -123,7 +133,6 @@ from importlib.metadata import distribution as dist, distributions as dists, ver
 from importlib.machinery import ModuleSpec
 import ast, re
 from ast import get_source_segment as gs
-from codesigs import file_sigs
 from fastcore.basics import fdelegates, true
 from fastcore.nbio import read_nb
 
@@ -208,11 +217,12 @@ def ipynb_parse(p):
 def non_py_sigs(p):
 	'Signatures for paths that are not python code files using codesigs'
 	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
+	from codesigs import file_sigs
 	return L(file_sigs(p)).map(lambda o: dict(content=o, metadata=meta_()))
 
 def chunk_texts(text:str):
 	'Chunk texts using Fast Chunker'
-	return L(SafeFastChunker(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
+	return L(_safe_chunker()(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
 
 # %% ../nbs/02_data.ipynb #profiles
 from dataclasses import dataclass, field
