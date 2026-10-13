@@ -1410,11 +1410,11 @@ wheels = [
 
 [[package]]
 name = "fastcore"
-version = "2.2.17"
+version = "2.2.33"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bb/c1/15769a5a286aef075f1f0209296535e58f7725d966c1e2f11db6ed7e5480/fastcore-2.2.17.tar.gz", hash = "sha256:3a88a8c92fcc386d224b90a4e650519a7a9765bed027bbcc178b66d4aae4f36b", size = 144493, upload-time = "2026-08-29T16:32:08.817Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/f4/a03f290cb0d1aedcf837c51b2be193a28dcc437697f5a57441f16d2c6a27/fastcore-2.2.33.tar.gz", hash = "sha256:919cc6d182e633a206238bfaacb39f37b7da985974568121347eedf0bec602c0", size = 145347, upload-time = "2026-10-05T06:56:55.208Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/85/0d048ed91e38765449f3a51e57a6765ea98eab667e7b79b3de7d25abd721/fastcore-2.2.17-py3-none-any.whl", hash = "sha256:14c2fa6e322a64a0d2d8755170f68ad602fe4c046afc72b32413d2fd37bd5b0b", size = 151045, upload-time = "2026-08-29T16:32:06.91Z" },
+    { url = "https://files.pythonhosted.org/packages/93/77/687142707e4ff6b11c63f10dba0562e1be08eb214eaca9b46eab2f77a1fe/fastcore-2.2.33-py3-none-any.whl", hash = "sha256:2c29d35263d88d21d6c3c5ddef92fe3547161e4af0d3efcd324a6277de1a4fba", size = 152034, upload-time = "2026-10-05T06:56:53.423Z" },
 ]
 
 [[package]]
@@ -3395,7 +3395,7 @@ wheels = [
 
 [[package]]
 name = "nbdev"
-version = "3.3.14"
+version = "3.3.25"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asttokens" },
@@ -3410,9 +3410,9 @@ dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/d3/501c19b88b1724f3a4555c1cd05cdeb4ea9b08ce859b59d37d1f37fa4eb1/nbdev-3.3.14.tar.gz", hash = "sha256:0d8bee7e2788d1133963a9beda9a6c866c289c96094cccdf66cec983852cd33d", size = 87544, upload-time = "2026-08-29T17:20:42.636Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/fa/d80fb6b061023677bb88a8d59ac1ebefb74ad9add37d7c1211a01d56dbba/nbdev-3.3.25.tar.gz", hash = "sha256:cd48c235d18e5d53128f82c676cdb9a3f66f084ef05e48e8d4b9f56b3832d80d", size = 91478, upload-time = "2026-10-05T08:31:15.544Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/a2/056408037ef0700c2fc3653296bfa3951154876e0809ce6afb2a434b8433/nbdev-3.3.14-py3-none-any.whl", hash = "sha256:92c943977b7bf6e724cc437443dd94df8cac342d00e3ca2567251b8edaf65337", size = 92469, upload-time = "2026-08-29T17:20:40.792Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/ce/d0cfdd1bc8338285ae26db62771450b4c2b05f5befe81819f77789d8dc06/nbdev-3.3.25-py3-none-any.whl", hash = "sha256:9912cba878b0919aa40b0fd8e4f1ddcfabf186ea877b52f77b6dd75677312288", size = 95596, upload-time = "2026-10-05T08:31:13.906Z" },
 ]
 
 [[package]]
