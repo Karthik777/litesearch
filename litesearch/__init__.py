@@ -9,6 +9,7 @@ from .tree import *
 from .sanskrit import *
 from .api import *
 from .quality import *
+from .store import *
 from pdf_oxide import *
 
 def __getattr__(nm):

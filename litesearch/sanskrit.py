@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'VIRAMA', 'DEVA_DIGITS', 'DEVANAGARI', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'strip_vedic',
-           'deva2ascii', 'detect_script', 'fold_token', 'roman_fold', 'sanskrit_tokenizer', 'register_sanskrit',
-           'cite_parts']
+           'deva2ascii', 'detect_script', 'fold_token', 'roman_fold', 'skeleton', 'sanskrit_tokenizer',
+           'register_sanskrit', 'cite_parts']
 
 # %% ../nbs/09_sanskrit.ipynb #70d62e22df04
 import re, unicodedata
@@ -94,14 +94,19 @@ _ENDINGS = ('ies', 'ied', 'ing', 'ed', 'es', 's', 'y')
 @lru_cache(maxsize=1<<16)
 def roman_fold(s:str,
                doubles:bool=False,  # a doubled letter single: Lakshmana and Lakṣmaṇa, Raghuvamsha and Raghuvaṃśa
-               endings:bool=False   # an English plural or past ending off, leaving three letters: duties and duty
+               endings:bool=False,  # an English plural or past ending off, leaving three letters: duties and duty
+               numbers:bool=False   # a number by its value: 02 and 2
               ) -> str:
     "`fold_token` plus plain-English spellings: sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, aa/ā to a, w to v."
     k = _VOCALIC_R.sub('r', fold_token(s).replace('w', 'v'))
     k = _LONG.sub(r'\1', _ASPIRATE.sub('', k).replace('ee', 'i').replace('oo', 'u'))
     if doubles: k = _DOUBLE.sub(r'\1', k)
     if endings: k = next((k[:-len(e)] for e in _ENDINGS if k.endswith(e) and len(k) - len(e) >= 3), k)
-    return k
+    return str(int(k)) if numbers and k.isdigit() else k
+
+def skeleton(k:str) -> str:
+    "A folded word's first letter and its consonants in order, doubles single: saundarya and soundarya share `sndry`."
+    return k[:1] + re.sub(r'(.)\1+', r'\1', re.sub('[aeiouy]', '', k[1:]))
 
 
 # %% ../nbs/09_sanskrit.ipynb #244ccce093e3

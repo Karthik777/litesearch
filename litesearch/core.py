@@ -3,7 +3,8 @@
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_in', 'StoreMismatch', 'content_id', 'embed_chunk',
            'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge',
-           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_phrases', 'rank_fts', 'correct', 'rerank_hits']
+           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_phrases', 'no_open_optimize', 'rank_fts', 'correct',
+           'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
@@ -13,9 +14,9 @@ from apswutils.utils import cursor_row2dict, hash_record
 from apsw.fts5 import register_tokenizers, map_tokenizers
 from contextlib import contextmanager, nullcontext
 import apsw, apsw.bestpractice, threading, weakref
-import numpy as np, warnings, math, re
+import numpy as np, warnings, math, re, hashlib
 from .data import pre, kw
-from .sanskrit import fold_token
+from .sanskrit import fold_token, skeleton as _skeleton
 BUSY_TIMEOUT_MS = 30_000   # lock wait during a busy_window; apsw's stock default is 100ms
 
 # %% ../nbs/01_core.ipynb #65d70b81c9fc026c
@@ -618,6 +619,25 @@ def fts_tokens(self:Table, text:str) -> list:
         c[fts] = self.db.conn.fts5_tokenizer(nm, args)
     return [tuple(t) for t in c[fts]((text or '').encode(), apsw.FTS5_TOKENIZE_DOCUMENT, None, include_offsets=False)]
 
+# %% ../nbs/01_core.ipynb #307f60f7
+@patch
+def fts_sig(self:Table) -> str:
+    "A signature of this table's FTS index that every write to it moves, from any process; `''` without one."
+    if not (f := self.detect_fts()): return ''
+    r = self.db.q(f'select block from [{f}_data] where id=10')
+    return hashlib.md5(r[0]['block'] if r else b'').hexdigest()[:16]
+
+@patch
+def fts_merge(self:Table):
+    "Merge this table's FTS index into one segment."
+    if (f := self.detect_fts()): self.db.execute(f"insert into [{f}]([{f}]) values('optimize')")
+
+def no_open_optimize():
+    "Stop apsw running `PRAGMA optimize` as a connection opens, for every connection this process opens after."
+    for h in apsw.connection_hooks:
+        for c in getattr(h, '__closure__', None) or ():
+            if isinstance(hs := c.cell_contents, list) and apsw.bestpractice.connection_optimize in hs: hs.remove(apsw.bestpractice.connection_optimize)
+
 # %% ../nbs/01_core.ipynb #a47f8868bd9c
 _WORD_RE = re.compile(r'[^\W\d_]+')
 def _word_keys(t): return {fold_token(w) for w in _WORD_RE.findall(t or '')}
@@ -670,7 +690,8 @@ def correct(word,        # a query word, folded the way `vocab`'s terms are
             swaps=True,  # try two adjacent letters swapped
             edits=1,     # edits allowed when no swap is found
             min_len=7,   # shortest word edits apply to
-            top=2        # corrections returned
+            top=2,       # corrections returned
+            skeleton=False # also terms of five letters or more sharing `word`'s consonant skeleton
            ) -> list:
     "The index terms `word` may be a typo of, most frequent first: `[word]` when it is indexed."
     if word in vocab: return [word]
@@ -678,6 +699,7 @@ def correct(word,        # a query word, folded the way `vocab`'s terms are
     pool = [t for t in fq if t[:1] == word[:1]]
     got = [t for t in pool if _swapped(word, t)] if swaps else []
     if not got and edits and len(word) >= min_len: got = [t for t in pool if _within(word, t, edits)]
+    if not got and skeleton and len(word) >= 5 and len(sk := _skeleton(word)) >= 3: got = [t for t in pool if _skeleton(t) == sk]
     return sorted(got, key=lambda t: (-(fq[t][-1] if isinstance(fq[t], tuple) else fq[t]), t))[:top]
 
 # %% ../nbs/01_core.ipynb #571724f3bc9bcf44
