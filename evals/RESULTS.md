@@ -162,3 +162,57 @@ The seed is what lets a weak model cover the whole citation surface: Qwen2.5-1.5
 traversable bridges to 23 at 0.61 hit against 0.13 for hybrid. A strong model reaches most of them
 on its own; the seed guarantees the structured ones regardless of model. Loose references ("that
 Directive", "the preceding paragraph") still need the model, which is where its size earns out.
+
+## One shared connection against a connection per thread
+
+`database(shared=True)` stays off by default. With SQLite's default settings, a connection per thread is slower than one shared connection for FTS reads, and faster for brute-force vector scans. With SQLite's allocation statistics off, a connection per thread is 6.1 times faster for FTS at 8 threads. A shared connection holds one copy of the HNSW index; a connection per thread holds one copy each.
+
+### Method
+
+`python -m evals.shared_conn --rows 20000 --threads 1,2,4,8 --repeats 3 --n fts=400,vec=20,ann=400`, then the same command with `--memstatus 0`. The store holds 20,000 rows of 60 Zipf-distributed pseudo-words, one random 256-dim float16 unit vector per row, the default tokenizer chain, and an HNSW index (12.6 MB sidecar). FTS queries OR two words from frequency ranks 100 to 1,000 and return the top 10 by bm25. Vector queries return the top 10 by cosine, by brute-force scan (`vec_search`) or by HNSW (`ann_search`). Each thread runs its queries after a warm-up query and a common start. Each cell is the median of 3 runs. The latency runs use 4 FTS readers for 5 seconds on a fresh copy of the store, with and without one writer committing 200-row `process_content` transactions back to back. Memory and open cost come from a fresh process that opens 8 connections and loads the HNSW index on each. Machine: macOS 26.5 on a 14-core arm64 Mac, Python 3.13.1 with the GIL, SQLite 3.53.4.
+
+### Read throughput, queries per second
+
+| reads | threads | shared | own | own / shared | shared, memstatus 0 | own, memstatus 0 | own / shared, memstatus 0 |
+|---|---|---|---|---|---|---|---|
+| FTS | 1 | 1,116 | 1,131 | 1.01x | 1,303 | 1,308 | 1.00x |
+| FTS | 2 | 1,118 | 851 | 0.76x | 1,188 | 2,455 | 2.07x |
+| FTS | 4 | 1,134 | 496 | 0.44x | 1,140 | 4,197 | 3.68x |
+| FTS | 8 | 608 | 441 | 0.73x | 1,114 | 6,820 | 6.12x |
+| vector scan | 1 | 64 | 69 | 1.08x | 71 | 71 | 1.00x |
+| vector scan | 2 | 67 | 95 | 1.41x | 72 | 85 | 1.17x |
+| vector scan | 4 | 70 | 150 | 2.14x | 53 | 131 | 2.46x |
+| vector scan | 8 | 70 | 176 | 2.51x | 73 | 168 | 2.31x |
+| HNSW | 1 | 2,960 | 3,020 | 1.02x | 3,161 | 3,318 | 1.05x |
+| HNSW | 2 | 4,337 | 4,492 | 1.04x | 4,789 | 4,727 | 0.99x |
+| HNSW | 4 | 4,283 | 4,552 | 1.06x | 4,883 | 5,284 | 1.08x |
+| HNSW | 8 | 4,705 | 2,748 | 0.58x | 4,076 | 2,587 | 0.63x |
+
+### FTS latency, 4 readers
+
+| connection | memstatus | writer | reads/s | p50 ms | p99 ms | max ms | rows written/s |
+|---|---|---|---|---|---|---|---|
+| shared | 1 | no | 1,009 | 3.90 | 7.36 | 17.8 | |
+| shared | 1 | yes | 39 | 105.98 | 193.13 | 198.4 | 5,520 |
+| own | 1 | no | 486 | 7.66 | 17.73 | 25.6 | |
+| own | 1 | yes | 274 | 13.44 | 33.01 | 45.4 | 1,640 |
+| shared | 0 | no | 1,168 | 3.34 | 6.53 | 16.2 | |
+| shared | 0 | yes | 38 | 105.95 | 194.15 | 196.8 | 5,560 |
+| own | 0 | no | 4,530 | 0.82 | 1.76 | 3.3 | |
+| own | 0 | yes | 2,387 | 1.58 | 3.41 | 17.3 | 4,720 |
+
+One connection costs 1.4 to 1.5 ms to open, 4.8 ms to load the HNSW index, and 17.1 MB resident with the index loaded. The setting does not change these.
+
+### Why a connection per thread is slow by default
+
+SQLite keeps allocation statistics behind one process-wide mutex that every allocation takes. A pilot on 2,000 rows ran the same FTS query through raw apsw with SQLite's C tokenizer (`porter unicode61`), so neither litesearch nor a Python tokenizer was involved. One thread ran 5,104 queries per second. Four threads with a connection each ran 1,721. Four processes with a connection each ran 19,526. With `apsw.config(apsw.SQLITE_CONFIG_MEMSTATUS, 0)` before the first connection, four threads ran 12,706. Through litesearch, a connection per thread fell from 1 to 4 threads with `porter unicode61` (3,159 to 1,209 queries per second) as with the default chain (2,409 to 838), so the Python tokenizer is not the cause.
+
+The setting is process-wide. It has to run before any connection opens in the process, as `apsw.shutdown(); apsw.config(apsw.SQLITE_CONFIG_MEMSTATUS, 0); apsw.initialize()`. With it off, `apsw.memory_used()` returns 0. litesearch does not set it.
+
+### Reading the tables
+
+A writer on a shared connection holds it for each whole transaction. Python's lock does not guarantee waiters an order, and the writer in this benchmark starts its next transaction at once. Readers then wait a median 106 ms. On separate connections, WAL lets readers run beside the writer.
+
+`ann_search` runs the usearch search outside the connection lock, so a shared connection keeps pace with separate connections up to 4 threads. At 8 threads separate connections fall to 0.6 times shared. The cause of that drop is not investigated.
+
+The shared FTS drop from 1,134 to 608 queries per second at 8 threads with statistics on did not repeat with statistics off (1,114). It is not investigated.

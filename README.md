@@ -12,8 +12,8 @@ Two ways in. Pick by one question: do you want the defaults decided for you?
 
 | route | use it when | what it costs |
 |----|----|----|
-| [\[`Index`\](https://Karthik777.github.io/litesearch/api.html#index)](07_api.ipynb) | you want to search a folder of documents or code | nothing. Encoder, dtype, chunk size, retrieval and tree all come from `evals/` |
-| [\[`database()`\](https://Karthik777.github.io/litesearch/core.html#database)](01_core.ipynb) | you need your own columns, encoder, SQL or float32 vectors | six decisions, one of which fails silently |
+| [\[`Index`\](https://Karthik777.github.io/litesearch/api.html#index)](https://Karthik777.github.io/litesearch/api.html) | you want to search a folder of documents or code | nothing. Encoder, dtype, chunk size, retrieval and tree all come from `evals/` |
+| [\[`database()`\](https://Karthik777.github.io/litesearch/core.html#database)](https://Karthik777.github.io/litesearch/core.html) | you need your own columns, encoder, SQL or float32 vectors | six decisions, one of which fails silently |
 
 Start at [`Index`](https://Karthik777.github.io/litesearch/api.html#index). Drop to [`database()`](https://Karthik777.github.io/litesearch/core.html#database) when it stops fitting: it is the same object underneath,
 reachable as `Index.db`.
@@ -110,6 +110,22 @@ db.search(q, emb([q])[0].tobytes(), columns=['content'], limit=2)
 
 [`Index`](https://Karthik777.github.io/litesearch/api.html#index) exists because those eight lines have to be right every time.
 
+## Threads: one connection or one each
+
+`database(shared=True)` wraps the connection so threads can share it. Each statement runs alone on it, and a transaction keeps it until the commit. The default connection takes one thread at a time, so give each thread its own [`database()`](https://Karthik777.github.io/litesearch/core.html#database) on the same WAL file. `python -m evals.shared_conn` measures both on a 20,000-row store with an HNSW index, on a 14-core arm64 Mac.
+
+|  | shared | one each | one each, memstatus off |
+|----|----|----|----|
+| FTS queries/s, 8 threads | 608 | 441 | 6,820 |
+| brute-force vector scans/s, 8 threads | 70 | 176 | 168 |
+| HNSW queries/s, 8 threads | 4,705 | 2,748 | 2,587 |
+| FTS p50 / p99, 4 readers beside a writer | 106 / 193 ms | 13.4 / 33.0 ms | 1.6 / 3.4 ms |
+| resident memory, HNSW index loaded | 17 MB | 17 MB per thread | 17 MB per thread |
+
+With SQLite’s defaults, every allocation takes one process-wide statistics mutex, and threads on separate connections queue on it. Running `apsw.shutdown(); apsw.config(apsw.SQLITE_CONFIG_MEMSTATUS, 0); apsw.initialize()` before the first connection opens removes it. `apsw.memory_used()` then returns 0. litesearch does not set it.
+
+Share one connection when threads already share one database object and writes are short. A writer that commits back to back on a shared connection makes readers wait a median 106 ms. Give each thread its own connection, with the statistics off, for parallel reads or a steady writer. `evals/RESULTS.md` has the method and every thread count.
+
 ## What the evaluation says
 
 `evals/` runs 120 known-item queries per genre over three corpora (EU legislation, arXiv papers, a
@@ -153,12 +169,12 @@ the target at rank 1 between 53% and 84% of the time.
 
 | module | what you get |
 |----|----|
-| [`litesearch.tree`](06_tree.ipynb) | the tree directly: `add_dir`, `doc_search`, `context`, custom chunkers |
-| [`litesearch.data`](02_data.ipynb) | [`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse) for any file, [`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse) for code, FTS query preprocessing |
-| [`litesearch.utils`](03_utils.ipynb) | encoders: static, ONNX [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), image and multimodal |
-| [`litesearch.topics`](05_topics.ipynb) | clusters and topic labels off the ANN index |
-| [`litesearch.sanskrit`](09_sanskrit.ipynb) | the cross-script FTS5 tokenizer |
-| [`litesearch.quality`](11_quality.ipynb) | which documents in a store are retrieval noise |
+| [`litesearch.tree`](https://Karthik777.github.io/litesearch/tree.html) | the tree directly: `add_dir`, `doc_search`, `context`, custom chunkers |
+| [`litesearch.data`](https://Karthik777.github.io/litesearch/data.html) | [`file_parse`](https://Karthik777.github.io/litesearch/data.html#file_parse) for any file, [`pyparse`](https://Karthik777.github.io/litesearch/data.html#pyparse) for code, FTS query preprocessing |
+| [`litesearch.utils`](https://Karthik777.github.io/litesearch/utils.html) | encoders: static, ONNX [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode), image and multimodal |
+| [`litesearch.topics`](https://Karthik777.github.io/litesearch/topics.html) | clusters and topic labels off the ANN index |
+| [`litesearch.sanskrit`](https://Karthik777.github.io/litesearch/sanskrit.html) | the cross-script FTS5 tokenizer |
+| [`litesearch.quality`](https://Karthik777.github.io/litesearch/quality.html) | which documents in a store are retrieval noise |
 
 Three things live in their own packages: [pdflite](https://github.com/vedicreader/pdflite) reads
 PDFs, [ganapati](https://github.com/vedicreader/ganapati) does Sanskrit metre, verse chunking and
@@ -175,12 +191,12 @@ tokenizer, plain `sqlite3` included.
 
 ## Next Steps
 
-- **[examples/01_simple_rag.ipynb](examples/01_simple_rag.ipynb)**, ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank
-- **[examples/02_tool_use.ipynb](examples/02_tool_use.ipynb)**, wire litesearch into an LLM tool-use loop
+- **[examples/01_simple_rag.ipynb](https://Karthik777.github.io/litesearch/examples/simple_rag.html)**, ingest a folder of PDFs, chunk with chonkie, rerank with FlashRank
+- **[examples/02_tool_use.ipynb](https://Karthik777.github.io/litesearch/examples/tool_use.html)**, wire litesearch into an LLM tool-use loop
 - **[api docs](https://Karthik777.github.io/litesearch/api.html)**, [`Index`](https://Karthik777.github.io/litesearch/api.html#index), and what each default is worth
 - **[core docs](https://Karthik777.github.io/litesearch/core.html)**, [`database`](https://Karthik777.github.io/litesearch/core.html#database), `get_store`, `search`, [`rrf_all`](https://Karthik777.github.io/litesearch/core.html#rrf_all), [`rank_fts`](https://Karthik777.github.io/litesearch/core.html#rank_fts), [`correct`](https://Karthik777.github.io/litesearch/core.html#correct), [`fts_or`](https://Karthik777.github.io/litesearch/core.html#fts_or), `vec_search`
 - **[tree docs](https://Karthik777.github.io/litesearch/tree.html)**, `add_dir`, `toc`, `read`, `sections`, `context`
-- **[vishalakshi](https://github.com/vedicreader/vishalakshi)**, a litesearch-backed vault, and the first caller nominated to port onto [`Index`](https://Karthik777.github.io/litesearch/api.html#index); see the [api page](07_api.ipynb) for what that port should test
+- **[vishalakshi](https://github.com/vedicreader/vishalakshi)**, a litesearch-backed vault, and the first caller nominated to port onto [`Index`](https://Karthik777.github.io/litesearch/api.html#index); see the [api page](https://Karthik777.github.io/litesearch/api.html) for what that port should test
 
 ## Acknowledgements
 

@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.40
+'shared' database for threads to read/write across threads. use shared=True when the code already shares one database object across threads, as a web app with module-level connections does, and correctness and memory matter more than parallel reads.
+
 ## 0.1.38
 `load_plugins()` calls every function named by a `litesearch.profiles` entry point, once, from `profile_for`; an installed package registers its profiles that way without litesearch importing it or it importing litesearch. A broken plugin warns and the rest still load. ganapati 0.1.0 registers its Sanskrit profiles through it.
 
@@ -20,7 +23,7 @@ stores are stamped with their encoder; mismatch raises `StoreMismatch`. `get_sto
 `repo_root`, thread counts and page windows use fastcore `find_file_parents`, `num_cpus`, `chunked`.
 
 ## 0.1.34
-vishalakshi simplification 
+vishalakshi simplification
 
 ## 0.1.33
 fix api to add `where` to Index.

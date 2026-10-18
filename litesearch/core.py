@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_in', 'StoreMismatch', 'content_id', 'embed_chunk',
            'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge',
-           'database', 'fts_or', 'fts_phrases', 'rank_fts', 'correct', 'rerank_hits']
+           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_phrases', 'rank_fts', 'correct', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
@@ -73,6 +73,7 @@ def busy_window(busy_ms=BUSY_TIMEOUT_MS):
 _conn_locks, _conn_locks_guard = weakref.WeakKeyDictionary(), threading.Lock()
 def db_lock(db):
     'Re-entrant lock guarding litesearch operations on one connection.'
+    if isinstance(db.conn, Conn): return db.conn.lock
     with _conn_locks_guard:
         lk = _conn_locks.get(db.conn)
         if lk is None: lk = _conn_locks[db.conn] = threading.RLock()
@@ -468,11 +469,89 @@ def rrf_merge(fts, vec, k=60, limit=50, id_key='rowid') -> list:
     'Two-list `rrf_all`. Deprecated: call `rrf_all` directly.'
     return rrf_all([fts, vec], k=k, limit=limit, id_key=id_key)
 
+# %% ../nbs/01_core.ipynb #d4511361
+class Rows:
+    'A statement read to its end under the connection lock, with the apsw cursor surface apswutils uses.'
+    def __init__(self, cur, conn):
+        try: self._d = cur.get_description()
+        except apsw.ExecutionCompleteError: self._d = None   # no result columns: a write, a pragma that sets
+        self._rows, self._i, self.row_trace, self.connection = cur.fetchall(), 0, None, conn
+    def __iter__(self): return self
+    def __next__(self):
+        while self._i < len(self._rows):
+            r = self._rows[self._i]; self._i += 1
+            if self.row_trace: r = self.row_trace(self, r)
+            if r is not None: return r   # apsw skips a row its trace maps to None
+        raise StopIteration
+    def fetchone(self): return next(self, None)
+    def fetchall(self): return list(self)
+    def get_description(self):
+        if self._d is None: raise apsw.ExecutionCompleteError('no rows')
+        return self._d
+    getdescription = get_description
+    @property
+    def description(self): return tuple((n, t, None, None, None, None, None) for n, t in self._d or ())
+    def close(self, force=False): pass
+
+class Cur:
+    '`Conn.cursor()`: each execute runs, and is read, under the connection lock.'
+    def __init__(self, conn): self.connection, self._r, self.row_trace = conn, None, None
+    def _keep(self, r): r.row_trace, self._r = self.row_trace, r; return r
+    def execute(self, *a, **k): return self._keep(self.connection.execute(*a, **k))
+    def executemany(self, *a, **k): return self._keep(self.connection.executemany(*a, **k))
+    def __iter__(self): return iter(self._r or ())
+    def fetchone(self): return self._r.fetchone() if self._r else None
+    def fetchall(self): return self._r.fetchall() if self._r else []
+    def close(self, force=False): pass
+
+class Conn:
+    'An apsw connection threads share one at a time through `lock`, held while a thread has a transaction open.'
+    _own = 'raw', 'lock', '_tx', 'filename'
+    def __init__(self, c): self.raw, self.lock, self._tx, self.filename = c, threading.RLock(), False, c.filename
+    def _settle(self):
+        "Release this call's hold; keep one while a transaction is open on this thread, and drop it once that ends."
+        try: tx = not self.raw.getautocommit()
+        except apsw.ConnectionClosedError: tx = False
+        if tx and not self._tx: self._tx = True; return
+        if not tx and self._tx: self._tx = False; self.lock.release()
+        self.lock.release()
+    def _do(self, f, *a, **k):
+        self.lock.acquire()
+        try: return f(*a, **k)
+        finally: self._settle()
+    def execute(self, *a, **k): return self._do(lambda: Rows(self.raw.execute(*a, **k), self))
+    def executemany(self, *a, **k): return self._do(lambda: Rows(self.raw.executemany(*a, **k), self))
+    def cursor(self): return Cur(self)
+    def __enter__(self): self._do(self.raw.__enter__); return self
+    def __exit__(self, *a): return self._do(self.raw.__exit__, *a)
+    def backup(self, name, src, sname):
+        'A backup into this connection; each step holds this connection and `src`, since apsw marks both busy while it copies.'
+        return _Backup(self._do(self.raw.backup, name, getattr(src, 'raw', src), sname), self, src)
+    def __getattr__(self, k):
+        v = self._do(getattr, self.raw, k)
+        return (lambda *a, **kw: self._do(v, *a, **kw)) if callable(v) else v
+    def __setattr__(self, k, v):
+        if k in self._own: object.__setattr__(self, k, v)
+        else: self._do(setattr, self.raw, k, v)   # `row_trace`, `exec_trace`: apsw has to see them
+    def __repr__(self): return f'<Conn {self.filename}>'
+
+class _Backup:
+    'A backup whose calls hold the destination, and whose steps hold the source too.'
+    def __init__(self, b, dst, src): self._b, self._dst, self._src = b, dst, src
+    def step(self, n=-1):
+        return self._dst._do(self._src._do, self._b.step, n) if isinstance(self._src, Conn) else self._dst._do(self._b.step, n)
+    def __enter__(self): self._dst._do(self._b.__enter__); return self
+    def __exit__(self, *a): return self._dst._do(self._b.__exit__, *a)
+    def __getattr__(self, k):
+        v = getattr(self._b, k)
+        return (lambda *a, **kw: self._dst._do(v, *a, **kw)) if callable(v) else v
+
 # %% ../nbs/01_core.ipynb #4037ed73523beff7
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
              sem_search:bool=True,          # enable usearch extensions
              busy_timeout:int=None,         # ms to wait on a locked db; None = apsw default. Set for parallel ingestion
+             shared:bool=False,             # wrap the connection in `Conn` so threads can share it
              **kw,                          # additional args to pass to apswutils database
              ) -> Database:
     'Set up a database connection and load usearch extensions.'
@@ -487,11 +566,12 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     from litesearch.sanskrit import register_sanskrit
     register_sanskrit(_db)
     _db._fts_tokenizers = _tokenizers_ok(_db.conn)
-    if not sem_search: return _db
-    from usearch import sqlite_path
-    _db.conn.enableloadextension(True)
-    _db.conn.loadextension(sqlite_path())
-    _db.conn.enableloadextension(False)
+    if sem_search:
+        from usearch import sqlite_path
+        _db.conn.enableloadextension(True)
+        _db.conn.loadextension(sqlite_path())
+        _db.conn.enableloadextension(False)
+    if shared: _db.conn = Conn(_db.conn)
     return _db
 
 
