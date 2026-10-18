@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.41
+- `litesearch.store`: `stored` (arrays built once, mmapped across processes), `KeyIndex` (rows by key, exact or prefix), `VecMatrix` (exact cosine by matrix product).
+- `Table.fts_sig`, `Table.fts_merge`, `no_open_optimize`.
+- `skeleton`, `roman_fold(numbers=)`, `correct(skeleton=)`.
+
 ## 0.1.40
 'shared' database for threads to read/write across threads. use shared=True when the code already shares one database object across threads, as a web app with module-level connections does, and correctness and memory matter more than parallel reads.
 
