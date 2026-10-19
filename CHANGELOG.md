@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.48
+- A usearch that does not import turns usearch off instead of breaking vector search. On macOS 14, `import usearch` raises `ImportError: symbol not found in flat namespace '_nk_capabilities'`: every numkong wheel from 7.5 to 7.8.5 links `___sme_memset`, which only macOS 15 has, though the wheels are tagged macOS 11. litesearch then searches with numpy, with one warning per process, and runs no probe.
+- A frozen app checks usearch too. It imported usearch unchecked, so `get_index` raised `ImportError` in an app on macOS 14. It now imports usearch's HNSW index in its own process and turns usearch off when that fails.
+- The notebooks pass on macOS 14: the cells that test the probe itself need a usearch that imports, and skip without one.
+
 ## 0.1.47
 - usearch is probed before it is loaded. Loading its SQLite extension segfaulted Python in `database()` on GitHub's AMD EPYC 9V74 and 9V45 runners, about one run in four. A subprocess now builds a small HNSW index and loads the extension first. The verdict is cached in `cache_dir()/usearch.json`, keyed by CPU model, usearch version and extension size. A part that fails is turned off with one warning: `vec_search` computes distances with numpy, and `get_index` returns `ExactIndex`, a numpy stand-in for usearch's `Index`. `LITESEARCH_USEARCH=0` keeps usearch out; `LITESEARCH_USEARCH=1` skips the probe. `LITESEARCH_CACHE` moves the cache folder.
 - usearch's SQLite extension is downloaded under a file lock, so concurrent processes no longer load a half-written file. `import litesearch` no longer downloads it.

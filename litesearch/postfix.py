@@ -112,12 +112,21 @@ def _key(lib):
     import usearch
     return f'{cpu_model()} | usearch {usearch.__version__} | {_lib_file(lib).stat().st_size} bytes'
 
+def _noimport(e): return dict(index=False, sql=False, why=f'usearch does not import ({e})')
+
+def _inproc() -> dict:
+    "A frozen app's verdict: whether usearch's HNSW index imports in this process."
+    try: import usearch.index
+    except ImportError as e: return _noimport(e)
+    return dict(index=True, sql=True, why='')
+
 def _decide() -> dict:
     "The probe's verdict for this machine, read from `usearch.json` or probed and written there."
-    if getattr(sys, 'frozen', False): return dict(index=True, sql=True, why='')
+    if getattr(sys, 'frozen', False): return _inproc()
     f = cache_dir()/'usearch.json'
     with _cache_lock('usearch'):
         try: lib = _lib()
+        except ImportError as e: return _noimport(e)
         except Exception as e: return {**_probe(), 'why': f'the SQLite extension is unavailable ({e})'}
         try: seen = json.loads(f.read_text())
         except (OSError, ValueError): seen = {}

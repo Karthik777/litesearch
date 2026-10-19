@@ -77,11 +77,11 @@ ix.add_code('litesearch')      # a directory, or the name of an installed packag
 
 ``` python
 db = database()
-db.usearch_sql()
 vecs = dict(v1=np.ones((100,), dtype=np.float32).tobytes(),
             v2=np.zeros((100,), dtype=np.float32).tobytes())
-{m: db.q(f'select distance_{m}_f32(:v1,:v2) as d', vecs)[0]['d']
- for m in ['sqeuclidean', 'divergence', 'inner', 'cosine']}
+({m: db.q(f'select distance_{m}_f32(:v1,:v2) as d', vecs)[0]['d']
+  for m in ['sqeuclidean', 'divergence', 'inner', 'cosine']}
+ if db.usearch_sql() else 'usearch is off here, as on macOS 14')
 ```
 
 There are four distance functions: `cosine`, `sqeuclidean` (squared Euclidean distance), `inner` (one minus the dot product) and `divergence` (Jensen-Shannon divergence). Each comes in four versions for the number type the vectors are stored in: `f32`, `f16`, `f64` and `i8`. Smaller results mean closer vectors.
