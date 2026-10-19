@@ -32,7 +32,7 @@ MAX_HEAD_DENSITY = 4.0
 _ws = re.compile(r'\s+')
 
 def _md_lines(txt):
-    "Yield `(line, in_code)` for `txt`, A fenced block's lines are kept as text, but never read as a heading."
+    "Yield `(line, in_code)` for each line of `txt`, with `in_code` True inside a fenced code block."
     fence = None
     for ln in (txt or '').splitlines():
         if (m := _fence.match(ln)):
@@ -44,7 +44,7 @@ def _md_lines(txt):
 
 @dataclass
 class TreeNode:
-    'One section of a document. `seq` is its index in the flat list; `parent` is another `seq`.'
+    'One section of a document, where `seq` is its position in the node list and `parent` is the `seq` of the section above it.'
     seq:int
     title:str
     level:int
@@ -57,14 +57,14 @@ class TreeNode:
     def text(self): return '\n\n'.join(s for _, s in self.segments if s.strip())
 
 def summarize_extractive(text:str, n:int=300) -> str:
-    'First `n` clean characters. Cheap, deterministic, and the seam an LLM slots into via `summarize=`.'
+    'Return the first `n` characters of `text` with whitespace collapsed, the default node summary.'
     t = _ws.sub(' ', text).strip()
     return t[:n] + ('…' if len(t) > n else '')
 
 def _clean_title(t:str, max_len:int=100): return _ws.sub(' ', t).strip(' #*_')[:max_len].strip()
 
 def struct_levels(pages, max_levels:int=4) -> dict:
-    '`{heading word: level}` for one document, as consecutive levels starting at 1.'
+    'Map each structural word in a document, such as CHAPTER or ARTICLE, to a nesting level counted from 1.'
     seen = {}
     for _, txt in pages:
         for ln, code in _md_lines(txt):
@@ -78,7 +78,7 @@ def struct_levels(pages, max_levels:int=4) -> dict:
     return {w: min(order.index(rank[w]) + 1, max_levels) for w in seen}
 
 def _md_stats(pages):
-    'Markdown heading count and how many distinct `#` depths appear, ignoring fenced code.'
+    'Count the markdown headings outside fenced code, and how many different `#` depths they use.'
     n, lvls = 0, set()
     for _, txt in pages:
         for ln, code in _md_lines(txt):
@@ -87,7 +87,7 @@ def _md_stats(pages):
     return n, len(lvls)
 
 def _cite_stats(pages):
-    'How many blocks carry a verse citation, and the deepest hierarchy any of them names.'
+    'Count the pages that carry a verse citation, and the most levels any citation names.'
     from litesearch.sanskrit import CITE_RE, cite_parts
     n, depth = 0, 0
     for _, txt in pages:
@@ -97,7 +97,7 @@ def _cite_stats(pages):
     return n, depth
 
 def detect_mode(pages) -> str:
-    'Which structural signal this document carries: `markdown`, `verse`, `chapter` or `window`.'
+    'Choose how to find the sections of a document: `markdown`, `verse`, `chapter` or `window`.'
     md, depths = _md_stats(pages)
     ch = sum(1 for _, txt in pages for ln, code in _md_lines(txt) if not code and _chapter.match(ln))
     npg = max(1, len(pages))
@@ -110,15 +110,15 @@ def detect_mode(pages) -> str:
 
 
 # %% ../nbs/06_tree.ipynb #bddb38a984652387
-def build_tree(pages,                  # [(page_no, text)] — markdown or plain text
+def build_tree(pages,                  # list of (page number, text); the text may be markdown or plain
                title:str='Document',   # title of the root node
-               summarize=None,         # callable(text)->str for node summaries (LLM goes here)
+               summarize=None,         # function from section text to a summary; None keeps the first 300 characters
                window:int=8,           # pages per node in `window` mode
                min_level:int=1,        # floor for heading depth
                max_levels:int=4,       # deepest node level kept
-               mode:str=None           # force a structural mode instead of detecting one
+               mode:str=None           # `markdown`, `verse`, `chapter` or `window`; None detects it
 ) -> list:
-    'A flat list of `TreeNode` for a document (index = seq, root = 0).'
+    'Split a document into sections and return them as a flat list of `TreeNode`, with the root at index 0.'
     pages = [(p, t or '') for p, t in pages]
     summarize = summarize or summarize_extractive
     mode, nodes = mode or detect_mode(pages), []
@@ -211,9 +211,9 @@ def _dedent_path(parts) -> list:
 def heading_path(tree,              # the node list from build_tree
                  nd,                # the TreeNode to describe
                  title:str,         # document title
-                 sep:str=' › ',
-                 max_len:int=200) -> str:
-    '`Doc › Part › Chapter` for one node.'
+                 sep:str=' › ',     # separator between titles
+                 max_len:int=200) -> str: # longest breadcrumb kept, in characters
+    'Return the breadcrumb of one node, such as `Doc › Part › Chapter`.'
     parts, cur = [], nd
     while cur is not None:
         if cur.level > 0: parts.append(cur.title)
@@ -223,7 +223,7 @@ def heading_path(tree,              # the node list from build_tree
 
 # %% ../nbs/06_tree.ipynb #762e15b02237e287
 def doc_id(source, title='') -> str:
-    'Content-addressed document id — re-adding the same source is a no-op, not a duplicate.'
+    'Return a 16-character document id computed from the source and title.'
     return hash_record({'k': f'{source}|{title}'})[:16]
 
 @patch
@@ -234,9 +234,7 @@ def get_tree(self:Database,
              encoder:str=None,    # the encoder whose vectors the chunk store holds; checked on reopen
              **kw                 # extra typed columns for the chunk store
 ) -> AttrDict:
-    """Create the docs/nodes tables and a node-aware chunk store. Idempotent; returns the tables.
-    `sections`, `read` and `breadcrumb` all call this per query, so the DDL runs once per connection
-    (`Database.ensured`) rather than once per call."""
+    """Create the docs and nodes tables and a chunk store with node columns, or open them if they exist."""
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     dt, nt = f'{p}docs', f'{p}nodes'
     key = ('tree', store, p, bool(ann))
@@ -257,11 +255,11 @@ def get_tree(self:Database,
 MIN_CHUNK = 40
 
 def _pack_target(chunker) -> int:
-    'The size a chunker wants to pack *across* segments to, or 0 for the usual one-call-per-segment.'
+    'Return the size a chunker asks consecutive segments to be joined up to, or 0 to chunk each segment on its own.'
     return int(getattr(chunker, 'target', 0) or 0) if getattr(chunker, 'pack_cited', False) else 0
 
 def _pack_segments(rows, target:int) -> L:
-    'Join consecutive chunks of one node up to `target` characters; the span keeps its first page.'
+    'Join consecutive chunks of one node up to `target` characters, keeping the first chunk\'s page.'
     if not target or len(rows) < 2: return L(rows)
     out = L()
     for r in rows:
@@ -296,34 +294,29 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=No
 
 @patch
 def _tree_ann(self:Database, store):
-    '''Whether this store should carry an ANN index, without deciding it on the caller's behalf.
-
-    `add_doc` calls `get_tree` internally, and `get_tree` defaults to `ann=True` — so a caller who
-    opted out with `get_tree(store, ann=False)` had the index (and its per-document rebuild)
-    registered underneath them on the first `add_doc`. A store that already exists keeps whatever
-    it was created with; only a store being created here gets the default.'''
+    'Return whether a store gets an ANN index: a new store does, and an existing one keeps its setting.'
     return store not in self.t or bool(self._ann_meta(store))
 
 @patch
 def add_doc(self:Database,
-            pages,                  # [(page_no, text)] — or a single string
+            pages,                  # list of (page number, text), or one string
             title:str,              # document title
             source:str=None,        # path or url (defaults to the title)
-            kind:str='text',        # 'pdf' | 'web' | 'md' | 'code' | anything you filter on
+            kind:str='text',        # a label stored on the doc row to filter on, such as 'pdf', 'web' or 'md'
             store:str='store',      # chunk store
             prefix:str=None,        # tree table prefix
-            emb_fn=None,            # embedder: list[str] -> vectors
-            chunker=None,           # chonkie chunker (default: FastChunker via chunk_markdown)
-            summarize=None,         # callable(text)->str for node summaries
+            emb_fn=None,            # function from a list of strings to vectors; None stores no embeddings
+            chunker=None,           # chonkie chunker; None uses chunk_markdown's default
+            summarize=None,         # function from section text to a summary
             with_heading:bool=True, # embed each chunk together with its heading path
             meta:dict=None,         # arbitrary json metadata for the doc row
-            force:bool=False,       # re-ingest a document already present
+            force:bool=False,       # replace a document with the same source and title instead of skipping it
             index:bool=True,        # mirror this document's chunks into the ANN index
             mode:str=None,          # force a build_tree structural mode instead of detecting one
             meta_fn=None,           # (chunk text) -> dict of facets stored as the chunk's `metadata`
             defer:list=None         # collect chunks here instead of embedding and storing them
 ) -> dict:
-    '''Ingest one document: build its tree, chunk it per node, embed and store.'''
+    '''Ingest one document: build its tree, chunk each section, embed the chunks and store them.'''
     import json
     with db_lock(self):
         if isinstance(pages, str): pages = [(0, pages)]
@@ -356,9 +349,9 @@ def add_doc(self:Database,
 
 def store_chunks(store,                 # chunk store table
                  chunks,                # chunk dicts from `_node_chunks`, from one document or many
-                 emb_fn=None,           # embedder: list[str] -> vectors
+                 emb_fn=None,           # function from a list of strings to vectors
                  with_heading=True):    # embed each chunk together with its heading path
-    '''Embed a batch of chunks and upsert them. The batch may span documents, which is the point.'''
+    '''Embed a batch of chunks, which may come from several documents, and upsert them into the store.'''
     rows = [c for c in chunks if (c.get('content') or '').strip()]
     if not rows: return 0
     if emb_fn:
@@ -387,7 +380,7 @@ DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb,.xml,.tei,.htm,.html,.conllu'
 
 @patch
 def assets(self:Database, name:str=None) -> Path:
-    'Where extracted assets (PDF images) go: beside the database file, never the working directory.'
+    'Return the folder for extracted assets such as PDF images, beside the database file or in the temp folder for an in-memory database.'
     f = self.conn.filename
     d = (Path(f).parent if f else Path(tempfile.gettempdir())/'litesearch')/'assets'
     d.mkdir(parents=True, exist_ok=True)
@@ -396,7 +389,7 @@ def assets(self:Database, name:str=None) -> Path:
 @patch
 def add_file(self:Database,
              path,                 # file to ingest
-             title:str=None,       # defaults to a prettified filename
+             title:str=None,       # None uses the file name with underscores and hyphens as spaces
              store:str='store',
              prefix:str=None,
              kind:str=None,        # overrides the kind inferred from the extension
@@ -404,19 +397,13 @@ def add_file(self:Database,
              profile:str=None,     # force a registered Profile by name instead of detecting one
              **kw                  # forwarded to add_doc (emb_fn, chunker, summarize, force, ...)
 ) -> dict:
-    'Ingest one document file. PDFs page through `pdf_parse`; everything else is one page of text.'
+    'Ingest one document file, read by a matching Profile or by its extension.'
     p = Path(path)
     parsed = _parse_doc((str(p), profile, str(out_path or self.assets(p.stem))))
     return self._add_parsed(p, parsed, title, store, prefix, kind, **kw)
 
 def _parse_doc(args):
-    '''Read one file to `(pages, meta, kind, profile)` — everything `add_doc` needs, and nothing
-    that holds a database handle. Module level and plain-data in and out, so a process pool can
-    pickle it; `add_dir` runs it on one when the parse is the expensive half.
-
-    A profile is resolved *by name* here rather than re-detected, so a worker cannot silently pick
-    a different reader from the parent. `None` back means this worker's registry does not have the
-    profile the parent found — the caller re-parses that file itself rather than guessing.'''
+    'Read one file into `(pages, meta, kind, profile name)` without touching the database, or return None if the named profile is not registered here.'
     from litesearch.data import profile_for
     path, profile, assets = args
     p = Path(path)
@@ -434,7 +421,7 @@ def _parse_doc(args):
 
 @patch
 def _add_parsed(self:Database, p, parsed, title=None, store='store', prefix=None, kind=None, **kw):
-    'The half of `add_file` that touches the database, split out so the parse half can be pooled.'
+    'Store a file already read by `_parse_doc`, applying its profile\'s chunker, mode and metadata function.'
     from litesearch.data import profile_for
     pages, pmeta, knd, pname = parsed
     ttl = title or Path(p).stem.replace('_',' ').replace('-',' ').strip()
@@ -456,7 +443,7 @@ PARSE_HEAVY = {'.pdf', '.xml', '.tei', '.htm', '.html', '.ipynb', '.conllu'}
 MIN_PARALLEL_DOCS = 4
 
 def _n_parse_workers(files, n_workers):
-    'Resolve `n_workers`: None picks by how many files actually have an expensive parse.'
+    'Return the number of parse workers: `n_workers` if given, else a pool only when 4 or more files are slow to parse.'
     if n_workers is not None: return n_workers
     heavy = sum(1 for p in files if p.suffix.lower() in PARSE_HEAVY)
     return 0 if heavy < MIN_PARALLEL_DOCS else defaults.cpus
@@ -476,10 +463,10 @@ def add_dir(self:Database,
             n_workers:int=None,     # parse workers; 0 is serial, None picks by parse-heavy file count
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             files=None,             # ingest exactly these paths instead of walking `dir`
-            bulk:bool=False,     # rebuild FTS once after an offline load; FTS is stale during the load
+            bulk:bool=False,     # rebuild the full-text index once at the end instead of per chunk
             **kw                    # forwarded to add_doc
 ) -> list:
-    '''Ingest every document under a directory tree. Already-ingested sources are skipped, not duplicated.'''
+    '''Ingest every document file under a folder, or a given list of files, skipping those already ingested.'''
     if files is None:
         if dir is None: raise ValueError('pass `dir` or `files`')
         exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
@@ -512,13 +499,13 @@ def add_dir(self:Database,
 # %% ../nbs/06_tree.ipynb #d9507dc29ccaad76
 @patch
 def toc(self:Database,
-        doc:str=None,           # doc id, or a substring of the title (None = every document)
+        doc:str=None,           # doc id, or part of a title; None lists every document
         store:str='store',
         prefix:str=None,
         max_depth:int=3,        # deepest level included
         summaries:bool=True     # include node summaries
 ) -> list:
-    'The document tree as nested dicts — titles, page ranges, summaries. No embeddings touched.'
+    'Return the document tree as nested dicts of titles, page ranges, chunk counts and summaries.'
     g = self.get_tree(store, prefix)
     docs = list(g.docs(where=f'id={doc!r} or title like {"%"+doc+"%"!r}') if doc else g.docs())
     by_doc, ids = {}, [d['id'] for d in docs]
@@ -542,7 +529,7 @@ def toc(self:Database,
 
 @patch
 def breadcrumb(self:Database, node_id:str, store:str='store', prefix:str=None, sep:str=' › ') -> str:
-    'The path from the document down to a node: `Book › Chapter › Section`.'
+    'Return the titles from the document down to a node, such as `Book › Chapter › Section`.'
     g = self.get_tree(store, prefix)
     parts, cur, seen = [], first(g.nodes(where=f'id={node_id!r}')), set()
     while cur and cur['id'] not in seen:
@@ -559,7 +546,7 @@ def read(self:Database,
          max_chars:int=20000,   # cap on the assembled text
          children:bool=True     # append the text of child nodes too
 ) -> dict:
-    'One whole section — the unit an agent should read instead of guessing from fragments.'
+    'Return the full text of one section, with its subsections by default, plus its breadcrumb, pages and summary.'
     g = self.get_tree(store, prefix)
     nd = first(g.nodes(where=f'id={node_id!r}'))
     if not nd: return {}
@@ -586,7 +573,7 @@ def adaptive_weights(q:str,      # the raw query
                      fts:list,   # the FTS leg's results
                      vec:list    # the vector leg's results
 ) -> tuple:
-    '`(fts_weight, vec_weight)` for RRF, from cheap signals in the query and the legs.'
+    'Return `(fts_weight, vec_weight)` for fusion, from the shape of the query and whether either result list is empty.'
     if not fts: return (0.0, 1.0)
     if not vec: return (1.0, 0.0)
     w = 1.0
@@ -629,12 +616,12 @@ def doc_search(self:Database,
                prefix:str=None,
                spans:bool=True,       # merge adjacent hits inside a node
                gap:int=1,             # span merge tolerance, in pages
-               adaptive:bool=False,   # weight the RRF legs by query shape (measured inert — see below)
-               rrf_k:int=60,
+               adaptive:bool=False,   # weight the two result lists by query shape (see `adaptive_weights`)
+               rrf_k:int=60,          # RRF constant; a larger value narrows the gap between ranks
                rerank:bool=False,     # reorder the candidates with a flashrank cross-encoder
                **kw                   # forwarded to Database.search
 ) -> list:
-    'Hybrid search over a node-aware store: span merging and a breadcrumb per hit.'
+    'Hybrid search over a tree store that joins neighbouring hits in a section and gives every hit a breadcrumb.'
     cols = list(dict.fromkeys((columns or ['content']) + ['node_id','page','heading','doc_id','rowid']))
     n = max(limit, RERANK_FANOUT) if rerank else limit
     base = self.search(q, emb, columns=cols, limit=max(n*3, 30), table_name=store, rrf=False, **kw)
@@ -662,7 +649,7 @@ def sections(self:Database,
              rerank:bool=False,   # reorder the chunk hits before they are grouped into sections
              **kw                 # forwarded to doc_search
 ) -> list:
-    'Ranked *sections*, not chunks: hits grouped by node, each with a `read` handle.'
+    'Return the best-matching sections for a query, each with snippets and a `read` call that opens it.'
     hits = self.doc_search(q, emb, limit=max(limit*fanout, 20), store=store, prefix=prefix,
                            spans=False, rerank=rerank, **kw)
     g, agg = self.get_tree(store, prefix), {}
@@ -698,7 +685,7 @@ def node_context(self:Database,
                  node_id:str,          # a 'doc#seq' node id
                  store:str='store',
                  prefix:str=None):
-    'Where a section sits: its parent, siblings and children — a hit as a provision in a structure.'
+    'Return a section\'s parent, up to 8 siblings and up to 12 children.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     N = self.t[f'{p}nodes']
     nd = first(N(where=f'id={node_id!r}'))
@@ -720,12 +707,12 @@ def context(self:Database,
             prefix:str=None,
             sections:int=6,         # operative sections returned
             per:int=3,              # snippets kept per section
-            vector:bool=True,       # include embedding-nearest related sections
+            vector:bool=True,       # also return related sections from a second hybrid search
             related:int=8,          # max related sections
             max_read:int=6000,      # chars of assembled text per operative section
             tree_ctx:bool=True,     # attach each section's parent/siblings/children
             **kw):                  # forwarded to every retrieval leg, and on to Database.search
-    'One composed retrieval over a document tree: the operative sections plus what they connect to.'
+    'Return the best sections for a query with their full text and tree position, plus related sections.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     N, D, src = self.t[f'{p}nodes'], self.t[f'{p}docs'], {}
     def doc_of(nid):

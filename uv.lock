@@ -2551,7 +2551,7 @@ dependencies = [
     { name = "usearch" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 dev = [
     { name = "datasets" },
     { name = "ddgs" },
@@ -2572,36 +2572,41 @@ dev = [
     { name = "selectolax" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "litesearch", extra = ["dev"] },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "chonkie", specifier = ">=1.6.0" },
     { name = "codesigs", specifier = ">=0.0.2" },
+    { name = "datasets", marker = "extra == 'dev'", specifier = ">=5.0.1" },
+    { name = "ddgs", marker = "extra == 'dev'" },
     { name = "fastlite", specifier = ">=0.2.4" },
+    { name = "fastprogress", marker = "extra == 'dev'", specifier = ">=1.1.5" },
+    { name = "flashrank", marker = "extra == 'dev'", specifier = ">=0.2.10" },
+    { name = "jupyterlab", marker = "extra == 'dev'" },
+    { name = "jupyterlab-quarto", marker = "extra == 'dev'" },
     { name = "model2vec", specifier = ">=0.7.0" },
+    { name = "model2vec", extras = ["distill"], marker = "extra == 'dev'", specifier = ">=0.7.0" },
+    { name = "nbdev", marker = "extra == 'dev'" },
+    { name = "notebook", marker = "extra == 'dev'" },
+    { name = "onnx", marker = "extra == 'dev'", specifier = ">=1.22.0" },
+    { name = "onnxruntime", marker = "extra == 'dev'", specifier = ">=1.24.3" },
     { name = "pdf-oxide", specifier = ">=0.3.17" },
     { name = "pdflite", specifier = ">=0.0.1" },
     { name = "pillow", specifier = ">=12.1.1" },
+    { name = "pyperclip", marker = "extra == 'dev'" },
+    { name = "rishi", marker = "extra == 'dev'", specifier = ">=0.0.2" },
+    { name = "selectolax", marker = "extra == 'dev'" },
     { name = "tokenizers", specifier = ">=0.22.2" },
     { name = "usearch", specifier = ">=2.23.0" },
 ]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "datasets", specifier = ">=5.0.1" },
-    { name = "ddgs" },
-    { name = "fastprogress", specifier = ">=1.1.5" },
-    { name = "flashrank", specifier = ">=0.2.10" },
-    { name = "jupyterlab" },
-    { name = "jupyterlab-quarto" },
-    { name = "model2vec", extras = ["distill"], specifier = ">=0.7.0" },
-    { name = "nbdev" },
-    { name = "notebook" },
-    { name = "onnx", specifier = ">=1.22.0" },
-    { name = "onnxruntime", specifier = ">=1.24.3" },
-    { name = "pyperclip" },
-    { name = "rishi", specifier = ">=0.0.2" },
-    { name = "selectolax" },
-]
+dev = [{ name = "litesearch", extras = ["dev"] }]
 
 [[package]]
 name = "llmsurgery"

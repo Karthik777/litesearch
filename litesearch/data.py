@@ -16,19 +16,19 @@ import struct as _struct, re
 # %% ../nbs/02_data.ipynb #fc014ece1162af13
 @patch
 def pdf_texts(doc:PdfDocument, st=0, end=None) -> L:
-    'Extract plain text from each page.'
+    'The plain text of each page from `st` to `end`.'
     return L(range(st, ifnone(end, doc.page_count()))).map(doc.extract_text)
 
 @patch
 def pdf_links(doc:PdfDocument, st=0, end=None) -> L:
-    'Extract hyperlinks from each page as a list of URI strings.'
+    'Every hyperlink on the pages from `st` to `end`, as a list of URLs.'
     pages = range(st, ifnone(end, doc.page_count()))
     ann = L(pages).map(lambda i: doc.get_annotations(i))
     return ann.concat().filter(lambda a: 'action_uri' in a).map(lambda a: a['action_uri'])
 
 @patch
 def pdf_images(doc:PdfDocument, st=0, end=None, output_dir=None) -> L:
-    'Extract images — returns metadata dicts, or saves to output_dir if provided.'
+    'Metadata for every image on the pages, or, when `output_dir` is given, each page as text with its images saved there.'
     pages = range(st, ifnone(end, doc.page_count()))
     if output_dir:
         Path(output_dir).mkdir(exist_ok=True)
@@ -37,17 +37,17 @@ def pdf_images(doc:PdfDocument, st=0, end=None, output_dir=None) -> L:
 
 @patch
 def pdf_markdown(doc:PdfDocument, st=0, end=None, **kw) -> L:
-    'Convert pages to markdown with headings and tables detected.'
+    'Each page as markdown, with headings and tables marked up.'
     return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.to_markdown(i, **kw))
 
 @patch
 def pdf_tables(doc:PdfDocument, st=0, end=None) -> L:
-    'Extract structured tables (rows/cells/bbox) from each page.'
+    'Every table on the pages, with its rows, cells and bounding box.'
     return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_tables(i)).concat()
 
 @patch
 def pdf_spans(doc:PdfDocument, st=0, end=None) -> L:
-    'Extract text spans with font metadata (size, weight, bbox) per page.'
+    'Every run of text on the pages, with its font size, weight and bounding box.'
     return L(range(st, ifnone(end, doc.page_count()))).map(lambda i: doc.extract_spans(i)).concat()
 
 # %% ../nbs/02_data.ipynb #9c0b11cb32e0d9a5
@@ -57,30 +57,30 @@ _all_ = ['clean_md', 'fix_layout', 'needs_ocr', 'ocr_parse', 'orphan_vals', 'oxi
 
 # %% ../nbs/02_data.ipynb #6bdc58cc
 def pdf_parse(pdf:PdfDocument|str|Path|bytes,
-              out_path:str|Path=None,       # dir holding the image subdir; links are relative to it
-              image_dir:str='images',       # subdir for extracted images
-              preserve_layout:bool=False,
-              ocr_selection:str='auto'      # auto | on | off
+              out_path:str|Path=None,       # folder that holds the image folder (default `pdfs`); image links in the markdown are relative to it
+              image_dir:str='images',       # name of the folder, inside `out_path`, that extracted images are saved to
+              preserve_layout:bool=False,  # keep indentation and runs of spaces, which space-aligned tables need
+              ocr_selection:str='auto'      # 'auto' runs OCR when pdf_oxide reports a scanned page; 'on' always, 'off' never
 ) -> list:
-    'A PDF as one markdown string per page. The page split the tree and its chunk sizes are measured against.'
+    'A PDF as a list of markdown strings, one per page, with OCR for scanned documents.'
     return pdf_md(pdf, out_path, pages=True, ocr=ocr_selection.lower(), preserve_layout=preserve_layout, image_dir=image_dir)
 
 # %% ../nbs/02_data.ipynb #4a33701ff7ff248b
 from functools import cache
 
 def _char_start(b:bytes, i:int) -> int:
-    'Back a byte offset up to the first byte of the UTF-8 character it lands inside.'
+    'The offset of the first byte of the UTF-8 character that byte `i` belongs to.'
     while 0 < i < len(b) and b[i] & 0xC0 == 0x80: i -= 1
     return i
 
 @cache
 def _safe_chunker():
-    'Build `SafeFastChunker` on first use: importing chonkie costs ~190ms, and a search-only process never chunks.'
+    'The `SafeFastChunker` class, built the first time it is asked for so chonkie is only imported when needed.'
     import chonkie_core
     from chonkie import FastChunker
     from chonkie.types import Chunk
     class SafeFastChunker(FastChunker):
-        '`FastChunker` whose cuts land on character boundaries.'
+        'A `FastChunker` that never cuts inside a multi-byte character.'
         def chunk(self, text:str) -> list:
             if not text: return []
             kw = dict(size=self.chunk_size, prefix=self.prefix, consecutive=self.consecutive,
@@ -102,28 +102,28 @@ def __getattr__(nm):
 
 
 # %% ../nbs/02_data.ipynb #4ddbb058066ad269
-def chunk_markdown(text:str,     # markdown text (e.g. from pdf_markdown())
-                   chunker:'BaseChunker'=None
+def chunk_markdown(text:str,     # markdown text (e.g. one page from pdf_parse())
+                   chunker:'BaseChunker'=None  # any chonkie chunker; None uses a 512-byte SafeFastChunker
 ) -> L:
-	'Split markdown into paragraph chunks on blank lines'
+	'Split text into chunks of at most 512 bytes, or with `chunker` if given, and return their text.'
 	r = chunker or _safe_chunker()(chunk_size=512)
 	return L(r(text)).map(lambda c: c.text)
 
 @patch
 @delegates(chunk_markdown)
-def pdf_chunks(self:PdfDocument, # PDF document
-               **kwargs
+def pdf_chunks(self:PdfDocument, # the PDF to chunk
+               **kwargs  # passed to chunk_markdown, so only `chunker`
                ) -> L:
-	'Markdown-chunked text from each page; yields (page, chunk_idx, text) tuples.'
+	'Every chunk of the PDF as a `(page, chunk_idx, text)` tuple, with pages counted from 1.'
 	return L((pg+1, ci, chunk)
 	         for pg, md in enumerate(pdf_parse(self))
 	         for ci, chunk in enumerate(chunk_markdown(md, **kwargs)))
 
 # %% ../nbs/02_data.ipynb #bd59b59ae64cea17
 def chunk_spans(text:str,            # text to split
-                chunker:'BaseChunker'=None
+                chunker:'BaseChunker'=None  # any chonkie chunker; None uses a 512-byte SafeFastChunker
 ) -> L:
-    'Split text into chunks, returning (start_char, end_char, text) spans into the original text.'
+    'Split text into chunks and return each as `(start, end, text)`, where `text[start:end]` gives the chunk back.'
     r = chunker or _safe_chunker()(chunk_size=512)
     return L(r(text)).map(lambda c: (c.start_index, c.end_index, c.text))
 
@@ -143,15 +143,15 @@ code_exts = '.py,.js,.ts,.jsx,.tsx,.java,.go,.cs,.ruby,.php,.swift,.kt,.kts,.rs,
 file_exts = code_exts + ',.md,.txt,.pdf,.ipynb'
 
 def repo_root() -> Path:
-	'Find the root of the current git repository, or None if not in a repo.'
+	'The root folder of the git repository holding the current folder, or None outside one.'
 	return find_file_parents('.git')
 
 def _pkg_name(pkg:str) -> str:
-	'Base distribution/import name from a requirement string.'
+	'The package name from a requirement string such as `rishi[all]>=0.1`.'
 	return re.split(r'[\[<>=!~;]', pkg, maxsplit=1)[0].strip()
 
 def _pkg_dist(pkg:str):
-	'Installed distribution for a package or requirement string.'
+	'The installed distribution for a package name or requirement string, or None.'
 	pkg = _pkg_name(pkg)
 	for nm in L(pkg, pkg.replace('-', '_'), pkg.replace('_', '-')).unique():
 		try: return dist(nm)
@@ -159,7 +159,7 @@ def _pkg_dist(pkg:str):
 	return None
 
 def spec(pkg:str) -> ModuleSpec | None:
-	'Return the importlib ModuleSpec for a package, or None if not found.'
+	'The importlib `ModuleSpec` for a package, found by import name or distribution name, or None.'
 	try:
 		pkg = _pkg_name(pkg)
 		if s := fs(pkg) or fs(pkg.replace('-', '_')): return s
@@ -171,13 +171,7 @@ def spec(pkg:str) -> ModuleSpec | None:
 	except ModuleNotFoundError: return None
 
 def _seg(lines, n):
-    '''`ast.get_source_segment` with the line split hoisted out to the caller.
-
-    The stdlib version re-splits the *entire file* on every call, so a module with 30 top-level
-    definitions splits itself 30 times: `ast._splitlines_no_ff` was 68% of the time spent parsing
-    400 files of `transformers`. Its splitting rules are not `str.splitlines`' — form feeds and
-    the unicode line separators are deliberately not breaks — so it is the same function hoisted,
-    not an approximation of it, and offsets are byte offsets into each line.'''
+    'The source text of AST node `n`, like `ast.get_source_segment`, from lines split once by the caller.'
     if getattr(n, 'end_lineno', None) is None or getattr(n, 'end_col_offset', None) is None: return None
     lo, hi, c0, c1 = n.lineno-1, n.end_lineno-1, n.col_offset, n.end_col_offset
     if hi == lo: return lines[lo].encode()[c0:c1].decode()
@@ -185,15 +179,10 @@ def _seg(lines, n):
 
 def pyparse(p:Path=None,    # path to a python file
             code:str=None,  # code string to parse
-            imports=False,   # include import statements as code chunks
-            assigns=False       # include top-level assignments as code chunks
+            imports=False,   # also return each `from ... import ...` statement as a chunk
+            assigns=False       # also return each top-level assignment as a chunk
 ) -> L:
-    '''Parse a code string or python file and return code chunks as list of dicts with content and metadata.
-
-    Only module-level definitions are ever returned, so `tree.body` *is* the candidate list: walking
-    the whole tree to tag every node with a `parent` and then filtering on "parent is the Module"
-    computes an answer the body already gives. Dropping the walk and hoisting the line split take
-    the same 400 files from 23.4s to 3.3s, chunk-for-chunk identical.'''
+    'One chunk per top-level function and class in a Python file or code string, each a dict of `content` and `metadata`.'
     assert bool(code) ^ bool(p), 'Either code or p must be provided, not both.'
     try: code = Path(p).read_text(encoding='utf-8') if not code else code
     except UnicodeDecodeError: return L()
@@ -209,19 +198,19 @@ def pyparse(p:Path=None,    # path to a python file
     return L(tree.body).filter(is_allowed).map(n2c)
 
 def ipynb_parse(p):
-	'Parse ipynb files'
+	'One chunk per cell of a notebook, with the cell type in its metadata.'
 	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
 	fn = lambda c: dict(content=c['source'], metadata = meta_() | dict(type=c['cell_type']))
 	return L(read_nb(p).cells).map(fn)
 
 def non_py_sigs(p):
-	'Signatures for paths that are not python code files using codesigs'
+	'One chunk per function or class signature in a non-Python code file, read with codesigs.'
 	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
 	from codesigs import file_sigs
 	return L(file_sigs(p)).map(lambda o: dict(content=o, metadata=meta_()))
 
 def chunk_texts(text:str):
-	'Chunk texts using Fast Chunker'
+	'Split plain text into chunks of at most 512 bytes, cutting at blank lines where possible.'
 	return L(_safe_chunker()(chunk_size=512, delimiters='\n\n')(text)).map(lambda c: c.text)
 
 # %% ../nbs/02_data.ipynb #profiles
@@ -229,15 +218,15 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Profile:
-    'How one *kind* of document should be read: parser, structure, chunker.'
+    'How to read one kind of document: its reader, structure mode, chunker and extra metadata.'
     name:str
-    exts:str = ''            # comma-separated extensions this profile claims
-    parse:callable = None    # path -> (pages, meta)
-    chunker:callable = None  # () -> a chunker for add_doc
-    mode:str = None          # build_tree structural mode, bypassing detect_mode
-    detect:callable = None   # (text) -> bool; disambiguates a shared extension like .xml or .txt
-    kind:str = None          # doc kind recorded on the doc row, so it can be filtered on
-    meta:callable = None     # (chunk text) -> dict of facets, stored as the chunk's `metadata` JSON
+    exts:str = ''            # comma-separated extensions this profile claims; empty claims all
+    parse:callable = None    # function from a path to (pages, meta), replacing the default reader
+    chunker:callable = None  # function returning a chonkie chunker for add_doc
+    mode:str = None          # structure mode for build_tree, used instead of detect_mode
+    detect:callable = None   # function from the file's text to bool; decides between profiles sharing an extension such as .xml
+    kind:str = None          # document kind stored on the document's row, for filtering
+    meta:callable = None     # function from a chunk's text to a dict, stored as the chunk's `metadata` JSON
     def claims(self, suffix:str) -> bool:
         return not self.exts or suffix.lower() in {f".{e.strip().lstrip('.')}".lower()
                                                    for e in self.exts.split(',') if e.strip()}
@@ -247,7 +236,7 @@ PLUGIN_GROUP = 'litesearch.profiles'
 _plugged = False
 
 def load_plugins(eps=None) -> L:
-    'Call each `litesearch.profiles` entry point once, so an installed package registers its profiles without being imported first.'
+    'Run every installed `litesearch.profiles` entry point once, so other packages can register profiles.'
     global _plugged
     if eps is None:
         if _plugged: return L()
@@ -262,15 +251,15 @@ def load_plugins(eps=None) -> L:
     return done
 
 def register_profile(p:Profile) -> Profile:
-    'Add a profile to the registry, replacing any of the same name.'
+    'Add a profile to the registry, replacing any profile with the same name.'
     PROFILES[p.name] = p
     return p
 
-def profile_for(path=None,      # file whose extension (and first bytes) select the profile
+def profile_for(path=None,      # file whose extension and opening text select the profile
                 text:str=None,  # already-read text, when there is no file
                 name:str=None   # ask for one by name, skipping detection
                 ) -> Profile|None:
-    'The profile that claims this document, or None for the default pipeline.'
+    'The first registered profile that claims this file or text, or None for the default pipeline.'
     load_plugins()
     if name: return PROFILES.get(name)
     sfx = Path(path).suffix if path else ''
@@ -284,10 +273,10 @@ def profile_for(path=None,      # file whose extension (and first bytes) select 
     return None
 
 @delegates(pyparse)
-def file_parse(p:Path=None,  # path to a code file
-               **kwargs      # additional args to pass to pyparse
+def file_parse(p:Path=None,  # path to the file
+               **kwargs      # passed to pyparse for `.py` files: `imports`, `assigns`
                ) -> L:
-    'Parse a code file or code string and return code chunks with metadata.'
+    'Chunks for one file, read by the reader its extension calls for; an empty list for unknown extensions.'
     if p.suffix == '.py': return pyparse(p, **kwargs)
     if p.suffix == '.ipynb': return ipynb_parse(p)
     if p.suffix in code_exts.split(','): return non_py_sigs(p)
@@ -301,13 +290,13 @@ def file_parse(p:Path=None,  # path to a code file
 
 # %% ../nbs/02_data.ipynb #a8efe72ac0b7468a
 @delegates(globtastic)
-def pkg2files(pkg:str,								# package name
-              skip_file_re=skip_file_re,  # regex to skip files
-              skip_folder_re=skip_folder_re,  # regex to skip folders
-              func=Path,						    # function to apply to file paths (e.g. Path or str)
-			  **kwargs								# additional args to pass to globtastic
+def pkg2files(pkg:str,								# installed package, by import or distribution name
+              skip_file_re=skip_file_re,  # regex of file names to skip
+              skip_folder_re=skip_folder_re,  # regex of folder names to skip
+              func=Path,						    # applied to each path, such as Path or str
+			  **kwargs								# passed to globtastic, such as `exts=code_exts`
 )->L:
-	'Return list of python files in a package excluding tests and setup files.'
+	'Every file in an installed package\'s folder, skipping tests, docs, build output and hidden files.'
 	if not (nm := spec(pkg)): return L()
 	if nm.origin: o = Path(nm.origin).parent
 	elif nm.submodule_search_locations: o= Path(nm.submodule_search_locations[0])
@@ -317,13 +306,13 @@ def pkg2files(pkg:str,								# package name
 
 # %% ../nbs/02_data.ipynb #41872245b3652853
 @delegates(globtastic)
-def dir2files(dir:str,  # package name
-              skip_file_re=skip_file_re,  # regex to skip files
-              skip_folder_re=skip_folder_re,  # regex to skip folders
-              func=Path,  # function to apply to file paths (e.g. Path or str)
-              **kwargs  # additional args to pass to globtastic
+def dir2files(dir:str,  # folder to walk
+              skip_file_re=skip_file_re,  # regex of file names to skip
+              skip_folder_re=skip_folder_re,  # regex of folder names to skip
+              func=Path,  # applied to each path, such as Path or str
+              **kwargs  # passed to globtastic, such as `exts=` or `skip_file_glob=`
               )->L:
-	'Return list of python files in a package excluding tests and setup files.'
+	'Every file under a folder, skipping tests, docs, build output and hidden files.'
 	if not (rt :=Path(dir)).exists(): return L()
 	return globtastic(rt, skip_folder_re=skip_folder_re, skip_file_re=skip_file_re, func=func, **kwargs)
 
@@ -332,12 +321,7 @@ def dir2files(dir:str,  # package name
 MIN_PARALLEL_FILES = 64
 
 def _parse_files(files, n_workers=None, threadpool=False, **kw):
-    '''Parse a list of paths, on a process pool once there are enough of them to pay for one.
-
-    Processes, not threads. `file_parse` is `ast.parse` plus a pure-python tree walk and holds the
-    GIL from end to end, so a thread pool contends rather than overlaps: over 2,170 files a
-    4-thread pool measured 0.76x — *slower than serial* — against 3.37x for 4 processes. The same
-    holds for the PDF branch, where pdf-oxide does the work in Rust but never releases the GIL.'''
+    '''Run `file_parse` on each path, in a process pool when there are at least `MIN_PARALLEL_FILES` paths.'''
     if n_workers is None: n_workers = 0 if len(files) < MIN_PARALLEL_FILES else defaults.cpus
     return parallel(file_parse, files, n_workers=n_workers, threadpool=threadpool, **kw)
 
@@ -345,9 +329,9 @@ def pkg2chunks(pkg:str,             # package name
                imports:bool=False,  # include import statements as code chunks
                n_workers:int=None,  # parse workers; 0 is serial, None picks by file count
                threadpool:bool=False, # threads rather than processes (see `_parse_files`)
-               **kw                 # additional args to pass to pkg2files
+               **kw                 # passed to pkg2files, such as `exts=code_exts`
 )->L:
-    'Return code chunks from a package with extra metadata.'
+    'Chunks for every file of an installed package, with the package name and version in their metadata.'
     pkg, ver = _pkg_name(pkg), getattr(_pkg_dist(pkg), 'version', None)
     upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=ver)) or d
     files = pkg2files(pkg, **kw)
@@ -359,20 +343,20 @@ def dir2chunks(dir:str,             # directory path
                assigns:bool=False,  # include top-level assignments as code chunks
                n_workers:int=None,  # parse workers; 0 is serial, None picks by file count
                threadpool:bool=False, # threads rather than processes (see `_parse_files`)
-               **kwargs             # additional args to pass to dir2files
+               **kwargs             # passed to dir2files, such as `exts=` or `types=`
 )->L:
-    'Return code chunks from a directory with extra metadata.'
+    'Chunks for every file under a folder, with the folder in their metadata.'
     upd_v = lambda d: d['metadata'].update(dict(dir=dir)) or d
     files = dir2files(dir, **kwargs)
     return _parse_files(files, n_workers, threadpool, imports=imports, assigns=assigns).concat().filter(true).map(upd_v)
 
 
 # %% ../nbs/02_data.ipynb #256e1606821e7674
-def installed_packages(nms:list=None,    # list of package names
-                       pyproject:bool=False,  # restrict to pyproject.toml dependencies
-                       xtras:str|None=None       # include extra groups as csv from pyproject.toml
+def installed_packages(nms:list=None,    # package names or requirement strings; None lists every installed package
+                       pyproject:bool=False,  # also include the dependencies in the current repository's pyproject.toml
+                       xtras:str|None=None       # comma-separated `[dependency-groups]` from pyproject.toml to include too
 )->L:
-    'Return list of installed packages. If nms is provided, return only those packages.'
+    'The names of installed packages, all of them or only those asked for, leaving out the standard library.'
     if pyproject:
         p = repo_root().joinpath('pyproject.toml')
         if not p.exists(): return L()
@@ -391,23 +375,23 @@ def installed_packages(nms:list=None,    # list of package names
     except Exception as e: print(f'Error checking installed packages: {e}')
 
 # %% ../nbs/02_data.ipynb #1c4310460fd6c8ec
-def clean(q:str,  # query to be passed for fts search
-          pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
+def clean(q:str,  # the user's query
+          pattern=r'[*,"\(\)\^]|-(?=\S)' # characters to replace with a space
           ):
-    'Clean the query by removing * and returning None for empty queries.'
+    'Replace FTS5 operator characters in `q` with spaces; None when nothing is left.'
     return re.sub(pattern, ' ', q).strip() or None if q.strip() else None
 
 _BARE = re.compile(r'^[A-Za-z0-9_]+$')
 
-def add_wc(q:str  # query to be passed for fts search
+def add_wc(q:str  # space-separated words
            ):
-    'Add wild card * to each word in the query.`kw` uses UAX#29 segmentation, which keeps'
+    'Add `*` to each word for a prefix match, quoting any word that is not plain ASCII letters, digits or `_`.'
     esc = lambda w: w if _BARE.match(w) else '"%s"' % w.replace('"', '""')
     return ' '.join(esc(w) + '*' for w in q.split(' ') if w)
 
-def mk_wider(q:str  # query to be passed for fts search
+def mk_wider(q:str  # space-separated words
              ):
-    '''Widen the query by joining words with OR operator.'''
+    '''Join the words with `OR` so a row needs only one of them to match.'''
     return ' OR '.join(map(lambda w: f'{w}', q.split(' ')))
 
 QSTOP = set('''a an the and or of to in on at by for from with as is are was were be been being this that these
@@ -416,23 +400,23 @@ i me my we our you your he she they them their not no nor if then than so such a
 before between out up down off only own same too very just also each other more most some any'''.split())
 _QSTOP = QSTOP   # the name before 0.1.42
 
-def kw(q:str,          # query to be passed for fts search
+def kw(q:str,          # the user's query
        stop:set=None   # stopwords to drop (defaults to `QSTOP`)
        ):
-    '''Query keywords by UAX#29 word segmentation (apsw), minus stopwords.'''
+    '''The lowercased words of `q`, without stopwords, one-letter words or repeats.'''
     from apsw.unicode import word_iter, casefold
     st = QSTOP if stop is None else stop
     ws = [casefold(t) for t in word_iter(q)]
     out = [w for w in ws if len(w) > 1 and w not in st]
     return ' '.join(dict.fromkeys(out or ws))
 
-def pre(q:str,          # query to be passed for fts search
-        wc=True,        # add wild card to each word
-        wide=True,      # widen the query with OR operator
-        extract_kw=True, # extract keywords from the query
-        pattern=r'[*,"\(\)\^]|-(?=\S)' # regex pattern to use to replace with space
+def pre(q:str,          # the user's query
+        wc=True,        # add `*` to each word for a prefix match
+        wide=True,      # join the words with OR
+        extract_kw=True, # drop stopwords with `kw`
+        pattern=r'[*,"\(\)\^]|-(?=\S)' # characters `clean` replaces with a space
         ):
-    '''Preprocess the query for fts search.'''
+    '''Turn a user's query into an FTS5 query: cleaned, stopwords dropped, each word a prefix, joined with OR.'''
     q = clean(q, pattern)
     if not q.strip(): return None
     if extract_kw: q = kw(q)
@@ -443,7 +427,7 @@ def pre(q:str,          # query to be passed for fts search
 
 # %% ../nbs/02_data.ipynb #jv0r083q7b
 def img2png(img) -> bytes:
-    'Normalise image input (PIL Image / bytes / path) to PNG bytes as RGB.'
+    'An image, given as a Pillow image, bytes or a path, as RGB PNG bytes.'
     from PIL import Image
     import io
     if isinstance(img, (str, Path)): img = Image.open(img)
@@ -453,7 +437,7 @@ def img2png(img) -> bytes:
     return buf.getvalue()
 
 def png_det(png: bytes):
-    'Return (width, height, concatenated IDAT bytes) from a PNG.'
+    'The width, height and compressed pixel data (the joined IDAT chunks) of a PNG.'
     w = _struct.unpack('>I', png[16:20])[0]
     h = _struct.unpack('>I', png[20:24])[0]
     idat, i = bytearray(), 8
@@ -464,10 +448,10 @@ def png_det(png: bytes):
         i += 12 + ln
     return w, h, bytes(idat)
 
-def images_to_pdf(imgs,       # list of PIL Images, bytes, or file paths
-                  output=None # path to save, or None to return bytes
+def images_to_pdf(imgs,       # Pillow images, image bytes or file paths
+                  output=None # path to write the PDF to; the bytes are returned either way
 ) -> bytes:
-    'Convert a list of images into a multi-page image-only PDF (one image per page).'
+    'A PDF with one image per page and no text layer.'
     pages = [png_det(img2png(img)) for img in imgs]
     N = len(pages)
     kids = ' '.join(f'{3+i*3} 0 R' for i in range(N))
@@ -495,7 +479,7 @@ def images_to_pdf(imgs,       # list of PIL Images, bytes, or file paths
 
 # %% ../nbs/02_data.ipynb #6593c16e
 def mv_skill_md(dry_run:bool=True, dir=None) -> None:
-    'Copy bundled SKILL.md to skill directories (.agents/, .claude/, .Codex/).'
+    'Copy the bundled SKILL.md into the .agents, .claude and .Codex skill folders, or with `dry_run` only print where.'
     base = Path(__file__).parent if '__file__' in globals() else Path.cwd()
     if not (src := base/'SKILL.md').exists(): return
     root = Path(ifnone(dir, repo_root() or Path.cwd()))

@@ -14,7 +14,7 @@ import json, os, re, warnings, zlib
 from functools import cache
 import numpy as np
 def _ort():
-	"onnxruntime, which only the ONNX encoders want. A model2vec static model needs none of it."
+	"The onnxruntime module, or an ImportError saying how to install it."
 	try: import onnxruntime as ort; return ort
 	except ImportError as e: raise ImportError('needs onnxruntime: pip install onnxruntime') from e
 
@@ -22,7 +22,7 @@ def _ort():
 # %% ../nbs/03_utils.ipynb #be27730c21e0c597
 embedding_gemma_prompt = AttrDict(document='title: none | text: {text}', query='task: search result | query: {text}')
 nomic_prompt = AttrDict(document='search_document: {text}', query='search_query: {text}')
-modernbert_prompt = nomic_prompt  # alias — same prefix format
+modernbert_prompt = nomic_prompt  # same prefixes as nomic
 
 # Text models (for FastEncode)
 embedding_gemma = AttrDict(model='onnx-community/embeddinggemma-300m-ONNX', onnx_path='onnx/model.onnx', prompt=embedding_gemma_prompt)
@@ -48,7 +48,7 @@ bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quanti
 
 @cache
 def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
-    'A model2vec model, shared per name. potion-multilingual-128M is ~500MB, so every caller loading its own hurts.'
+    'The model2vec model `model_nm`, loaded once and shared by every caller.'
     from model2vec import StaticModel
     m = StaticModel.from_pretrained(model_nm, force_download=False)
     m.ls_id = model_nm   # potion leaves base_model_name empty, so encoder_id has nothing else to read
@@ -58,7 +58,7 @@ static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M
 
 # %% ../nbs/03_utils.ipynb #78f2a8ee5e0ec414
 def _cached_snapshot(repo_id):
-	'Local snapshot dir from the HF cache without hitting the network, else None.'
+	'The newest local copy of `repo_id` in the Hugging Face cache, found without the network, or None.'
 	from huggingface_hub import scan_cache_dir
 	try: repo = first(scan_cache_dir().repos, lambda r: r.repo_id == repo_id)
 	except Exception: return None
@@ -68,10 +68,10 @@ def _cached_snapshot(repo_id):
 
 def download_model(repo_id=embedding_gemma.model,  # HF repo id
                    md=None,                         # optional explicit local dir; else the HF cache is used
-                   filename=None,                   # file path within repo; if None, downloads full repo snapshot
-                   token=None                       # HF token. you can also set HF_TOKEN env variable
+                   filename=None,                   # one file inside the repo; None downloads the whole repo
+                   token=None                       # Hugging Face token; defaults to the HF_TOKEN environment variable
 ):
-	'''Download model (or single file) from HF hub. Returns local path. Skips network if already cached.'''
+	'''The local path of a Hugging Face model repo, or one file in it, downloading only what is not already cached.'''
 	import huggingface_hub as hf
 	token = token or os.getenv('HF_TOKEN')
 	if filename:
@@ -86,21 +86,21 @@ def download_model(repo_id=embedding_gemma.model,  # HF repo id
 # %% ../nbs/03_utils.ipynb #408830ea692c2eca
 class FastEncode:
 	def __init__(self,
-				 model_dict=embedding_gemma, # model dict with model repo, onnx path and prompt templates
-				 repo_id=None,               # model repo on HF. needs to have onnx model file
-				 md=None,                    # local model dir
-				 md_nm=None,                 # onnx model file name
-				 normalize=True,             # normalize embeddings
+				 model_dict=embedding_gemma, # a model dict above: repo, ONNX file path and prompt templates
+				 repo_id=None,               # Hugging Face repo with an ONNX file, used instead of `model_dict`
+				 md=None,                    # local folder holding the model files
+				 md_nm=None,                 # path of the ONNX file inside the model folder
+				 normalize=True,             # scale each vector to length 1
 				 dtype=np.float16,           # output dtype
-				 tti=False,                  # use token type ids (overridden by model_dict.tti if set)
-				 prompt=None,                # prompt templates
-				 hf_token=None,              # HF token. you can also set HF_TOKEN env variable
+				 tti=False,                  # pass token type ids to the model, as BERT-style models expect; also set by `model_dict.tti`
+				 prompt=None,                # dict with `document` and `query` templates containing `{text}`
+				 hf_token=None,              # Hugging Face token; defaults to the HF_TOKEN environment variable
 				 batch_size=32,              # texts per ONNX call
-				 parallel=0,                 # thread workers for parallel encoding (0=single-threaded)
-				 quantize=None,              # quantize weights: None, 'int8', or 'uint8'
-				 max_seq_len=None,           # override tokenizer max length (e.g. 64 for SigLIP2)
+				 parallel=0,                 # threads that encode batches at once; 0 encodes in the calling thread
+				 quantize=None,              # run a quantized copy of the model: None, 'int8' or 'uint8'
+				 max_seq_len=None,           # token limit per text in place of 512; the model's own limit still applies (e.g. 64 for SigLIP2)
 	):
-		'''Fast ONNX-based text encoder with batching, parallel execution, and quantization.'''
+		'''A text encoder that runs a Hugging Face ONNX model with ONNX Runtime.'''
 		assert (model_dict is None) != (repo_id is None), 'Either model_dict or repo_id must be provided and not both'
 		repo_id = model_dict.model if model_dict else repo_id
 		md = md or (model_dict.model if model_dict else repo_id)
@@ -112,7 +112,7 @@ class FastEncode:
 		except Exception as ex: print(f'model download failed: {ex}. hint: is hf_token set')
 		self._load_enc()
 	def _maybe_quantize(self, onnx_p):
-		'Quantize ONNX model weights if quantize is set; returns path to (possibly quantized) model.'
+		'The path of the model to run: a quantized copy, made on first use, when `quantize` is set, else `onnx_p`.'
 		if not self.quantize: return onnx_p
 		from onnxruntime.quantization import quantize_dynamic, QuantType
 		q_p = Path(onnx_p).parent / f'model_{self.quantize}.onnx'
@@ -163,7 +163,7 @@ class FastEncode:
 		sum_mask = np.clip(np.sum(input_mask_expanded, axis=1), a_min=1e-9, a_max=None)
 		return sum_embeddings / sum_mask
 	def _encode_batch(self, lns:list, **kw):
-		'Encode a single batch of texts; returns float array.'
+		'Embed one batch of texts as an array with one row per text.'
 		if not lns: return np.zeros((0, self.sess.get_outputs()[0].shape[-1]), dtype=self.dtype)
 		ids, msk = self._enc(lns)
 		if ids.ndim == 1: ids, msk = np.expand_dims(ids, 0), np.expand_dims(msk, 0)
@@ -174,7 +174,7 @@ class FastEncode:
 		if self.normalize: o = o / np.clip(np.linalg.norm(o, ord=2, axis=1, keepdims=True), 1e-12, None)
 		return o.astype(self.dtype)
 	def encode(self, lns:list, batch_size:int=None, parallel:int=None, stream:bool=False, **kw):
-		'Encode texts with optional batching and parallel thread workers. stream=True yields batch arrays.'
+		'Embed texts as one array with a row per text, or with `stream=True` one array per batch; None if the model failed to load.'
 		if not self.sess: print('ONNX session not initialized. Fix error during initialisation'); return None
 		bs = ifnone(batch_size, self.batch_size)
 		pw = ifnone(parallel, self.parallel)
@@ -185,19 +185,23 @@ class FastEncode:
 		else:  results = L(batches).map(fn)
 		return results if stream else np.concatenate(list(results))
 	def encode_document(self, lns, prompt:str=None, **kw):
+		'Embed texts as documents, adding the model\'s document prefix unless `prompt` is given.'
 		if prompt is None: prompt = self.prompt.get('document', None)
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 	def encode_query(self, lns, prompt:str=None, **kw):
+		'Embed texts as queries, adding the model\'s query prefix unless `prompt` is given.'
 		if prompt is None: prompt = self.prompt.get('query', None)
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
 def doc_encoder(embedder:'FastEncode|StaticModel'):
+	'A function that embeds a list of documents with `embedder`, using its document prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_document(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
 
 def query_encoder(embedder:'FastEncode|StaticModel'):
+	'A function that embeds a list of queries with `embedder`, using its query prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
@@ -206,7 +210,7 @@ def query_encoder(embedder:'FastEncode|StaticModel'):
 _ENC_ID_ATTRS = ('ls_id', 'repo_id', 'base_model_name')
 
 def encoder_id(e) -> str:
-	"A stable name for whatever encoder wrote a store: the model repo, not the object. '' when it cannot be named."
+	"The model name of an encoder, such as its Hugging Face repo, or '' when it has none."
 	if e is None: return ''
 	if isinstance(e, str): return e
 	nm = first(str(v) for v in (getattr(e, a, None) for a in _ENC_ID_ATTRS) if v)
@@ -218,14 +222,14 @@ def encoder_id(e) -> str:
 # %% ../nbs/03_utils.ipynb #f690tylraad
 class FastEncodeImage:
 	def __init__(self,
-				 model_dict=nomic_vision_v15, # model dict with model repo and onnx path
-				 normalize=True,              # normalize embeddings
+				 model_dict=nomic_vision_v15, # a model dict above: repo, ONNX file path, input size, mean and std
+				 normalize=True,              # scale each vector to length 1
 				 dtype=np.float16,            # output dtype
 				 batch_size=16,               # images per ONNX call
-				 parallel=0,                  # thread workers for parallel encoding (0=single-threaded)
-				 hf_token=None,               # HF token. you can also set HF_TOKEN env variable
+				 parallel=0,                  # threads that encode batches at once; 0 encodes in the calling thread
+				 hf_token=None,               # Hugging Face token; defaults to the HF_TOKEN environment variable
 	):
-		'Fast ONNX-based image encoder for CLIP-style models.'
+		'An image encoder that runs a CLIP-style Hugging Face ONNX model with ONNX Runtime.'
 		store_attr()
 		try: self.md = download_model(repo_id=model_dict.model, md=model_dict.model, token=hf_token)
 		except Exception as ex: print(f'model download failed: {ex}. hint: is hf_token set')
@@ -246,26 +250,26 @@ class FastEncodeImage:
 			print(f'Image encoding setup failed: {ex}')
 			self.sess = None
 	def _load_processor(self):
-		'Read preprocessing config (img_size, mean, std) from model dict.'
+		'Set the input size, mean and standard deviation from the model dict, with ImageNet defaults.'
 		self.img_size = getattr(self.model_dict, 'img_size', 224)
 		self.mean = np.array(getattr(self.model_dict, 'mean', [0.485, 0.456, 0.406]), dtype=np.float32).reshape(1, 1, 3)
 		self.std  = np.array(getattr(self.model_dict, 'std',  [0.229, 0.224, 0.225]), dtype=np.float32).reshape(1, 1, 3)
 	def _to_pil(self, img):
-		'Convert path/bytes/PIL to RGB PIL Image.'
+		'An image given as a path, bytes or Pillow image, as an RGB Pillow image.'
 		from PIL import Image
 		import io
 		if isinstance(img, (str, Path)): return Image.open(img).convert('RGB')
 		if isinstance(img, (bytes, bytearray)): return Image.open(io.BytesIO(img)).convert('RGB')
 		return img.convert('RGB')
 	def _preprocess(self, img):
-		'Resize, normalise, and convert PIL image to (C, H, W) float32 array.'
+		'A Pillow image resized and normalised into a float32 array of shape (channels, height, width).'
 		from PIL import Image
 		img = img.resize((self.img_size, self.img_size), Image.BICUBIC)
 		arr = np.array(img, dtype=np.float32) / 255.0    # (H, W, C)
 		arr = (arr - self.mean) / self.std
 		return arr.transpose(2, 0, 1)                     # CHW
 	def _encode_batch(self, imgs:list, **kw):
-		'Encode a single batch of images; mean-pools token-level outputs to a single vector per image.'
+		'Embed one batch of images as an array with one row per image.'
 		pils = L(imgs).map(self._to_pil)
 		pixel_values = np.stack(list(pils.map(self._preprocess)))  # (B, C, H, W)
 		o = self.sess.run(None, {'pixel_values': pixel_values})[0]
@@ -273,7 +277,7 @@ class FastEncodeImage:
 		if self.normalize: o = o / np.clip(np.linalg.norm(o, ord=2, axis=1, keepdims=True), 1e-12, None)
 		return o.astype(self.dtype)
 	def embed(self, imgs, batch_size:int=None, parallel:int=None, stream:bool=False, **kw):
-		'Embed images; accepts PIL Images, file paths, or bytes. stream=True yields batch arrays.'
+		'Embed images as one array with a row per image, or with `stream=True` one array per batch; None if the model failed to load.'
 		if not self.sess: print('ONNX session not initialized. Fix error during initialisation'); return None
 		bs = ifnone(batch_size, self.batch_size)
 		pw = ifnone(parallel, self.parallel)
@@ -287,15 +291,15 @@ class FastEncodeImage:
 # %% ../nbs/03_utils.ipynb #dkavro5jder
 class FastEncodeMultimodal:
 	def __init__(self,
-				 model_dict=siglip2_so400m, # model dict with vision_onnx and text_onnx paths
-				 normalize=True,            # normalize embeddings
+				 model_dict=siglip2_so400m, # a model dict with `vision_onnx` and `text_onnx` file paths
+				 normalize=True,            # scale each vector to length 1
 				 dtype=np.float16,          # output dtype
 				 batch_size_text=32,        # texts per ONNX call
 				 batch_size_image=16,       # images per ONNX call
-				 parallel=0,               # thread workers (0=single-threaded)
-				 hf_token=None,            # HF token. you can also set HF_TOKEN env variable
+				 parallel=0,               # threads that encode batches at once; 0 encodes in the calling thread
+				 hf_token=None,            # Hugging Face token; defaults to the HF_TOKEN environment variable
 	):
-		'Unified ONNX encoder for models with both text and vision encoders in a single repo (e.g. SigLIP2).'
+		'A text and image encoder pair loaded from one Hugging Face repo, such as SigLIP2.'
 		store_attr()
 		md = download_model(repo_id=model_dict.model, md=model_dict.model, token=hf_token)
 		self.text = FastEncode(model_dict=None, repo_id=model_dict.model, md=md,
@@ -310,27 +314,27 @@ class FastEncodeMultimodal:
 		    normalize=normalize, dtype=dtype, batch_size=batch_size_image,
 		    parallel=parallel, hf_token=hf_token)
 	def encode_text(self, texts, **kw):
-		'Encode texts into the shared embedding space.'
+		'Embed texts as vectors comparable with this model\'s image vectors.'
 		return self.text.encode(texts, **kw)
 	def encode_image(self, imgs, **kw):
-		'Encode images into the shared embedding space.'
+		'Embed images as vectors comparable with this model\'s text vectors.'
 		return self.vision.embed(imgs, **kw)
 
 # %% ../nbs/03_utils.ipynb #pdf_rag_helpers
 def encode_pdf_texts(doc,              # PdfDocument
-                     enc,              # FastEncode instance
-                     chunk_fn=None,    # doc -> [(pg,ci,text)]; default: doc.pdf_chunks
-                     **kw,             # forwarded to doc.pdf_chunks (min_len, st, end)
+                     enc,              # a text encoder with `encode_document`, such as FastEncode
+                     chunk_fn=None,    # function from the document to [(page, chunk_idx, text)]; default doc.pdf_chunks
+                     **kw,             # passed to doc.pdf_chunks, which accepts only `chunker`
                      ) -> L:
-	'Encode PDF text chunks; yields (page, chunk_idx, text, emb) — caller owns the storage schema.'
+	'Every text chunk of a PDF with its embedding, as `(page, chunk_idx, text, emb)` tuples.'
 	chunks = chunk_fn(doc) if chunk_fn else doc.pdf_chunks(**kw)
 	embs = enc.encode_document([c for _,_,c in chunks])
 	return L((pg, ci, c, emb) for (pg,ci,c), emb in zip(chunks, embs))
 
 def encode_pdf_images(doc,             # PdfDocument
-                      enc,             # FastEncodeImage instance
+                      enc,             # an image encoder with `embed`, such as FastEncodeImage
                       ) -> L:
-	'Extract and encode every PDF image; yields (page, img_bytes, emb) — caller owns the storage schema.'
+	'Every PNG and JPEG image in a PDF with its embedding, as `(page, img_bytes, emb)` tuples with pages counted from 0.'
 	import tempfile
 	with tempfile.TemporaryDirectory() as tmp:
 		page_imgs = {}
@@ -349,10 +353,10 @@ def encode_pdf_images(doc,             # PdfDocument
 _WS = re.compile(r'\s+')
 
 def hash_embed(texts,           # strings to embed
-               ndim:int=256,    # output dimensions
-               ngram=(3,5),     # character n-gram range
+               ndim:int=256,    # length of each vector
+               ngram=(3,5),     # shortest and longest character run to hash
                dtype=np.float16):
-    'Char-n-gram hashing: no model, no download, same vectors every run. Lexical only.'
+    'Unit-length vectors from hashed character n-grams, which match spelling rather than meaning and need no model.'
     lo, hi = ngram
     txts = list(L(texts))
     out, crc = np.zeros((len(txts), ndim), dtype=np.float32), zlib.crc32

@@ -34,7 +34,7 @@ litesearch = "litesearch.cli:main"
 [project.entry-points.nbdev]
 litesearch = "litesearch._modidx:d"
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "nbdev",
     "jupyterlab",
@@ -51,6 +51,10 @@ dev = [
     "ddgs",                      # evals/
     "pyperclip",                 # evals/
 ]
+
+# CI and the docs build install `.[dev]`; the group points at the extra so `uv sync` keeps working.
+[dependency-groups]
+dev = ["litesearch[dev]"]
 
 [tool.hatch.version]
 path = "litesearch/__init__.py"

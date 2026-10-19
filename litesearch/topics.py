@@ -19,7 +19,7 @@ def get_graph(self:Database,
               ann:bool=True,       # register an ANN index on the entity store (needed for resolution)
               encoder:str=None,    # the encoder whose vectors the entity store holds; checked on reopen
               **kw):               # extra typed columns for the entity store
-    'Create the entity/mention/edge tables for a chunk store. Idempotent; returns the tables.'
+    'Create the entities, mentions and edges tables for a chunk store, or open them if they exist.'
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
     en, mn, eg = f'{p}entities', f'{p}mentions', f'{p}edges'
     ents = self.get_store(en, hash=True, ann=ann, encoder=encoder, kind=str, canon=str, freq=int, **kw)
@@ -32,7 +32,7 @@ def get_graph(self:Database,
     return AttrDict(entities=ents, mentions=self.t[mn], edges=self.t[eg], store=self.t[store], prefix=p)
 
 # %% ../nbs/05_topics.ipynb #3bd6bc9f72663973
-# connector words — cluster names built from these describe the corpus, not the cluster
+# connector words, left out of cluster names because they say nothing about one cluster
 _STOP = set('''the a an and or of to in is are was were be been being for on at by with from this that these those
 it its as not but if then than so such can will would could should may might do does did have has had he she they
 we you i him her them our your their about into over under after before between out up down off only own same too
@@ -45,7 +45,7 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
                   top_n=4,      # terms per label
                   stop=None,    # stopword set (defaults to _STOP)
                   sep=', '):
-    'Name each cluster by terms common inside it and rare across the other clusters.'
+    'Name each cluster by the words common among its members and rare in the other clusters.'
     st = _STOP if stop is None else stop
     tf = [{} for _ in range(k)]
     for t, j in zip(texts, lab):
@@ -66,7 +66,7 @@ def ctfidf_labels(texts,        # one text per member, aligned with `lab`
     return out
 
 def _usearch_clusters(idx, min_count, max_count):
-    "(centroid, members) from usearch's index cluster() over the HNSW graph."
+    "Cluster an HNSW index with usearch's own `cluster()`, as a list of (centroid key, member keys)."
     kw = {k: v for k, v in dict(min_count=min_count, max_count=max_count).items() if v}
     cl = idx.cluster(**kw)
     keys, _ = cl.centroids_popularity
@@ -77,7 +77,7 @@ def _usearch_clusters(idx, min_count, max_count):
     return out
 
 def _knn_clusters(idx, keys, k=8, max_size=None, min_sim=None, dtype=np.float16):
-    '(seed, members) from a greedy pass over the kNN graph harvested from HNSW. Works at any size.'
+    'Group keys greedily by their nearest neighbours in the index, as a list of (seed key, member keys).'
     keys = list(keys)
     if len(keys) < 4: return L()
     vecs = np.asarray(idx[np.array(keys, dtype=np.int64)], dtype=dtype).reshape(len(keys), -1)
@@ -108,7 +108,7 @@ def _cluster_groups(idx,               # usearch Index
                     max_count=None,    # usearch: largest cluster to emit
                     k=8,               # neighbours per node in the kNN fallback
                     dtype=np.float16):
-    '`([(centroid, members)], method)` for an index.'
+    'Cluster an index with usearch, falling back to the nearest-neighbour method, and return `(groups, method)`.'
     try: return _usearch_clusters(idx, min_count, max_count), 'usearch'
     except Exception:
         ks = np.atleast_1d(idx.keys).tolist() if keys is None else list(keys)
@@ -121,10 +121,10 @@ def topic_nodes(db,                # Database
                 max_count=None,    # usearch cluster max size
                 k=8,               # neighbours per node in the fallback kNN graph
                 min_size=2,        # smallest cluster kept as a topic
-                label_k=4,         # terms per topic label
-                max_label_chars=4000,
+                label_k=4,         # words per topic name
+                max_label_chars=4000, # characters of each member's text used for naming
                 dtype=np.float16):
-    'Cluster the store index into topic nodes labelled by c-TF-IDF. Returns {topics, method}.'
+    'Cluster a store and save each cluster as a named topic entity in its graph tables, returning `{topics, method}`.'
     g = db.get_graph(store, prefix)
     m = db._ann_meta(store)
     if not (m and m['ndim']): return dict(topics=0, method=None)
@@ -156,7 +156,7 @@ def topic_nodes(db,                # Database
 # %% ../nbs/05_topics.ipynb #15eaacbc30189934
 @patch
 def _cluster_cached(self:Table, min_count, max_count, k, dtype):
-    'Cluster once per (store, params, index size). `peers` would otherwise recluster on every call.'
+    'Cluster the store once per index size and parameter set, and reuse the result on later calls.'
     idx = self.db.get_index(self.name)
     ck = (self.name, min_count, max_count, k, idx.size)
     cache = getattr(self.db, '_cluster_cache', None)
@@ -169,7 +169,7 @@ def _cluster_cached(self:Table, min_count, max_count, k, dtype):
 
 @patch
 def _member_rows(self:Table, keys, columns=None):
-    'Store rows for a list of usearch keys, keyed by rowid. `content` is always fetched (labels need it).'
+    'Fetch the store rows for a list of rowids, always including `content`, as a dict keyed by rowid.'
     if not keys: return {}
     cols = list(dict.fromkeys([c for c in (columns or []) if c != 'rowid'] + ['content']))
     sel, out = ','.join(cols + [rowid_sel()]), {}
@@ -183,12 +183,12 @@ def clusters(self:Table,              # ANN-registered store
              max_count:int=None,      # usearch: largest cluster to emit
              k:int=8,                 # neighbours per node in the kNN fallback
              min_size:int=2,          # drop groups smaller than this
-             label_k:int=4,           # terms per c-TF-IDF label
+             label_k:int=4,           # words per cluster name
              members:int=24,          # member rows fetched per cluster
              columns:list=None,       # store columns to return per member row
-             max_label_chars:int=4000,# per-member text budget for labelling
+             max_label_chars:int=4000,# characters of each member's text used for naming
              dtype=np.float16):
-    'The corpus grouped by embedding shape, each group named by c-TF-IDF.'
+    'Divide the store into clusters of similar chunks, each named by the words that set it apart.'
     m = self.db._ann_meta(self.name)
     if not m: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} is not an ANN store')
     if not m['ndim']: return AttrDict(clusters=L(), method=None, note=f'{self.name!r} has no vectors yet')
@@ -218,7 +218,7 @@ def peers(self:Table,            # ANN-registered store
           max_count:int=None,    # usearch: largest cluster to emit
           k:int=8,               # neighbours per node in the kNN fallback
           dtype=np.float16):
-    'The group `key` belongs to — its family, not a ranked list of what is nearest to it.'
+    'Return the other members of the cluster that row `key` belongs to.'
     nbr = lambda note: AttrDict(hits=L(self.ann_neighbors(key, limit, columns, dtype=dtype)), method='ann', note=note)
     m = self.db._ann_meta(self.name)
     if not m: return AttrDict(hits=L(), method=None, note=f'{self.name!r} is not an ANN store')

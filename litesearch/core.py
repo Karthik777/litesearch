@@ -30,10 +30,10 @@ def sql_in(col, vals): return f'{col} in ({",".join(map(repr, vals))})'  # SQL I
 _FTS_TOKENIZE = 'porter simplify casefold 1 sanskrit unicodewords'
 
 class StoreMismatch(ValueError):
-    'A store reopened with a different encoder or tokenizer than the one that wrote it.'
+    'Raised when a store is reopened with a different encoder or tokenizer than the one that created it.'
 
 def _tokenizers_ok(conn, chain:str=None) -> bool:
-    'Whether `chain` actually resolves on this connection.'
+    'Whether the tokenizer chain `chain` can be built on this connection.'
     parts = (chain or _FTS_TOKENIZE).split()
     try:
         conn.fts5_tokenizer(parts[0], parts[1:])
@@ -45,7 +45,7 @@ def content_id(content): return hash_record({'content': content}) if content els
 def embed_chunk(chunk,      # iterable of dicts with a 'content' key
                 emb_fn,     # callable: list[str] -> list of vectors (np arrays)
                 **kw):
-    'Embed each chunk\'s content via emb_fn and attach `embedding` bytes. Skips blank content.'
+    'Drop chunks with blank content and give each remaining chunk an `embedding` from `emb_fn`, as bytes.'
     c = L(chunk).filter(lambda b: b.get('content') and b['content'].strip())
     if not c: return []
     for e,b in zip(emb_fn(list(c.itemgot('content')), **kw), c): b['embedding'] = np.asarray(e).tobytes()
@@ -55,10 +55,7 @@ _busy_lock, _busy_depth, _busy_saved = threading.Lock(), 0, None
 
 @contextmanager
 def busy_window(busy_ms=BUSY_TIMEOUT_MS):
-    '''Widen the busy timeout for the block, then restore it.
-    apsw's bestpractice hook sets the 100ms default *during* `Connection` construction, so covering a
-    concurrent open means moving that default; a per-connection `set_busy_timeout` lands too late.
-    `database(busy_timeout=)` is the sole caller and needs exactly that window.'''
+    "Use `busy_ms` as apsw's default busy timeout for connections opened inside the block, then restore the old default."
     global _busy_depth, _busy_saved
     bp = apsw.bestpractice.connection_busy_timeout
     with _busy_lock:
@@ -73,7 +70,7 @@ def busy_window(busy_ms=BUSY_TIMEOUT_MS):
 
 _conn_locks, _conn_locks_guard = weakref.WeakKeyDictionary(), threading.Lock()
 def db_lock(db):
-    'Re-entrant lock guarding litesearch operations on one connection.'
+    'The re-entrant lock litesearch holds while it works on `db`\'s connection.'
     if isinstance(db.conn, Conn): return db.conn.lock
     with _conn_locks_guard:
         lk = _conn_locks.get(db.conn)
@@ -82,7 +79,7 @@ def db_lock(db):
 
 @contextmanager
 def write_txn(db):
-    'Transaction using `BEGIN IMMEDIATE`; nested calls join the open transaction.'
+    'A write transaction started with `BEGIN IMMEDIATE`; inside another one, it joins the open transaction.'
     c = db.conn
     with db_lock(db):
         if c.in_transaction: yield; return
@@ -99,9 +96,7 @@ def process_content(store,          # target Table (hash-id store)
                     parallel=False, # deprecated no-op; concurrent writers need `database(busy_timeout=...)`, which sets the wait on the connection
                     chunk=5_000,    # rows per transaction
                     **kw):          # forwarded to emb_fn
-    '''Embed and upsert chunks in `chunk`-sized transactions.
-    Writes always batch under `BEGIN IMMEDIATE`. Open the db with `database(busy_timeout=...)` for
-    concurrent writers; `parallel` is retained for compatibility and no longer changes behavior.'''
+    "Embed chunks when `embed` is set, give each a content-hash `id`, and upsert them into `store`, `chunk` rows per transaction."
     content = list(content or [])
     if embed:
         assert emb_fn, 'emb_fn is required when embed=True'
@@ -117,14 +112,14 @@ def process_content(store,          # target Table (hash-id store)
 # %% ../nbs/01_core.ipynb #62c623f7d0a93d6a
 @patch(as_prop=True)
 def ensured(self:Database):
-    'Table handles built on this connection, keyed by store configuration.'
+    'The table objects `get_store` and `get_tree` have built on this connection, keyed by store settings.'
     if not hasattr(self, '_ensured'): self._ensured = {}
     return self._ensured
 
 # %% ../nbs/01_core.ipynb #5fc7d3d2087383f2
 @patch
 def forget_ensured(self:Database, store:str=None):
-    'Forget cached table handles and ANN indices after dropping stores.'
+    'Forget the cached table objects and HNSW indexes for one store, or all of them, after dropping tables.'
     if store is None: self.ensured.clear(); self.ann_indices.clear(); return
     for k in [k for k in self.ensured if k[1] == store]: del self.ensured[k]
     self.ann_indices.pop(store, None)
@@ -134,7 +129,7 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
                rows,           # dicts of scalars, upserted on `pk`
                pk,             # primary-key column name or tuple of them
                chunk=2000):    # rows per `executemany` batch
-    'Upsert rows with one prepared statement instead of two per row.'
+    'Insert rows, updating any whose `pk` already exists, with one prepared statement per batch.'
     from apswutils.db import jsonify_if_needed as _j
     rows = list(rows)
     if not rows: return 0
@@ -153,20 +148,20 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
 @patch
 def get_store(self:Database,        # database connection
             name:str='store',       # table name
-            hash:bool=False,        # whether to create hash index on content
-            ann:bool=False,         # also register a usearch HNSW index (sidecar) for this store
+            hash:bool=False,        # make `id` a SHA-1 hash of the content, so the same text is stored once
+            ann:bool=False,         # also keep a usearch HNSW index for this store, in a file beside the database
             ndim:int=None,          # embedding dims for the ANN index (inferred on first sync if None)
             metric:str='cosine',    # ANN distance metric (cosine,inner,sqeuclidean,divergence)
-            dtype=np.float16,       # ANN vector dtype
+            dtype=np.float16,       # number type of the stored vectors, recorded for the HNSW index
             connectivity:int=None,  # HNSW connectivity (usearch default if None)
             expansion_add:int=None, # HNSW add expansion
             expansion_search:int=None, # HNSW search expansion
             index_path:str=None,    # sidecar path (defaults to <db>.<name>.usearch; None db -> in-memory)
-            tokenize:str=None,      # FTS5 tokenizer (default: apsw unicodewords chain, else 'porter')
+            tokenize:str=None,      # FTS5 tokenizer chain (default: litesearch's cross-script chain, or 'porter' if it cannot be built)
             encoder:str=None,       # the encoder whose vectors this store holds (`encoder_id`); checked on reopen
             **kw,                   # additional args to pass to fastlite create
 ):
-    'Create an FTS5 store with optional content hashes and a usearch HNSW index.'
+    'Create or open a store: a table of content, embedding and metadata with an FTS5 index, and optionally an HNSW index.'
     key = ('store', name, bool(hash), bool(ann))
     if key in self.ensured: return self.ensured[key]
     cols = dict(content=str, embedding=bytes, metadata=str, uploaded_at=float,defaults=dict(uploaded_at='CURRENT_TIMESTAMP'),pk='id')
@@ -185,12 +180,12 @@ STORE_STAMP = ('encoder', 'tokenize')
 
 @patch
 def _store_meta(self:Database, name:str):
-    'What wrote this store, or None when the store predates the stamp.'
+    'The encoder and tokenizer recorded for store `name`, or None for a store created before litesearch recorded them.'
     return first(self.t.store_meta(where=f'name={name!r}')) if 'store_meta' in self.t else None
 
 @patch
 def _stamp_store(self:Database, name:str, **kw):
-    'Record the encoder and tokenizer a store was created with; raise when a reopen disagrees.'
+    'Record the encoder and tokenizer a store was created with, and raise `StoreMismatch` when a reopen names different ones.'
     self.t.store_meta.create(name=str, encoder=str, tokenize=str, created_at=float, pk='name',
                              if_not_exists=True, defaults=dict(created_at='CURRENT_TIMESTAMP'))
     now, was = {k: str(kw.get(k) or '') for k in STORE_STAMP}, self._store_meta(name)
@@ -207,7 +202,7 @@ def _stamp_store(self:Database, name:str, **kw):
 @patch
 def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.float16,
                   connectivity=None, expansion_add=None, expansion_search=None, index_path=None):
-    'Create the usearch_indices registry (if needed) and record this ANN store. Idempotent.'
+    'Record store `name`\'s HNSW index settings in the `usearch_indices` table, creating the table if needed.'
     self.t.usearch_indices.create(name=str, path=str, ndim=int, metric=str, dtype=str, connectivity=int,
         expansion_add=int, expansion_search=int, created_at=float, pk='name', if_not_exists=True,
         defaults=dict(created_at='CURRENT_TIMESTAMP'))
@@ -218,20 +213,20 @@ def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.floa
 
 @patch(as_prop=True)
 def ann_indices(self:Database):
-    'Per-connection cache of loaded usearch Index objects, keyed by store name.'
+    'The HNSW indexes loaded on this connection, keyed by store name.'
     if not hasattr(self, '_ann_indices'): self._ann_indices = {}
     return self._ann_indices
 
 @patch
 def _ann_meta(self:Database, name):
-    'Registry row for an ANN store, or None if not registered.'
+    'The `usearch_indices` row for store `name`, or None when it has no HNSW index.'
     return first(self.t.usearch_indices(where=f'name={name!r}')) if 'usearch_indices' in self.t else None
 
 @patch
 def get_index(self:Database,        # database connection
               name:str='ann_store', # ANN store name
               load:bool=True):      # load the sidecar file if present
-    'Build (and cache) the usearch Index for an ANN store. Requires a known ndim.'
+    'The usearch HNSW index for store `name`, loaded from its file when there is one, and cached on the connection.'
     if name in self.ann_indices: return self.ann_indices[name]
     from usearch.index import Index
     m = self._ann_meta(name)
@@ -246,7 +241,7 @@ def get_index(self:Database,        # database connection
 
 @patch
 def _save_index(self:Database, name):
-    'Persist the in-memory Index to its sidecar path (no-op for in-memory dbs).'
+    'Save store `name`\'s HNSW index to its file, when the database is on disk.'
     m = self._ann_meta(name)
     if m and m['path'] and name in self.ann_indices: self.ann_indices[name].save(m['path'])
 
@@ -263,13 +258,13 @@ def fts_search(self:Table,
                quote:bool=False, # quote FTS query to disable special chars
                include_rank:bool=True # include rank column
                ) -> list:
-    'FTS search on any table with FTS5 enabled.'
+    'Run an FTS5 query on any table with a full-text index, best bm25 rank first unless `order_by` says otherwise.'
     fts_q = self.db.quote_fts(q) if quote else q
     sql = self.search_sql(columns,order_by,limit,offset,where,include_rank)
     return self.db.q(sql, merge(dict(query=fts_q), where_args or {}))
 
 def _dtype_check(tbl, dtype, rows):
-    'Warn when `dtype` cannot be the dtype these vectors were stored as.'
+    'Return `rows`, warning when `dtype` cannot be the type the vectors were stored as.'
     want = _dtype_suffix(dtype)
     m = tbl.db._ann_meta(tbl.name)
     if m and m['dtype'] and m['dtype'] != want:
@@ -294,7 +289,7 @@ def vec_search(self: Table,
                limit: int | None = 50,        # max results
                offset: int | None = None,     # offset for pagination
                ) -> list:
-    "Vector similarity search on any table with an embedding column."
+    "Exact vector search on any table with an embedding column: the distance to every row, nearest first."
     dist = f'distance_{emb_metric}_{_dtype_suffix(dtype)}({emb_col}, :qvec)'
     sel_cols = [f'{c} as {c}' if c == 'rowid' else c for c in columns] if columns else ['*']
     sel = ','.join(sel_cols) + f', {dist} as _dist'
@@ -314,7 +309,7 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
                where:str=None,        # additional where clause
                where_args:dict=None,  # args for where clause
                dtype=np.float16):      # embedding dtype
-    'HNSW ANN search via the store\'s usearch Index. Returns rows (+`_dist`) ordered by similarity.'
+    'Approximate vector search through the store\'s HNSW index, nearest rows first, each with its distance in `_dist`.'
     m = self.db._ann_meta(self.name)
     if not (m and m['ndim']): return []
     idx = self.db.get_index(self.name)
@@ -332,12 +327,12 @@ def ann_search(self:Table,          # store table (must be ANN-registered)
 
 @patch
 def _idx_remove(self:Table, idx, keys):
-    'Remove the keys that the index actually contains (usearch remove is not a no-op on absent keys).'
+    'Remove those of `keys` that the index holds, since usearch\'s remove does not ignore absent keys.'
     if (present := [k for k in keys if idx.contains(k)]): idx.remove(np.array(present, dtype=np.int64))
 
 @patch
 def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16, save=True):
-    'Apply adds (by id) / removes (by rowid) to the ANN index from current blobs; infer+persist ndim; save.'
+    'Add the rows with ids `add_ids` to the HNSW index and remove rowids `rm_rowids`, recording the vector length on first use.'
     with db_lock(self.db):
         m = self.db._ann_meta(self.name)
         if rm_rowids and m['ndim']: self._idx_remove(self.db.get_index(self.name), rm_rowids)
@@ -363,7 +358,7 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
          force:bool=False,      # treat all content as new (skip diff)
          parallel:bool=False,   # deprecated no-op; concurrent writers need database(busy_timeout=...)
          chunk:int=5_000):      # rows per write transaction
-    'Smart hash-diff update: delete stale rows, embed+upsert changed, mirror into the ANN index. Returns {changed,same,removed}.'
+    'Make the store hold `content`: delete rows no longer present, embed and add new ones, update the HNSW index, and return the counts.'
     with db_lock(self.db):
         content = L(content).filter(lambda d: d.get('content') and d['content'].strip())
         cont_hash = {content_id(d['content']): d for d in content}
@@ -385,7 +380,7 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
 
 @patch
 def rebuild_index(self:Table, dtype=None):
-    'Rebuild the ANN Index from scratch using the embedding blobs in SQLite. Returns index size.'
+    'Rebuild the HNSW index from the embeddings stored in the table and return the number of vectors in it.'
     with db_lock(self.db):
         m = self.db._ann_meta(self.name)
         assert m, f'{self.name!r} is not an ANN store'
@@ -409,7 +404,7 @@ def rebuild_index(self:Table, dtype=None):
 @patch
 @contextmanager
 def bulk_load(self:Table):
-    "Suspend this table's FTS5 triggers for a bulk insert, then rebuild the index once."
+    "Remove this table's FTS5 triggers for the block, then restore them and rebuild the full-text index once."
     with db_lock(self.db):
         ft = self.detect_fts()
         q = f"select name, sql from sqlite_master where type='trigger' and tbl_name={self.name!r}"
@@ -427,7 +422,7 @@ def bulk_load(self:Table):
 def ann_vec(self:Table,          # ANN-registered store
             key:int,             # usearch key (the row's rowid)
             dtype=np.float16):   # fallback dtype when the registry has none
-    'The vector the index already holds for `key`, or None when the key is not indexed.'
+    'The vector the HNSW index holds for `key`, or None when the index does not hold it.'
     m = self.db._ann_meta(self.name)
     if not (m and m['ndim']): return None
     idx = self.db.get_index(self.name)
@@ -443,7 +438,7 @@ def ann_neighbors(self:Table,             # ANN-registered store
                   where_args:dict=None,   # args for where clause
                   include_self:bool=False,# keep the anchor row in the results
                   dtype=np.float16):      # embedding dtype
-    'Rows nearest an already-indexed row — "what else looks like this".'
+    'The rows nearest an already-indexed row, found from the vector the HNSW index holds for it.'
     v = self.ann_vec(key, dtype)
     if v is None: return []
     rows = self.ann_search(v.tobytes(), columns, limit + (0 if include_self else 1), where, where_args, dtype)
@@ -457,7 +452,7 @@ def rrf_all(lists,            # ranked result lists to fuse
             id_key='rowid',   # the key rows are joined on
             weights=None      # one weight per list; None means all equal
 ) -> list:
-    'Reciprocal Rank Fusion over any number of ranked lists. A row in two lists outranks a row in one.'
+    'Merge any number of ranked lists into one with Reciprocal Rank Fusion, highest combined score first.'
     ws, scores = weights or [1.0]*len(lists), {}
     for lst, w in zip(lists, ws):
         for rank, row in enumerate(lst or []):
@@ -467,12 +462,12 @@ def rrf_all(lists,            # ranked result lists to fuse
     return sorted(scores.values(), key=lambda r: -r['_rrf_score'])[:limit]
 
 def rrf_merge(fts, vec, k=60, limit=50, id_key='rowid') -> list:
-    'Two-list `rrf_all`. Deprecated: call `rrf_all` directly.'
+    'Deprecated two-list form of `rrf_all`.'
     return rrf_all([fts, vec], k=k, limit=limit, id_key=id_key)
 
 # %% ../nbs/01_core.ipynb #d4511361
 class Rows:
-    'A statement read to its end under the connection lock, with the apsw cursor surface apswutils uses.'
+    'The rows of one statement, read in full under the connection lock, behind the cursor methods apswutils calls.'
     def __init__(self, cur, conn):
         try: self._d = cur.get_description()
         except apsw.ExecutionCompleteError: self._d = None   # no result columns: a write, a pragma that sets
@@ -495,7 +490,7 @@ class Rows:
     def close(self, force=False): pass
 
 class Cur:
-    '`Conn.cursor()`: each execute runs, and is read, under the connection lock.'
+    'The cursor `Conn.cursor()` returns, whose statements run and are read under the connection lock.'
     def __init__(self, conn): self.connection, self._r, self.row_trace = conn, None, None
     def _keep(self, r): r.row_trace, self._r = self.row_trace, r; return r
     def execute(self, *a, **k): return self._keep(self.connection.execute(*a, **k))
@@ -506,11 +501,11 @@ class Cur:
     def close(self, force=False): pass
 
 class Conn:
-    'An apsw connection threads share one at a time through `lock`, held while a thread has a transaction open.'
+    'An apsw connection that threads take turns on through `lock`, which a thread keeps while its transaction is open.'
     _own = 'raw', 'lock', '_tx', 'filename'
     def __init__(self, c): self.raw, self.lock, self._tx, self.filename = c, threading.RLock(), False, c.filename
     def _settle(self):
-        "Release this call's hold; keep one while a transaction is open on this thread, and drop it once that ends."
+        "Release the lock after a call, keeping one hold while this thread has a transaction open."
         try: tx = not self.raw.getautocommit()
         except apsw.ConnectionClosedError: tx = False
         if tx and not self._tx: self._tx = True; return
@@ -526,7 +521,7 @@ class Conn:
     def __enter__(self): self._do(self.raw.__enter__); return self
     def __exit__(self, *a): return self._do(self.raw.__exit__, *a)
     def backup(self, name, src, sname):
-        'A backup into this connection; each step holds this connection and `src`, since apsw marks both busy while it copies.'
+        'A backup from `src` into this connection, holding both connections\' locks during each step.'
         return _Backup(self._do(self.raw.backup, name, getattr(src, 'raw', src), sname), self, src)
     def __getattr__(self, k):
         v = self._do(getattr, self.raw, k)
@@ -537,7 +532,7 @@ class Conn:
     def __repr__(self): return f'<Conn {self.filename}>'
 
 class _Backup:
-    'A backup whose calls hold the destination, and whose steps hold the source too.'
+    'A backup whose calls hold the destination connection\'s lock, and whose steps also hold the source\'s.'
     def __init__(self, b, dst, src): self._b, self._dst, self._src = b, dst, src
     def step(self, n=-1):
         return self._dst._do(self._src._do, self._b.step, n) if isinstance(self._src, Conn) else self._dst._do(self._b.step, n)
@@ -551,11 +546,11 @@ class _Backup:
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
              sem_search:bool=True,          # enable usearch extensions
-             busy_timeout:int=None,         # ms to wait on a locked db; None = apsw default. Set for parallel ingestion
+             busy_timeout:int=None,         # ms to wait for a locked database (None: apsw's 100 ms); set it when several connections write
              shared:bool=False,             # wrap the connection in `Conn` so threads can share it
              **kw,                          # additional args to pass to apswutils database
              ) -> Database:
-    'Set up a database connection and load usearch extensions.'
+    'Open a SQLite database with litesearch\'s FTS5 tokenizers registered and usearch\'s vector distance functions loaded.'
     if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     # apsw runs its bestpractice hook (100ms timeout, then `PRAGMA optimize`) *during* Connection
     # construction, so the window has to span the open -- retuning afterwards is already too late.
@@ -582,7 +577,7 @@ def _fts_q(t): return '"' + str(t).replace('"', '""') + '"'
 def fts_or(terms,       # terms or phrases; each is quoted
            column=None  # a column name or a list of them to restrict the match to
           ) -> str:
-    "An FTS5 MATCH string OR-ing every term as a quoted phrase."
+    "An FTS5 query matching rows that contain any of `terms`, each quoted so it is matched as text."
     q = ' OR '.join(map(_fts_q, dict.fromkeys(t for t in terms if t and str(t).strip())))
     if not q or not column: return q
     cs = _fts_q(column) if isinstance(column, str) else '{' + ' '.join(map(_fts_q, column)) + '}'
@@ -591,7 +586,7 @@ def fts_or(terms,       # terms or phrases; each is quoted
 def fts_and(terms,             # terms or phrases; each is quoted
             prefix_last=False  # the last term also matches as a prefix, as a reader types
            ) -> str:
-    "An FTS5 MATCH string AND-ing every term as a quoted phrase."
+    "An FTS5 query matching rows that contain all of `terms`, each quoted so it is matched as text."
     ts = list(dict.fromkeys(t for t in terms if t and str(t).strip()))
     return ' AND '.join(_fts_q(t) + ('*' if prefix_last and i == len(ts) - 1 else '') for i, t in enumerate(ts))
 
@@ -599,13 +594,13 @@ def fts_phrases(terms,       # terms, each followed by every suffix
                 suffixes,    # words that follow a term: `('is', 'means')` finds definitions
                 column=None  # a column name or a list of them
                ) -> str:
-    "An FTS5 MATCH string OR-ing the phrase `term suffix` for every pair."
+    "An FTS5 query matching rows that contain any phrase `term suffix`, for every term and suffix."
     return fts_or([f'{t} {s}' for t in terms for s in suffixes], column)
 
 # %% ../nbs/01_core.ipynb #2becd38f4dfb
 @patch
 def fts_vocab(self:Table) -> dict:
-    "Every term in this table's FTS index: `{term: (documents, occurrences)}`."
+    "Every term in this table's full-text index, as `{term: (rows containing it, occurrences)}`."
     fts, c = self.detect_fts(), self.db.__dict__.setdefault('_fts_vocabs', {})
     stamp = (self.db.conn.total_changes(), self.db.q('pragma data_version')[0]['data_version'])
     if fts in c and c[fts][0] == stamp: return c[fts][1]
@@ -618,7 +613,7 @@ _TOKENIZE_RE = re.compile(r"""tokenize\s*=\s*(['"])(.*?)\1""", re.I | re.S)
 
 @patch
 def fts_tokens(self:Table, text:str) -> list:
-    "`text` as this table's FTS index tokenizes it: a tuple of colocated tokens per position, the first unfolded."
+    "The tokens this table's full-text index makes from `text`: one tuple per position, the unfolded token first."
     fts, c = self.detect_fts(), self.db.__dict__.setdefault('_fts_toks', {})
     if fts not in c:
         m = _TOKENIZE_RE.search(self.db.q('select sql from sqlite_master where name=?', [fts])[0]['sql'])
@@ -629,18 +624,18 @@ def fts_tokens(self:Table, text:str) -> list:
 # %% ../nbs/01_core.ipynb #307f60f7
 @patch
 def fts_sig(self:Table) -> str:
-    "A signature of this table's FTS index that every write to it moves, from any process; `''` without one."
+    "A short hash of this table's full-text index that changes on every write to it from any process, or `''` without an index."
     if not (f := self.detect_fts()): return ''
     r = self.db.q(f'select block from [{f}_data] where id=10')
     return hashlib.md5(r[0]['block'] if r else b'').hexdigest()[:16]
 
 @patch
 def fts_merge(self:Table):
-    "Merge this table's FTS index into one segment."
+    "Merge this table's full-text index into one segment, which makes queries faster after many small writes."
     if (f := self.detect_fts()): self.db.execute(f"insert into [{f}]([{f}]) values('optimize')")
 
 def no_open_optimize():
-    "Stop apsw running `PRAGMA optimize` as a connection opens, for every connection this process opens after."
+    "Stop apsw running `PRAGMA optimize` when a connection opens, for every connection this process opens afterwards."
     for h in apsw.connection_hooks:
         for c in getattr(h, '__closure__', None) or ():
             if isinstance(hs := c.cell_contents, list) and apsw.bestpractice.connection_optimize in hs: hs.remove(apsw.bestpractice.connection_optimize)
@@ -659,7 +654,7 @@ def rank_fts(hits,              # FTS rows, or a list of lists of them, one per 
              rank_col='rank',   # bm25 column, lower is better
              drop=False         # leave out hits holding none of the terms
             ) -> list:
-    "Order FTS hits by query terms held, then their summed IDF, then bm25 against the best of their own list."
+    "Order FTS hits by how many query terms they contain, then those terms' summed IDF, then bm25 relative to the best hit in their list."
     lists, keys, df = (hits if hits and isinstance(hits[0], list) else [hits]), keys or _word_keys, df or {}
     ts = [{t} if isinstance(t, str) else set(t) for t in terms]
     n = ifnone(n, sum(map(_docs, df.values())))
@@ -680,7 +675,7 @@ def _swapped(a, b):
     return len(a) == len(b) and a != b and a[i+2:] == b[i+2:] and a[i:i+2] == b[i:i+2][::-1]
 
 def _within(a, b, k):
-    "Whether the optimal string alignment distance between `a` and `b` is at most `k`."
+    "Whether `a` becomes `b` in at most `k` insertions, deletions, substitutions or adjacent swaps."
     if abs(len(a) - len(b)) > k: return False
     pp, p = None, list(range(len(b) + 1))
     for i in range(1, len(a) + 1):
@@ -700,7 +695,7 @@ def correct(word,        # a query word, folded the way `vocab`'s terms are
             top=2,       # corrections returned
             skeleton=False # also terms of five letters or more sharing `word`'s consonant skeleton
            ) -> list:
-    "The index terms `word` may be a typo of, most frequent first: `[word]` when it is indexed."
+    "The index terms `word` may be a misspelling of, most frequent first, or `[word]` when it is indexed."
     if word in vocab: return [word]
     fq = vocab if isinstance(vocab, dict) else dict.fromkeys(vocab, 0)
     pool = [t for t in fq if t[:1] == word[:1]]
@@ -712,18 +707,18 @@ def correct(word,        # a query word, folded the way `vocab`'s terms are
 # %% ../nbs/01_core.ipynb #571724f3bc9bcf44
 RERANK_FANOUT, _RERANKERS = 30, {}
 def _flashrank():
-    "flashrank, which only reranking wants. Retrieval needs none of it."
+    "Import flashrank, raising an ImportError that says how to install it."
     try: import flashrank; return flashrank
     except ImportError as e: raise ImportError('reranking needs flashrank: pip install flashrank') from e
 
 def _get_reranker(model=None):
-    'Cached flashrank Ranker (default: fast ms-marco-TinyBERT-L-2-v2).'
+    'A flashrank Ranker for `model`, cached, defaulting to flashrank\'s ms-marco-TinyBERT-L-2-v2.'
     Ranker, key = _flashrank().Ranker, model or 'default'
     if key not in _RERANKERS: _RERANKERS[key] = Ranker(model_name=model) if model else Ranker()
     return _RERANKERS[key]
 
 def rerank_hits(q, hits, model=None, limit=None, text_col='content'):
-    'Reorder search hits by a flashrank cross-encoder on (q, hit[text_col]); returns the top `limit`.'
+    'Reorder `hits` by a flashrank cross-encoder\'s score for `q` against each hit\'s `text_col`, keeping the top `limit`.'
     if not hits: return hits
     passages = [{'id':i, 'text':h.get(text_col) or ''} for i,h in enumerate(hits)]
     ranked = _get_reranker(model).rerank(_flashrank().RerankRequest(query=q, passages=passages))
@@ -743,19 +738,19 @@ def search(self: Database,  # database connection
            table_name='store',  # table name
            emb_col='embedding',  # embedding column name
            emb_metric:str='cosine',  # embedding distance metric (cosine,sqeuclidean,inner,divergence)
-           rrf=True,  # rerank results with reciprocal rank fusion
+           rrf=True,  # merge the two lists with RRF; False returns {'fts': [...], 'vec': [...]}
            rrf_k:int=60,  # RRF k parameter
            dtype=np.float16,  # embedding dtype
            id_key:str='rowid',  # key to join RRF results on
            quote:bool=True,  # quote FTS query to disable special chars (ignored when fts_pre=True)
            fts_pre:bool=True,  # send the FTS leg through `pre()`: keywords, wildcards, OR
-           ann:bool=False,  # use the HNSW ANN index for the vector leg falls back to the exact vec scan when `where` is set
-           reranking:bool=False,  # rerank the merged (rrf) hits with a flashrank cross-encoder
+           ann:bool=False,  # use the HNSW index for the vector leg; with `where` set, the exact scan is used instead
+           reranking:bool=False,  # reorder the merged hits with a flashrank cross-encoder (needs rrf=True)
            rerank_model:str=None,  # flashrank model name (None -> fast default)
            term_rank:bool=False,  # reorder the FTS leg by `rank_fts`: query terms held, their rarity, then bm25
            fts_depth:int=None  # FTS candidates read before `term_rank` keeps the best `limit`; None means `limit`
            ):
-    'Search the litesearch store with fts and vector search combined.'
+    'Hybrid search on a store: run the FTS5 and vector legs and merge them with RRF, or return both lists.'
     if not q.strip(): return None
     tbl = self.t[table_name]
     cols = list(columns or [])

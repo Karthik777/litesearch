@@ -16,13 +16,10 @@ DTYPE, HIT_COLS = np.float16, ['content', 'metadata', 'node_id', 'page', 'headin
 
 # %% ../nbs/07_api.ipynb #9e17018e0b48
 class Index:
-    '''A corpus you can search: ingest files, code or text, then query with a string.
-
-    Every default is what `evals/` measures as best or tied-best across three genres. All of them
-    are overridable, and `self.db` is the plain `database()` underneath.'''
+    "A searchable collection: add files, code or text, then query it with a string."
     def __init__(self,
                  path=':memory:',     # sqlite file; omit for in-memory
-                 encoder=None,        # anything `doc_encoder` takes (default: static potion-multilingual-128M)
+                 encoder=None,        # an object with `.encode`, or a `FastEncode` (default: static potion-multilingual-128M)
                  name:str='store',    # chunk table, if you want several corpora in one file
                  ann:bool=True,       # maintain an HNSW index for the vector leg
                  db=None,             # an open Database to share, for several corpora in one file
@@ -35,18 +32,18 @@ class Index:
         self.store = self.t.store
 
     def emb(self, texts) -> np.ndarray:
-        'Document vectors, cast to the dtype the store actually holds.'
+        'Embed `texts` as documents, as float16 vectors, the type the store holds.'
         return np.asarray(self._doc(list(texts)), dtype=DTYPE)
 
     def qemb(self, q:str) -> bytes:
-        'One query vector, as the bytes the low-level `search` wants.'
+        'Embed one query and return it as float16 bytes, the form the lower-level search functions take.'
         return np.asarray(self._qry([q]), dtype=DTYPE)[0].tobytes()
 
     def __len__(self): return self.db.q(f'select count(*) as n from [{self.name}]')[0]['n']
 
     @property
     def docs(self) -> list:
-        'One row per ingested document — title, source, kind, pages.'
+        'One row per document added, with its id, title, source, kind and page count.'
         return list(self.t.docs())
 
     def __repr__(self):
@@ -56,7 +53,7 @@ class Index:
 def _texts(src) -> list: return [src] if isinstance(src, str) else list(src)
 
 def _title(t:str, i:int, n:int=60) -> str:
-    'First non-empty line, trimmed — so `toc()` over raw strings still reads like a listing.'
+    'The first non-empty line of `t`, cut to `n` characters, used as the title of a document added as text.'
     ln = next((l.strip() for l in (t or '').splitlines() if l.strip()), '')
     return ln[:n] or f'text-{i+1}'
 
@@ -66,7 +63,7 @@ def add(self:Index,
         types:str=DOC_EXTS,     # extensions to pick up when `src` is a directory
         **kw                    # forwarded to add_dir / add_file / add_doc
         ) -> int:
-    'Ingest documents or text. Returns the number of chunks the store gained.'
+    'Add documents or text to the index and return the number of chunks the store gained.'
     before = len(self)
     if isinstance(src, (str, Path)) and Path(src).exists():
         p = Path(src)
@@ -84,7 +81,7 @@ def add_code(self:Index,
              src,       # a source directory, or an installed package name
              **kw       # forwarded to dir2chunks / pkg2chunks
              ) -> int:
-    'Ingest source code through the AST path — top-level functions, classes and assignments.'
+    'Add the source code in a directory or installed package, cut at top-level definitions, and return the number of chunks written.'
     chunks = dir2chunks(str(src), **kw) if Path(src).exists() else pkg2chunks(str(src), **kw)
     rows = [dict(content=c['content'], metadata=str(c.get('metadata') or {}))
             for c in chunks if (c.get('content') or '').strip()]
@@ -100,11 +97,11 @@ def add_code(self:Index,
 def search(self:Index,
            q:str,                # query string
            limit:int=10,         # hits to return
-           rerank:bool=False,    # reorder with a flashrank cross-encoder (see above)
+           rerank:bool=False,    # reorder the top 30 candidates with a flashrank cross-encoder
            where:str=None,       # SQL over the chunk store, to search part of it
            **kw                  # forwarded to Database.doc_search
            ) -> list:
-    'Hybrid keyword + vector search: `doc_search`, so hits are span-merged and carry a breadcrumb.'
+    'Hybrid keyword and vector search, returning chunks with neighbouring hits merged and a breadcrumb on each.'
     if not (q or '').strip(): return []
     cols = list(dict.fromkeys(HIT_COLS + (kw.pop('columns', None) or [])))
     return self.db.doc_search(q, self.qemb(q), columns=cols, store=self.name, limit=limit,
@@ -113,7 +110,7 @@ def search(self:Index,
 # %% ../nbs/07_api.ipynb #4a3bded13bfd
 @patch
 def toc(self:Index, doc:str=None, **kw) -> list:
-    'The corpus as a nested tree of titles and page ranges. Touches no embeddings.'
+    'The collection as nested tables of contents, one per document, with titles and page ranges.'
     return self.db.toc(doc, store=self.name, **kw)
 
 @patch
@@ -122,7 +119,7 @@ def sections(self:Index,
              limit:int=5,      # sections to return
              where:str=None,   # SQL over the chunk store, to search part of it
              **kw) -> list:
-    'Ranked sections rather than chunks, each with snippets and a `read` handle.'
+    'The sections that best match `q`, each with snippets and the `node_id` to pass to `read`.'
     return self.db.sections(q, self.qemb(q), limit=limit, store=self.name, where=where, **kw)
 
 @patch
@@ -130,7 +127,7 @@ def read(self:Index,
          node_id:str,
          store:str=None,    # the store the node is in; None -> this one
          **kw) -> dict:
-    'One whole section, reassembled — the unit to hand a model instead of fragments.'
+    'The full text of section `node_id`, with its title, breadcrumb, pages and child sections.'
     return self.db.read(node_id, store=store or self.name, **kw)
 
 @patch
@@ -138,5 +135,5 @@ def context(self:Index,
             q:str,
             where:str=None,    # SQL over the chunk store, applied to every retrieval leg
             **kw) -> dict:
-    'Operative sections plus what they connect to, composed for a prompt.'
+    'The sections that best answer `q` with their text and tree position, plus related sections, for a prompt.'
     return self.db.context(q, self.qemb(q), store=self.name, where=where, **kw)

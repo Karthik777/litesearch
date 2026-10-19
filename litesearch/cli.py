@@ -11,9 +11,9 @@ from .data import mv_skill_md
 # %% ../nbs/04_cli.ipynb #d4e5f6a7
 @call_parse
 def install(
-    dir: str = None  # target repo root (default: cwd)
+    dir: str = None  # folder to install into; defaults to the current git repository's root, else the current folder
 ):
-    'Install SKILL.md to .agents/, .claude/, .Codex/ skill directories.'
+    'Copy the bundled SKILL.md into the .agents, .claude and .Codex skill folders under `dir`.'
     mv_skill_md(dry_run=False, dir=dir)
 
 CMDS = {'install': install}

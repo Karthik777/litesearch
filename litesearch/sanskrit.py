@@ -27,19 +27,19 @@ _CONS  = {'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'n','च':'c','छ':'c
           'क़':'k','ख़':'kh','ग़':'g','ज़':'z','ड़':'d','ढ़':'dh','फ़':'f','य़':'y'}
 _MATRA = {'ा':'a','ि':'i','ी':'i','ु':'u','ू':'u','ृ':'r','ॄ':'r','ॢ':'l','ॣ':'l',
           'े':'e','ै':'ai','ो':'o','ौ':'au','ॅ':'e','ॆ':'e','ॉ':'o','ॊ':'o'}
-# `ꣳ`/`ꣲ`/`꣰` are the Vedic candrabindu signs — a nasal, not an accent, so they fold to `m` and
+# `ꣳ`/`ꣲ`/`꣰` are Vedic candrabindu signs: a nasal, not an accent, so they fold to `m` and
 # line up with the `ṃ` an IAST edition of the same line prints.
 _SIGN  = {'ं':'m','ः':'h','ँ':'m','ऽ':'', '़':'', 'ꣲ':'m','ꣳ':'m','ꣴ':'m','ꣵ':'m','ꣶ':'m','ꣷ':'m'}
 VIRAMA = '्'
 DEVA_DIGITS = {chr(0x966+i): str(i) for i in range(10)}
 
 def strip_vedic(s:str) -> str:
-    'Drop Vedic tone marks from Devanagari, leaving Latin diacritics alone. NFC out.'
+    'Remove Vedic tone marks from Devanagari text, leave Latin diacritics alone, and return NFC-normalised text.'
     if not s: return ''
     return unicodedata.normalize('NFC', VEDIC_MARKS.sub('', unicodedata.normalize('NFD', s)))
 
 def deva2ascii(s:str) -> str:
-    'Devanagari to a bare ASCII key, applying the implicit `a` of an unmarked consonant.'
+    'Transliterate Devanagari to plain ASCII letters, adding the `a` a consonant carries when no vowel sign or virama follows it.'
     out, i, n = [], 0, len(s)
     while i < n:
         ch = s[i]
@@ -59,14 +59,14 @@ def deva2ascii(s:str) -> str:
     return ''.join(out)
 
 def _latn_fold(s:str) -> str:
-    'IAST/ISO to ASCII — the same folding `simplify casefold` already applies to a Latin token.'
+    'Strip diacritics from IAST or ISO 15919 text and lowercase it.'
     d = unicodedata.normalize('NFD', s)
     return ''.join(c for c in d if unicodedata.category(c) != 'Mn').lower()
 
 DEVANAGARI = re.compile('[ऀ-ॿ᳐-᳹꣠-ꣿ]')
 
 def detect_script(s:str) -> str:
-    "`'deva'`, `'latn'` or `'other'` — enough to pick a folding path."
+    "Return `'deva'` when Devanagari letters are at least as many as Latin ones, `'latn'` when there are Latin letters, else `'other'`."
     if not s: return 'other'
     d = len(DEVANAGARI.findall(s))
     l = sum(1 for c in s if 'a' <= c.lower() <= 'z' or unicodedata.category(c) == 'Ll')
@@ -75,14 +75,7 @@ def detect_script(s:str) -> str:
 
 @lru_cache(maxsize=1<<16)
 def fold_token(s:str) -> str:
-    '''The ASCII index key for one token, whatever script it arrived in.
-
-    Cached because it is called once per token per FTS write *and* per query, and a corpus is a
-    small vocabulary repeated: 70,413 tokens of the eval corpus are 4,153 distinct strings, so
-    94% of the calls are asking a question that has already been answered. It is three unicode
-    normalisations and a per-character category scan deep, which is why it was a third of the cost
-    of indexing a corpus with no Sanskrit in it at all. Pure function of `s`, so the cache is only
-    ever a memo — same output, 5.5x fewer of them computed.'''
+    'Fold one token, in Devanagari or Latin script, to its lowercase ASCII index key.'
     s = strip_vedic(s)
     return _latn_fold(deva2ascii(s) if DEVANAGARI.search(s) else s)
 
@@ -97,7 +90,7 @@ def roman_fold(s:str,
                endings:bool=False,  # an English plural or past ending off, leaving three letters: duties and duty
                numbers:bool=False   # a number by its value: 02 and 2
               ) -> str:
-    "`fold_token` plus plain-English spellings: sh/ṣ/ś to s, th/ṭh to t, ee/ī to i, oo/ū to u, aa/ā to a, w to v."
+    "Fold a token like `fold_token`, then also match plain-English spellings, so `Bheeshma` and `भीष्म` both give `bisma`."
     k = _VOCALIC_R.sub('r', fold_token(s).replace('w', 'v'))
     k = _LONG.sub(r'\1', _ASPIRATE.sub('', k).replace('ee', 'i').replace('oo', 'u'))
     if doubles: k = _DOUBLE.sub(r'\1', k)
@@ -105,7 +98,7 @@ def roman_fold(s:str,
     return str(int(k)) if numbers and k.isdigit() else k
 
 def skeleton(k:str) -> str:
-    "A folded word's first letter and its consonants in order, doubles single: saundarya and soundarya share `sndry`."
+    "Keep a folded word's first letter and its later consonants, with repeats collapsed, so `saundarya` and `soundarya` both give `sndr`."
     return k[:1] + re.sub(r'(.)\1+', r'\1', re.sub('[aeiouy]', '', k[1:]))
 
 
@@ -113,7 +106,7 @@ def skeleton(k:str) -> str:
 SANSKRIT_TOKENIZE = 'sanskrit'
 
 def sanskrit_tokenizer(con, args):
-    'A *wrapping* FTS5 tokenizer that folds Sanskrit so a query matches regardless of script.'
+    'Build an FTS5 tokenizer that wraps another and adds each token\'s folded keys beside it, so a query matches in any script.'
     import apsw.fts5
     rest = [a for a in args if '=' not in a]
     opts = dict(a.split('=', 1) for a in args if '=' in a)
@@ -130,7 +123,7 @@ def sanskrit_tokenizer(con, args):
     return tok
 
 def register_sanskrit(db):
-    "Register the `sanskrit` FTS5 tokenizer on a connection. Idempotent."
+    "Register the `sanskrit` FTS5 tokenizer on a connection; calling it again does nothing."
     conn = getattr(db, 'conn', db)
     try: conn.register_fts5_tokenizer(SANSKRIT_TOKENIZE, sanskrit_tokenizer)
     except Exception: pass
@@ -139,7 +132,7 @@ def register_sanskrit(db):
 # %% ../nbs/09_sanskrit.ipynb #d8c7d1ffd895
 CITE_RE = re.compile(r'(?:\|\||//)\s*([A-Za-zĀ-ſ]+)[_\s.]([\d,.\-]+[a-z]?(?:\[[^\]\n]{0,16}\])?)\s*(?:\|\||//)')
 def cite_parts(c:str) -> tuple:
-    "`'BrhUp_1,1.2'` -> `('BrhUp', ['1','1','2'])` — the siglum and its hierarchy."
+    "Split a citation into its siglum and its levels: `'BrhUp_1,1.2'` gives `('BrhUp', ['1','1','2'])`."
     c = re.sub(r'\[[^\]]*\]', '', (c or '')).strip()   # drop a `[57M]` alternate-edition number
     m = re.match(r'([^\s_]+)[_\s]([\d,.\-]+[a-z]?)$', c) or re.match(r'([A-Za-zĀ-ſ]+)[.]([\d,.\-]+[a-z]?)$', c)
     if not m: return (c, [])

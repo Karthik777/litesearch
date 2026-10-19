@@ -8,7 +8,7 @@ import os, subprocess, platform
 
 # %% ../nbs/00_postfix.ipynb #aaef4f5a5e9a9eed
 def usearch_fix(v:bool=False):
-    """Apply usearch macOS fix if on macOS."""
+    """Add `/usr/lib` to the usearch SQLite extension's rpath on macOS so the extension can load; does nothing elsewhere."""
     if v: print('Applying usearch macOS fix if required...')
     try:
         from usearch import sqlite_path

@@ -1,4 +1,4 @@
-"""which documents in a store are retrieval noise, scored from the vectors already in the file
+"""Find the documents in a store that are retrieval noise, using only the vectors and text already in it
 
 Docs: https://Karthik777.github.io/litesearch/quality.html.md"""
 
@@ -16,11 +16,11 @@ from fastlite import Database
 from .core import NP_DTYPE
 
 # %% ../nbs/11_quality.ipynb #bf0dbd24
-#: Features oriented larger=noisier; document-level aggregates of chunk quantities.
+#: Feature names, each a per-document average where a larger value means more likely noise.
 NOISE_FEATURES = ('hub', 'dup_out', 'off_centre', 'spread_chunk', 'spread_doc', 'low_idf',
                   'redundancy', 'short', 'promiscuity')
 
-#: Default blend from per-feature AUCs (`evals/noise.py`); `spread_doc` is 0.54 so weight 0.
+#: Default weights, set from per-feature AUCs in vishalakshi's `evals/noise.py`; `spread_doc` and `short` score below chance, so 0.
 NOISE_W = dict(hub=1.0, spread_chunk=0.8, dup_out=0.8, off_centre=0.5, low_idf=0.3,
                promiscuity=0.5, redundancy=0.1, spread_doc=0.0, short=0.0)
 
@@ -28,10 +28,10 @@ NOISE_W = dict(hub=1.0, spread_chunk=0.8, dup_out=0.8, off_centre=0.5, low_idf=0
 def chunk_matrix(self:Database,
                  store:str='store',   # the chunk table
                  limit:int=None,      # sample this many chunks instead of using all of them
-                 seed:int=0,
+                 seed:int=0,          # random seed for the sample
                  dtype=np.float16,    # the width the store holds
                  ) -> tuple:
-    """`(ids, doc_ids, texts, V)`: every chunk's stored vector, L2-normalised, as one array."""
+    """Return `(ids, doc_ids, texts, V)` for every chunk with an embedding, with `V` the unit-length vectors as one float32 array."""
     rows = [r for r in self.t[store](select='id, doc_id, content, embedding') if r['embedding']]
     if limit and len(rows) > limit:
         idx = np.random.default_rng(seed).choice(len(rows), limit, replace=False)
@@ -44,7 +44,7 @@ def chunk_matrix(self:Database,
 
 # %% ../nbs/11_quality.ipynb #cc2cd0ea
 def _knn(V:np.ndarray, k:int=10, exact_max:int=30_000, block:int=1024) -> tuple:
-    "`(idx, sim)` of each row's `k` nearest others. Exact by blocked matmul, HNSW past `exact_max`."
+    "Return `(idx, sim)`, the `k` nearest other rows of each row and their cosine similarities."
     n = len(V)
     k = min(k, n - 1)
     if n < 3 or k < 1: return np.zeros((n, 0), np.int32), np.zeros((n, 0), np.float32)
@@ -66,7 +66,7 @@ def _knn(V:np.ndarray, k:int=10, exact_max:int=30_000, block:int=1024) -> tuple:
     return idx, sim
 
 def _centroids(V:np.ndarray, k:int=64, seed:int=0, iters:int=25) -> np.ndarray:
-    """Topic centroids: seeded k-means++ then Lloyd on the unit sphere, L2-normalised."""
+    """Return up to `k` unit-length topic centres for the rows of `V`, found by k-means."""
     k = max(2, min(k, len(V) // 4))
     if len(V) <= 8: return V.mean(0, keepdims=True) / (np.linalg.norm(V.mean(0)) + 1e-9)
     rng = np.random.default_rng(seed)
@@ -95,13 +95,13 @@ def _centroids(V:np.ndarray, k:int=64, seed:int=0, iters:int=25) -> np.ndarray:
 
 _TOK = re.compile(r"[A-Za-z0-9_']+")
 def chunk_idf(texts) -> dict:
-    "Inverse document frequency over chunks: boilerplate is made of words that are everywhere."
+    "Return the inverse document frequency of every word, counting each chunk as one document."
     df, n = Counter(), max(len(texts), 1)
     for t in texts: df.update(set(_TOK.findall((t or '').lower())))
     return {w: math.log(n / (1 + c)) for w, c in df.items()}
 
 def _entropy(P:np.ndarray) -> np.ndarray:
-    "Normalised Shannon entropy of each row, in [0,1]; 1 means committing to nothing."
+    "Return the entropy of each row of probabilities, scaled to between 0 and 1."
     P = np.clip(P, 1e-9, 1.0)
     return (-(P * np.log(P)).sum(1) / math.log(P.shape[1])) if P.shape[1] > 1 else np.zeros(len(P))
 
@@ -114,11 +114,11 @@ def noise_features(db,                 # an open Database
                    tau:float=0.9,      # similarity floor for "this is a duplicate"
                    temp:float=8.0,     # softmax temperature for chunk-to-topic spread
                    limit:int=None,     # sample this many chunks instead of using all of them
-                   exact_max:int=30_000,
-                   seed:int=0,
+                   exact_max:int=30_000, # above this many chunks, neighbours come from HNSW instead of an exact search
+                   seed:int=0,         # random seed for sampling and k-means
                    dtype=np.float16,   # the width the store holds
 ) -> AttrDict:
-    """Per-document noise features, computed from the vectors already in the file."""
+    """Compute the nine noise features for every document in a tree store, as `AttrDict(doc_ids, X, names)`."""
     ids, dids, texts, V = db.chunk_matrix(store=store, limit=limit, seed=seed, dtype=dtype)
     names = list(NOISE_FEATURES)
     if not len(V): return AttrDict(doc_ids=L(), X=np.zeros((0, len(names))), names=names)
@@ -168,7 +168,7 @@ def noise_features(db,                 # an open Database
     return AttrDict(doc_ids=doc_ids, X=np.array(rows, np.float32), names=names)
 
 def _robust_z(X:np.ndarray) -> np.ndarray:
-    """Rank-normalise features to ~[-1.7, 1.7]. Rank beats z here: one hub outlier dropped AUC 0.988→0.55."""
+    """Replace each feature column by its rank, rescaled to about -1.7 to 1.7, with tied values sharing a rank."""
     X = np.asarray(X, np.float64)
     if len(X) < 3: return np.zeros_like(X)
     out = np.empty_like(X)
@@ -190,7 +190,7 @@ def noise_scores(db,                 # an open Database
                  prefix:str=None,    # the tree prefix, for the docs table; None -> from `store`
                  **kw                # forwarded to `noise_features`
                  ) -> L:
-    """Every document, most suspicious first, with the features that put it there."""
+    """Score every document for noise and return them most likely noise first, with their feature values."""
     f = noise_features(db, store=store, **kw)
     if not len(f.doc_ids): return L()
     Z = _robust_z(f.X)
@@ -209,7 +209,7 @@ def noise_scores(db,                 # an open Database
 def _sig(z): return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
 
 class Ranker:
-    """Pairwise linear learning-to-rank over the feedback log."""
+    """A linear model that learns, from labelled pairs of rows, which rows should rank higher."""
     def __init__(self, names, w=None, mu=None, sd=None, meta=None):
         self.names, self.w = list(names), None if w is None else np.asarray(w, np.float64)
         self.mu = None if mu is None else np.asarray(mu, np.float64)
@@ -238,7 +238,7 @@ class Ranker:
 
     def fit(self, X, groups, y, weights=None, l2:float=1.0, iters:int=25, tol:float=1e-7,
             max_pairs:int=200_000, seed:int=0):
-        "Fit by IRLS on the pairwise logistic loss. Returns self, or self unfitted if no pair exists."
+        "Fit the weights on the ordered pairs within each group, returning self, still unfitted if there are no pairs."
         X = np.asarray(X, np.float64); y = np.asarray(y, np.float64)
         wt = np.ones(len(X)) if weights is None else np.asarray(weights, np.float64)
         self.mu, self.sd = X.mean(0), X.std(0) + 1e-9
@@ -261,14 +261,14 @@ class Ranker:
         return self
 
     def score(self, X):
-        "Higher is better. Unfitted, everything ties: so a caller can always ask."
+        "Score each row with the fitted weights, higher ranking first; an unfitted ranker scores every row 0."
         X = np.asarray(X, np.float64)
         if self.w is None: return np.zeros(len(X))
         return ((X - self.mu) / self.sd) @ self.w
 
     __call__ = score
     def weights(self) -> L:
-        "The fitted weights, largest first: the thing you read before trusting any of this."
+        "Return the fitted weight of each feature, largest magnitude first."
         if self.w is None: return L()
         return L(sorted(zip(self.names, self.w.tolist()), key=lambda t: -abs(t[1]))).map(
             lambda t: AttrDict(feature=t[0], weight=round(t[1], 4)))

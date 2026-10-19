@@ -1,4 +1,4 @@
-"""Arrays built once and shared: memory-mapped from disk by every process that needs them, and an inverted index over keys FTS5 cannot express.
+"""Build an array once, keep it on disk, and let every process read the same copy. Also an index from string keys to rows, for lookups FTS5 cannot do.
 
 Docs: https://Karthik777.github.io/litesearch/store.html.md"""
 
@@ -17,12 +17,12 @@ from fastcore.all import Path
 # %% ../nbs/12_store.ipynb #dc72ca69
 def _mapped(d): return {p.stem: np.load(p, mmap_mode='r') for p in d.glob('*.npy')}
 
-def stored(root,   # folder holding every stored set
-           name,   # what the arrays are, the prefix of their folder
-           key,    # what they are built from; a new key builds again
-           build=None  # `() -> {name: array}`; None maps what is stored, or returns None
+def stored(root,   # folder that holds every stored set
+           name,   # what the arrays are; the prefix of their folder
+           key,    # what the arrays are built from; a new key triggers a rebuild
+           build=None  # `() -> {name: array}`; None only maps an existing set, or returns None
           ) -> dict:
-    "`build()`'s arrays, memory-mapped from `root/<name>-<key>`, built once across processes."
+    "Return `build()`'s arrays memory-mapped from `root/<name>-<key>`, building them once across all processes."
     root = Path(root); d = root/f'{name}-{key}'
     if build is None: return _mapped(d) if d.is_dir() else None
     try:
@@ -42,14 +42,14 @@ def stored(root,   # folder holding every stored set
 
 # %% ../nbs/12_store.ipynb #101179eb
 class KeyIndex:
-    "Rows by string key, exact or by prefix, over arrays `build` makes."
+    "Look up row numbers by string key, exactly or by prefix, from arrays made by `KeyIndex.build`."
     def __init__(self, a): self.w, self.ws, self.s, self.p = a['w'], a['ws'], a['s'], a['p']
     def __len__(self): return len(self.ws) - 1
     def __getitem__(self, i): return self.w[self.ws[i]:self.ws[i + 1]].tobytes()
     def keys(self): return [self[i].decode() for i in range(len(self))]
     @staticmethod
     def build(pairs) -> dict:
-        "Arrays for `(key, row)` pairs."
+        "Build the sorted key and posting arrays for an iterable of `(key, row)` pairs."
         ks, rs = zip(*pairs) if (pairs := list(pairs)) else ((), ())
         u = sorted(set(ks)); at = {k: i for i, k in enumerate(u)}
         ids = np.fromiter((at[k] for k in ks), np.int64, len(ks)); o = np.argsort(ids, kind='stable')
@@ -59,26 +59,26 @@ class KeyIndex:
         return dict(w=np.frombuffer(bytes(b), np.uint8), ws=np.frombuffer(st, np.int64),
                     s=np.searchsorted(ids[o], np.arange(len(u) + 1)), p=np.asarray(rs, np.int64)[o])
     def lookup(self, key, prefix=False) -> np.ndarray:
-        "Rows holding `key`, or with `prefix` any key `key` begins."
+        "Return the sorted rows holding `key`, or with `prefix=True` the rows of every key that starts with `key`."
         b = key.encode(); lo = bisect_left(self, b)
         hi = bisect_left(self, b + b'\xff', lo) if prefix else lo + (lo < len(self) and self[lo] == b)
         return np.unique(self.p[self.s[lo]:self.s[hi]])
 
 # %% ../nbs/12_store.ipynb #183a424e
 class VecMatrix:
-    "Exact cosine search over a store's embeddings, as one unit float32 matrix."
+    "Search a store's embeddings by exact cosine similarity, held as one unit-length float32 matrix."
     def __init__(self, a): self.ids, self.m = a['ids'], a['m']
     def __len__(self): return len(self.ids)
     @staticmethod
     def build(tbl, emb_col='embedding', dtype=np.float16, where=None) -> dict:
-        "Arrays for `tbl`'s rows with an embedding, optionally narrowed by `where`."
+        "Build the rowid and matrix arrays from the rows of `tbl` that have an embedding, optionally filtered by `where`."
         rs = tbl.db.q(f'select rowid _r, [{emb_col}] e from [{tbl.name}] where [{emb_col}] is not null' + (f' and {where}' if where else '') + ' order by rowid')
         if not rs: return dict(ids=np.zeros(0, np.int64), m=np.zeros((0, 0), np.float32))
         m = np.frombuffer(b''.join(r['e'] for r in rs), dtype).reshape(len(rs), -1).astype(np.float32)
         m /= np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-12)
         return dict(ids=np.array([r['_r'] for r in rs], np.int64), m=m)
     def search(self, q, k=10, dtype=np.float16, rows=None) -> list:
-        "`(rowid, similarity)` for the `k` rows nearest `q`, bytes or an array, within matrix rows `rows` when given; ties in row order."
+        "Return `(rowid, similarity)` for the `k` rows nearest `q`, given as bytes or an array, optionally only among matrix positions `rows`."
         ix = np.arange(len(self)) if rows is None else np.asarray(rows, np.int64)
         if not len(ix): return []
         q = (np.frombuffer(q, dtype) if isinstance(q, (bytes, bytearray, memoryview)) else np.asarray(q)).astype(np.float32)
