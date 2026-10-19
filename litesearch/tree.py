@@ -439,7 +439,8 @@ def _add_parsed(self:Database, p, parsed, title=None, store='store', prefix=None
 
 # Extensions whose *parse* is real work rather than a `read_text`. A pool only pays for these:
 # reading 150 markdown files takes 2.7ms in total, which no amount of process startup improves.
-PARSE_HEAVY = {'.pdf', '.xml', '.tei', '.htm', '.html', '.ipynb', '.conllu'}
+# HTML is a `read_text` too: 8 HTML pages ingest in 0.18s serial and 0.19s on a pool.
+PARSE_HEAVY = {'.pdf', '.xml', '.tei', '.ipynb', '.conllu'}
 # Below this many parse-heavy files, starting a pool costs more than the parse it splits.
 MIN_PARALLEL_DOCS = 4
 

@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.45
+- `add_dir` no longer starts a process pool for HTML. `.htm` and `.html` leave `PARSE_HEAVY`: their parse is a `read_text`, and 8 HTML pages ingest in 0.18s serial against 0.19s on a pool.
+
 ## 0.1.44
 - `pack_target(chunker)`: the size a chunker asks its chunks to be joined up to across segments, or 0. Public so a chunker package can test against it. `_pack_target` stays as an alias.
 - `TOKEN_RE`, the word pattern `chunk_idf` counts, and `robust_z`, the rank scaling `noise_scores` applies to features, are public. `_TOK` and `_robust_z` stay as aliases.
