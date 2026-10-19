@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.49
+- `get_index` and `usearch_sql` no longer take `db_lock`. Since 0.1.47 they did, so a thread that held `db_lock` while workers read the same connection waited forever: Leela holds it around `Kosha.context`, whose repo and package legs run on worker threads. On an ordinary connection they now load under a lock of their own, which nothing holds while it waits on another thread. On a `database(shared=True)` connection they still take the connection's lock, which every statement takes anyway. Each store still gets one index per connection, and a reader never sees one half loaded.
+
 ## 0.1.48
 - A usearch that does not import turns usearch off instead of breaking vector search. On macOS 14, `import usearch` raises `ImportError: symbol not found in flat namespace '_nk_capabilities'`: every numkong wheel from 7.5 to 7.8.5 links `___sme_memset`, which only macOS 15 has, though the wheels are tagged macOS 11. litesearch then searches with numpy, with one warning per process, and runs no probe.
 - A frozen app checks usearch too. It imported usearch unchecked, so `get_index` raised `ImportError` in an app on macOS 14. It now imports usearch's HNSW index in its own process and turns usearch off when that fails.

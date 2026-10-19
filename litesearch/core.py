@@ -69,14 +69,19 @@ def busy_window(busy_ms=BUSY_TIMEOUT_MS):
             _busy_depth -= 1
             if not _busy_depth: bp.__defaults__ = _busy_saved
 
-_conn_locks, _conn_locks_guard = weakref.WeakKeyDictionary(), threading.Lock()
+_conn_locks, _load_locks, _conn_locks_guard = weakref.WeakKeyDictionary(), weakref.WeakKeyDictionary(), threading.Lock()
+def _lock_for(locks, c):
+    with _conn_locks_guard:
+        if (lk := locks.get(c)) is None: lk = locks[c] = threading.RLock()
+    return lk
+
 def db_lock(db):
     'The re-entrant lock litesearch holds while it works on `db`\'s connection.'
-    if isinstance(db.conn, Conn): return db.conn.lock
-    with _conn_locks_guard:
-        lk = _conn_locks.get(db.conn)
-        if lk is None: lk = _conn_locks[db.conn] = threading.RLock()
-    return lk
+    return db.conn.lock if isinstance(db.conn, Conn) else _lock_for(_conn_locks, db.conn)
+
+def _load_lock(db):
+    "The lock `get_index` and `usearch_sql` load under: a shared `Conn`'s own, which its statements take anyway, else one no `db_lock` holder waits on."
+    return db.conn.lock if isinstance(db.conn, Conn) else _lock_for(_load_locks, db.conn)
 
 @contextmanager
 def write_txn(db):
@@ -271,8 +276,7 @@ def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.floa
 @patch(as_prop=True)
 def ann_indices(self:Database):
     'The HNSW indexes loaded on this connection, keyed by store name.'
-    if not hasattr(self, '_ann_indices'): self._ann_indices = {}
-    return self._ann_indices
+    return self.__dict__.setdefault('_ann_indices', {})
 
 @patch
 def _ann_meta(self:Database, name):
@@ -291,21 +295,20 @@ def get_index(self:Database,        # database connection
               name:str='ann_store', # ANN store name
               load:bool=True):      # load the sidecar file, or build from the table when it is missing or stale
     'The HNSW index for store `name`, cached on the connection; an `ExactIndex` when usearch\'s HNSW index is off.'
-    with db_lock(self):
-        if name in self.ann_indices: return self.ann_indices[name]
+    if (idx := self.ann_indices.get(name)) is not None: return idx
+    with _load_lock(self):
+        if (idx := self.ann_indices.get(name)) is not None: return idx
         m = self._ann_meta(name)
         assert m, f'{name!r} is not a registered ANN store'
         assert m['ndim'], f'{name!r}: ndim unknown — add vectors via sync/rebuild_index or pass ndim= to get_store'
         kw = merge(dict(ndim=m['ndim'], metric=_usearch_metric.get(m['metric'],'cos'), dtype=m['dtype']),
                    {k:m[k] for k in ('connectivity','expansion_add','expansion_search') if m[k]})
         if (ok := usearch_ok('index')): from usearch.index import Index
-        idx = self.ann_indices[name] = (Index if ok else ExactIndex)(**kw)
-        if not load: return idx
-        p = m['path']
-        if ok and p and Path(p).exists() and not _stale(p).exists(): idx.load(p)
-        elif len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]):
-            idx.add(*kv)
-            if ok: self._save_index(name)
+        idx, p, built = (Index if ok else ExactIndex)(**kw), m['path'], False
+        if load and ok and p and Path(p).exists() and not _stale(p).exists(): idx.load(p)
+        elif load and len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]): idx.add(*kv); built = ok
+        self.ann_indices[name] = idx   # only once filled: a reader outside the lock takes what it finds here
+        if built: self._save_index(name)
         return idx
 
 @patch
@@ -654,7 +657,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
 def usearch_sql(self:Database) -> bool:
     "Load usearch's SQL distance functions into this connection on the first call; whether they are loaded."
     if (s := getattr(self, '_usearch_sql', None)) is not None: return s
-    with db_lock(self):
+    with _load_lock(self):
         if (s := getattr(self, '_usearch_sql', None)) is not None: return s
         if (ok := getattr(self, '_sem_search', True) and usearch_ok('sql')):
             c = self.conn
