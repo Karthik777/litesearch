@@ -1,4 +1,4 @@
-__version__ = "0.1.42"
+__version__ = "0.1.43"
 from .postfix import usearch_fix
 usearch_fix()
 from .core import *
