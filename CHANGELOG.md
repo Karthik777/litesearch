@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.44
+- `pack_target(chunker)`: the size a chunker asks its chunks to be joined up to across segments, or 0. Public so a chunker package can test against it. `_pack_target` stays as an alias.
+- `TOKEN_RE`, the word pattern `chunk_idf` counts, and `robust_z`, the rank scaling `noise_scores` applies to features, are public. `_TOK` and `_robust_z` stay as aliases.
+
 ## 0.1.43
 - `FastEncode` and `FastEncodeImage` load models with external data, such as the default EmbeddingGemma, under onnxruntime 1.31 and later. `ort_path` hard-links a cached model and its data files into one folder, which onnxruntime now requires.
 - `pre` returns None for a query made only of operator characters, such as `***`, instead of raising AttributeError. `Database.search` returns no keyword hits for such a query and still runs the vector leg.

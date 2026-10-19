@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'PARSE_HEAVY', 'MIN_PARALLEL_DOCS', 'TreeNode', 'summarize_extractive',
-           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'store_chunks', 'adaptive_weights',
-           'merge_spans']
+           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'pack_target', 'store_chunks',
+           'adaptive_weights', 'merge_spans']
 
 # %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
 from fastcore.all import Path, patch, first, L, chunked, AttrDict, ifnone, defaults, parallel
@@ -254,9 +254,10 @@ def get_tree(self:Database,
 # %% ../nbs/06_tree.ipynb #538721312f0bb5f
 MIN_CHUNK = 40
 
-def _pack_target(chunker) -> int:
+def pack_target(chunker) -> int:
     'Return the size a chunker asks consecutive segments to be joined up to, or 0 to chunk each segment on its own.'
     return int(getattr(chunker, 'target', 0) or 0) if getattr(chunker, 'pack_cited', False) else 0
+_pack_target = pack_target
 
 def _pack_segments(rows, target:int) -> L:
     'Join consecutive chunks of one node up to `target` characters, keeping the first chunk\'s page.'
@@ -284,7 +285,7 @@ def _node_chunks(tree, title, did, chunker=None, min_chunk=MIN_CHUNK, meta_fn=No
                     continue
                 prev = dict(content=c, doc_id=did, node_id=nid, page=page, heading=head)
                 node_out.append(prev)
-        out += _pack_segments(node_out, _pack_target(chunker))
+        out += _pack_segments(node_out, pack_target(chunker))
     if meta_fn:
         import json as _json
         # written on every chunk, including as `{}` — heterogeneous keys across rows are what
