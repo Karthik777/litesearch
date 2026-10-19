@@ -489,9 +489,11 @@ def add_dir(self:Database,
         if nw and nw > 1 and files:
             jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
             mp = dict(mp_context=get_context('fork')) if sys.platform == 'darwin' else {}
+            # the worker by its module: a docs build runs these cells outside `__main__`, where a worker cannot find it
+            from litesearch.tree import _parse_doc as parse
             with ProcessPoolExecutor(nw, **mp) as ex:
                 # read lazily, so a stop leaves the parses not yet started unstarted
-                for p, parsed in zip(files, ex.map(_parse_doc, jobs)):
+                for p, parsed in zip(files, ex.map(parse, jobs)):
                     if halt(): ex.shutdown(cancel_futures=True); break
                     if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
                     else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
