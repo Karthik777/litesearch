@@ -1,5 +1,12 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.42
+- `fts_and(terms, prefix_last=)`: an FTS5 MATCH string AND-ing quoted terms, the last also as a prefix.
+- `QSTOP`: the stopwords `kw` drops, public. `_QSTOP` stays as an alias.
+- `stored(root, name, key)` with no `build` maps the stored set, or returns None.
+- `VecMatrix.build` reads in rowid order, and reads a table whose rowid has an `INTEGER PRIMARY KEY` alias. `VecMatrix.search(rows=)` searches within the given matrix rows; equal similarities come in row order.
+- `roman_fold(doubles=True)` makes doubled roman letters single and leaves digits and other scripts: `11` stays `11`.
+
 ## 0.1.41
 - `litesearch.store`: `stored` (arrays built once, mmapped across processes), `KeyIndex` (rows by key, exact or prefix), `VecMatrix` (exact cosine by matrix product).
 - `Table.fts_sig`, `Table.fts_merge`, `no_open_optimize`.

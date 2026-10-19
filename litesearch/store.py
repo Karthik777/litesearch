@@ -15,13 +15,16 @@ from bisect import bisect_left
 from fastcore.all import Path
 
 # %% ../nbs/12_store.ipynb #dc72ca69
+def _mapped(d): return {p.stem: np.load(p, mmap_mode='r') for p in d.glob('*.npy')}
+
 def stored(root,   # folder holding every stored set
            name,   # what the arrays are, the prefix of their folder
            key,    # what they are built from; a new key builds again
-           build   # `() -> {name: array}`
+           build=None  # `() -> {name: array}`; None maps what is stored, or returns None
           ) -> dict:
     "`build()`'s arrays, memory-mapped from `root/<name>-<key>`, built once across processes."
     root = Path(root); d = root/f'{name}-{key}'
+    if build is None: return _mapped(d) if d.is_dir() else None
     try:
         if not d.is_dir():
             root.mkdir(parents=True, exist_ok=True)
@@ -34,7 +37,7 @@ def stored(root,   # folder holding every stored set
                     os.rename(tmp, d)
                     for o in root.glob(f'{name}-*'):
                         if o != d: shutil.rmtree(o, ignore_errors=True)
-        return {p.stem: np.load(p, mmap_mode='r') for p in d.glob('*.npy')}
+        return _mapped(d)
     except OSError: return {k: np.asarray(v) for k, v in build().items()}
 
 # %% ../nbs/12_store.ipynb #101179eb
@@ -69,15 +72,16 @@ class VecMatrix:
     @staticmethod
     def build(tbl, emb_col='embedding', dtype=np.float16, where=None) -> dict:
         "Arrays for `tbl`'s rows with an embedding, optionally narrowed by `where`."
-        rs = tbl.db.q(f'select rowid, [{emb_col}] e from [{tbl.name}] where [{emb_col}] is not null' + (f' and {where}' if where else ''))
+        rs = tbl.db.q(f'select rowid _r, [{emb_col}] e from [{tbl.name}] where [{emb_col}] is not null' + (f' and {where}' if where else '') + ' order by rowid')
         if not rs: return dict(ids=np.zeros(0, np.int64), m=np.zeros((0, 0), np.float32))
-        m = np.stack([np.frombuffer(r['e'], dtype) for r in rs]).astype(np.float32)
+        m = np.frombuffer(b''.join(r['e'] for r in rs), dtype).reshape(len(rs), -1).astype(np.float32)
         m /= np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-12)
-        return dict(ids=np.array([r['rowid'] for r in rs], np.int64), m=m)
-    def search(self, q, k=10, dtype=np.float16) -> list:
-        "`(rowid, similarity)` for the `k` rows nearest `q`, bytes or an array."
-        if not len(self): return []
+        return dict(ids=np.array([r['_r'] for r in rs], np.int64), m=m)
+    def search(self, q, k=10, dtype=np.float16, rows=None) -> list:
+        "`(rowid, similarity)` for the `k` rows nearest `q`, bytes or an array, within matrix rows `rows` when given; ties in row order."
+        ix = np.arange(len(self)) if rows is None else np.asarray(rows, np.int64)
+        if not len(ix): return []
         q = (np.frombuffer(q, dtype) if isinstance(q, (bytes, bytearray, memoryview)) else np.asarray(q)).astype(np.float32)
         s = self.m @ (q / max(np.linalg.norm(q), 1e-12))
-        top = np.argpartition(-s, min(k, len(s)) - 1)[:k]
-        return [(int(self.ids[i]), float(s[i])) for i in top[np.argsort(-s[top])]]
+        if len(ix) > k: ix = ix[np.argpartition(-s[ix], k)[:k]]
+        return [(int(self.ids[i]), float(s[i])) for i in ix[np.lexsort((ix, -s[ix]))]]

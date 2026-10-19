@@ -88,7 +88,7 @@ def fold_token(s:str) -> str:
 
 _VOCALIC_R = re.compile(r'ri(?=[bcdfghjklmnpqstvxz])')   # Krishna's `ri` is IAST `ṛ`
 _ASPIRATE = re.compile(r'(?<=[bcdfgjklmnpqrstvxz])h')    # sh, th, dh, bh, ch: the h goes
-_LONG, _DOUBLE = re.compile(r'([aeiou])\1+'), re.compile(r'(.)\1+')
+_LONG, _DOUBLE = re.compile(r'([aeiou])\1+'), re.compile(r'([a-z])\1+')
 _ENDINGS = ('ies', 'ied', 'ing', 'ed', 'es', 's', 'y')
 
 @lru_cache(maxsize=1<<16)

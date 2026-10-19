@@ -3,8 +3,8 @@
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_in', 'StoreMismatch', 'content_id', 'embed_chunk',
            'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge',
-           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_phrases', 'no_open_optimize', 'rank_fts', 'correct',
-           'rerank_hits']
+           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_and', 'fts_phrases', 'no_open_optimize', 'rank_fts',
+           'correct', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
@@ -587,6 +587,13 @@ def fts_or(terms,       # terms or phrases; each is quoted
     if not q or not column: return q
     cs = _fts_q(column) if isinstance(column, str) else '{' + ' '.join(map(_fts_q, column)) + '}'
     return f'{cs} : ({q})'
+
+def fts_and(terms,             # terms or phrases; each is quoted
+            prefix_last=False  # the last term also matches as a prefix, as a reader types
+           ) -> str:
+    "An FTS5 MATCH string AND-ing every term as a quoted phrase."
+    ts = list(dict.fromkeys(t for t in terms if t and str(t).strip()))
+    return ' AND '.join(_fts_q(t) + ('*' if prefix_last and i == len(ts) - 1 else '') for i, t in enumerate(ts))
 
 def fts_phrases(terms,       # terms, each followed by every suffix
                 suffixes,    # words that follow a term: `('is', 'means')` finds definitions
