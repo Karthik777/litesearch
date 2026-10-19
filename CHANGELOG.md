@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.46
+- `add_dir(stop=)`: a callable asked before each file. When it returns True, `add_dir` stops: the files already stored stay stored and indexed, a parse in flight finishes, and no further parse starts. Given `stop`, the result is an `L` whose `cancelled` says whether files went unread and whose `unread` lists them. Without `stop`, the result is the plain list it was.
+
 ## 0.1.45
 - `add_dir` no longer starts a process pool for HTML. `.htm` and `.html` leave `PARSE_HEAVY`: their parse is a `read_text`, and 8 HTML pages ingest in 0.18s serial against 0.19s on a pool.
 

@@ -6,12 +6,13 @@ __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'PARSE_HEAVY', 'MIN_PARA
            'adaptive_weights', 'merge_spans']
 
 # %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
-from fastcore.all import Path, patch, first, L, chunked, AttrDict, ifnone, defaults, parallel
+from fastcore.all import Path, patch, first, L, chunked, AttrDict, ifnone, defaults, ProcessPoolExecutor
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import hash_record
 from dataclasses import dataclass, field
-import re, tempfile
+import re, sys, tempfile
+from multiprocessing import get_context
 import numpy as np
 from contextlib import nullcontext
 from .core import (sql_in, rowid_sel, NP_DTYPE, rrf_all, process_content, write_txn, db_lock,
@@ -466,9 +467,10 @@ def add_dir(self:Database,
             embed_batch:int=2000,   # chunks embedded and written per flush; 0 writes per document
             files=None,             # ingest exactly these paths instead of walking `dir`
             bulk:bool=False,     # rebuild the full-text index once at the end instead of per chunk
+            stop=None,              # asked before each file; True stops, and the result's `unread` holds the rest
             **kw                    # forwarded to add_doc
 ) -> list:
-    '''Ingest every document file under a folder, or a given list of files, skipping those already ingested.'''
+    '''Ingest every document file under a folder, or a given list of files, skipping those already ingested; given `stop`, the result is an `L` carrying `cancelled` and `unread`.'''
     if files is None:
         if dir is None: raise ValueError('pass `dir` or `files`')
         exts = {f".{t.strip().lstrip('.')}".lower() for t in types.split(',')}
@@ -482,20 +484,28 @@ def add_dir(self:Database,
         if pend and (force or len(pend) >= embed_batch):
             store_chunks(g.store, pend, emb_fn, wh); pend.clear()
     if embed_batch: kw['defer'] = pend
-    out = []
+    out, halt = [], (lambda: False) if stop is None else stop
     with (g.store.bulk_load() if bulk else nullcontext()):
         if nw and nw > 1 and files:
             jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
-            for p, parsed in zip(files, parallel(_parse_doc, jobs, n_workers=nw, threadpool=False, progress=False)):
-                if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
-                else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
-                flush()
+            mp = dict(mp_context=get_context('fork')) if sys.platform == 'darwin' else {}
+            with ProcessPoolExecutor(nw, **mp) as ex:
+                # read lazily, so a stop leaves the parses not yet started unstarted
+                for p, parsed in zip(files, ex.map(_parse_doc, jobs)):
+                    if halt(): ex.shutdown(cancel_futures=True); break
+                    if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
+                    else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
+                    flush()
         else:
             for p in files:
+                if halt(): break
                 out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
                 flush()
         flush(force=True)
     if self._ann_meta(store): g.store.rebuild_index()
+    if stop is None: return out
+    out = L(out)
+    out.cancelled, out.unread = len(out) < len(files), L(files[len(out):])
     return out
 
 # %% ../nbs/06_tree.ipynb #d9507dc29ccaad76
