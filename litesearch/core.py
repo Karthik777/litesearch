@@ -2,9 +2,9 @@
 
 # %% auto #0
 __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_in', 'StoreMismatch', 'content_id', 'embed_chunk',
-           'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'rowid_sel', 'rrf_all', 'rrf_merge',
-           'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_and', 'fts_phrases', 'no_open_optimize', 'rank_fts',
-           'correct', 'rerank_hits']
+           'busy_window', 'db_lock', 'write_txn', 'process_content', 'upsert_all', 'ExactIndex', 'rowid_sel', 'rrf_all',
+           'rrf_merge', 'Rows', 'Cur', 'Conn', 'database', 'fts_or', 'fts_and', 'fts_phrases', 'no_open_optimize',
+           'rank_fts', 'correct', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
 from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
@@ -17,6 +17,7 @@ import apsw, apsw.bestpractice, threading, weakref
 import numpy as np, warnings, math, re, hashlib
 from .data import pre, kw
 from .sanskrit import fold_token, skeleton as _skeleton
+from .postfix import usearch_ok, usearch_lib
 BUSY_TIMEOUT_MS = 30_000   # lock wait during a busy_window; apsw's stock default is 100ms
 
 # %% ../nbs/01_core.ipynb #65d70b81c9fc026c
@@ -198,6 +199,62 @@ def _stamp_store(self:Database, name:str, **kw):
           ' hold: use a new store name, or rebuild this one.')
 
 
+# %% ../nbs/01_core.ipynb #872e41ee
+def _np_dist(M, q, metric='cos'):
+    "Distances from each row of `q` to each row of `M`, as usearch computes `metric` (cos, ip, l2sq, divergence)."
+    M, q = np.asarray(M, np.float32), np.atleast_2d(np.asarray(q, np.float32))
+    if metric == 'ip': return 1 - q @ M.T
+    if metric == 'l2sq': return np.stack([((M - r)**2).sum(1) for r in q])
+    if metric == 'divergence':
+        def kl(a, b):
+            with np.errstate(divide='ignore', invalid='ignore'): return np.where(a > 0, a*np.log(2*a/(a + b)), 0).sum(-1)
+        return np.stack([0.5*(kl(r[None], M) + kl(M, r[None])) for r in q])
+    if metric != 'cos': raise ValueError(f'no numpy distance for metric {metric!r}')
+    n = np.linalg.norm(q, axis=1)[:, None] * np.linalg.norm(M, axis=1)[None]
+    with np.errstate(divide='ignore', invalid='ignore'): d = 1 - (q @ M.T)/n
+    return np.where(n > 0, d, 1. - (np.linalg.norm(q, axis=1)[:, None] == 0) * (np.linalg.norm(M, axis=1)[None] == 0))
+
+def _stale(path): return Path(f'{path}.stale')
+
+class _Hits:
+    "Search results shaped as usearch's: `keys` and `distances`, 1-D for one query and 2-D for several."
+    def __init__(self, keys, distances): self.keys, self.distances = keys, distances
+
+class ExactIndex:
+    "A numpy stand-in for usearch's `Index`, used when usearch is off: the same calls, searched exactly."
+    def __init__(self, ndim=None, metric='cos', dtype='f16', **kw):
+        self.ndim, self.metric, self.dtype = ndim, metric, NP_DTYPE.get(dtype, np.float32)
+        self.reset()
+    def reset(self): self._set(np.zeros(0, np.int64), np.zeros((0, self.ndim or 0), np.float32))
+    def _set(self, k, m): self._k, self._m, self._at = k, m, {x: i for i, x in enumerate(k.tolist())}
+    @property
+    def size(self): return len(self._k)
+    def __len__(self): return self.size
+    @property
+    def keys(self): return self._k.copy()
+    def contains(self, k): return np.isin(k, self._k) if np.ndim(k) else int(k) in self._at
+    def __getitem__(self, k):
+        if np.ndim(k): return tuple(self[x] for x in np.asarray(k).tolist())
+        i = self._at.get(int(k))
+        return None if i is None else self._m[i].astype(self.dtype)
+    def add(self, keys, vectors):
+        k = np.atleast_1d(np.asarray(keys, np.int64))
+        v = np.asarray(vectors).reshape(len(k), -1).astype(self.dtype).astype(np.float32)
+        keep = ~np.isin(self._k, k)
+        self._set(np.concatenate([self._k[keep], k]), np.concatenate([self._m[keep].reshape(-1, v.shape[1]), v]))
+    def remove(self, keys):
+        keep = ~np.isin(self._k, np.atleast_1d(keys))
+        self._set(self._k[keep], self._m[keep])
+    def search(self, q, count=10, **kw):
+        q = np.asarray(q)
+        if not self.size: d = np.zeros((len(np.atleast_2d(q)), 0), np.float32)
+        else: d = _np_dist(self._m, q, self.metric)
+        o = np.argsort(d, axis=1, kind='stable')[:, :count]
+        k, ds = self._k[o], np.take_along_axis(d, o, 1).astype(np.float32)
+        return _Hits(k[0], ds[0]) if q.ndim == 1 else _Hits(k, ds)
+    def save(self, path): _stale(path).touch()
+    def load(self, path): pass
+
 # %% ../nbs/01_core.ipynb #1a18ae1db1ae4552
 @patch
 def _register_ann(self:Database, name, ndim=None, metric='cosine', dtype=np.float16,
@@ -223,27 +280,41 @@ def _ann_meta(self:Database, name):
     return first(self.t.usearch_indices(where=f'name={name!r}')) if 'usearch_indices' in self.t else None
 
 @patch
+def _vecs(self:Table, dtype=np.float16):
+    'The rowids and vectors of the rows that have an embedding, as an int64 array and a 2-D array.'
+    rows = L(self(select=f'{rowid_sel()}, embedding')).filter(lambda r: r['embedding'])
+    if not rows: return np.zeros(0, np.int64), None
+    return np.array(rows.itemgot('rowid'), dtype=np.int64), np.stack([np.frombuffer(b, dtype=dtype) for b in rows.itemgot('embedding')])
+
+@patch
 def get_index(self:Database,        # database connection
               name:str='ann_store', # ANN store name
-              load:bool=True):      # load the sidecar file if present
-    'The usearch HNSW index for store `name`, loaded from its file when there is one, and cached on the connection.'
-    if name in self.ann_indices: return self.ann_indices[name]
-    from usearch.index import Index
-    m = self._ann_meta(name)
-    assert m, f'{name!r} is not a registered ANN store'
-    assert m['ndim'], f'{name!r}: ndim unknown — add vectors via sync/rebuild_index or pass ndim= to get_store'
-    kw = merge(dict(ndim=m['ndim'], metric=_usearch_metric.get(m['metric'],'cos'), dtype=m['dtype']),
-               {k:m[k] for k in ('connectivity','expansion_add','expansion_search') if m[k]})
-    idx = Index(**kw)
-    if load and m['path'] and Path(m['path']).exists(): idx.load(m['path'])
-    self.ann_indices[name] = idx
-    return idx
+              load:bool=True):      # load the sidecar file, or build from the table when it is missing or stale
+    'The HNSW index for store `name`, cached on the connection; an `ExactIndex` when usearch\'s HNSW index is off.'
+    with db_lock(self):
+        if name in self.ann_indices: return self.ann_indices[name]
+        m = self._ann_meta(name)
+        assert m, f'{name!r} is not a registered ANN store'
+        assert m['ndim'], f'{name!r}: ndim unknown — add vectors via sync/rebuild_index or pass ndim= to get_store'
+        kw = merge(dict(ndim=m['ndim'], metric=_usearch_metric.get(m['metric'],'cos'), dtype=m['dtype']),
+                   {k:m[k] for k in ('connectivity','expansion_add','expansion_search') if m[k]})
+        if (ok := usearch_ok('index')): from usearch.index import Index
+        idx = self.ann_indices[name] = (Index if ok else ExactIndex)(**kw)
+        if not load: return idx
+        p = m['path']
+        if ok and p and Path(p).exists() and not _stale(p).exists(): idx.load(p)
+        elif len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]):
+            idx.add(*kv)
+            if ok: self._save_index(name)
+        return idx
 
 @patch
 def _save_index(self:Database, name):
     'Save store `name`\'s HNSW index to its file, when the database is on disk.'
     m = self._ann_meta(name)
-    if m and m['path'] and name in self.ann_indices: self.ann_indices[name].save(m['path'])
+    if not (m and m['path'] and name in self.ann_indices): return
+    (idx := self.ann_indices[name]).save(m['path'])
+    if not isinstance(idx, ExactIndex): _stale(m['path']).unlink(missing_ok=True)
 
 # %% ../nbs/01_core.ipynb #a2795bc64605251
 @patch
@@ -262,6 +333,20 @@ def fts_search(self:Table,
     fts_q = self.db.quote_fts(q) if quote else q
     sql = self.search_sql(columns,order_by,limit,offset,where,include_rank)
     return self.db.q(sql, merge(dict(query=fts_q), where_args or {}))
+
+def _np_vec_search(tbl, emb, sel_cols, wh, where_args, emb_col, emb_metric, dtype, limit, offset):
+    "`vec_search` in numpy, for when usearch's SQLite extension is off: the same rows, `_dist` and order."
+    rows = tbl.db.q(f'SELECT {",".join(sel_cols)}, [{emb_col}] as _emb FROM [{tbl.name}] WHERE {wh}', where_args or {})
+    if not rows: return []
+    q, vs = np.frombuffer(emb, dtype), [np.frombuffer(r.pop('_emb'), dtype) for r in rows]
+    if any(len(v) != len(q) for v in vs): raise ValueError('Vectors have different number of dimensions')
+    with np.errstate(all='ignore'):
+        V = np.stack(vs).astype(np.float32)
+        ds = np.where(np.isfinite(V).all(1), _np_dist(V, q, _usearch_metric.get(emb_metric, emb_metric))[0], np.nan)
+    for r, d in zip(rows, ds.tolist()): r['_dist'] = None if math.isnan(d) else d   # a vector holding inf or nan has no distance, as in SQL
+    rows.sort(key=lambda r: (r['_dist'] is not None, r['_dist'] or 0))   # SQLite puts NULL first
+    o = ifnone(offset, 0)
+    return rows[o:o + limit] if limit is not None else rows[o:]
 
 def _dtype_check(tbl, dtype, rows):
     'Return `rows`, warning when `dtype` cannot be the type the vectors were stored as.'
@@ -290,10 +375,11 @@ def vec_search(self: Table,
                offset: int | None = None,     # offset for pagination
                ) -> list:
     "Exact vector search on any table with an embedding column: the distance to every row, nearest first."
-    dist = f'distance_{emb_metric}_{_dtype_suffix(dtype)}({emb_col}, :qvec)'
     sel_cols = [f'{c} as {c}' if c == 'rowid' else c for c in columns] if columns else ['*']
-    sel = ','.join(sel_cols) + f', {dist} as _dist'
     wh = f'{emb_col} is not null' + (f' AND {where}' if where else '')
+    if not self.db.usearch_sql(): return _dtype_check(self, dtype, _np_vec_search(self, emb, sel_cols, wh, where_args, emb_col, emb_metric, dtype, limit, offset))
+    dist = f'distance_{emb_metric}_{_dtype_suffix(dtype)}({emb_col}, :qvec)'
+    sel = ','.join(sel_cols) + f', {dist} as _dist'
     rows = self.db.q(f'SELECT {sel} FROM [{self.name}] WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
                 dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
     return _dtype_check(self, dtype, rows)
@@ -339,10 +425,10 @@ def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16, save=True):
         kw = dict(select=f'{rowid_sel()}, embedding', where=sql_in('id', add_ids))
         rows = L(self(**kw)).filter(lambda r: r['embedding']) if add_ids else L()
         if rows:
-            if not m['ndim']:
+            if (new := not m['ndim']):
                 m['ndim'] = len(np.frombuffer(rows[0]['embedding'], dtype=dtype))
                 self.db.t.usearch_indices.update(dict(name=self.name, ndim=m['ndim']))
-            idx = self.db.get_index(self.name)
+            idx = self.db.get_index(self.name, load=not new)
             keys = rows.itemgot('rowid')
             self._idx_remove(idx, keys)
             idx.add(np.array(keys, dtype=np.int64),
@@ -385,18 +471,16 @@ def rebuild_index(self:Table, dtype=None):
         m = self.db._ann_meta(self.name)
         assert m, f'{self.name!r} is not an ANN store'
         dt = dtype or NP_DTYPE.get(m['dtype'], np.float16)
-        rows = L(self(select=f'{rowid_sel()}, embedding')).filter(lambda r: r['embedding'])
+        keys, vecs = self._vecs(dt)
         self.db.ann_indices.pop(self.name, None)
-        if not rows:
+        if not len(keys):
             if not m['ndim']: return 0                                   # never had vectors; nothing to clear
             self.db.get_index(self.name, load=False).reset()  # empty index, ignore the stale sidecar
             self.db._save_index(self.name)                               # overwrite sidecar to reflect empty table
             return 0
-        nd = len(np.frombuffer(rows[0]['embedding'], dtype=dt))
-        if m['ndim'] != nd: self.db.t.usearch_indices.update(dict(name=self.name, ndim=nd))
+        if m['ndim'] != (nd := vecs.shape[1]): self.db.t.usearch_indices.update(dict(name=self.name, ndim=nd))
         idx = self.db.get_index(self.name, load=False); idx.reset()
-        idx.add(np.array(rows.itemgot('rowid'), dtype=np.int64),
-                np.stack([np.frombuffer(b, dtype=dt) for b in rows.itemgot('embedding')]))
+        idx.add(keys, vecs)
         self.db._save_index(self.name)
         return idx.size
 
@@ -545,12 +629,12 @@ class _Backup:
 # %% ../nbs/01_core.ipynb #4037ed73523beff7
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
-             sem_search:bool=True,          # enable usearch extensions
+             sem_search:bool=True,          # allow usearch's SQL distance functions, loaded on first use
              busy_timeout:int=None,         # ms to wait for a locked database (None: apsw's 100 ms); set it when several connections write
              shared:bool=False,             # wrap the connection in `Conn` so threads can share it
              **kw,                          # additional args to pass to apswutils database
              ) -> Database:
-    'Open a SQLite database with litesearch\'s FTS5 tokenizers registered and usearch\'s vector distance functions loaded.'
+    'Open a SQLite database with litesearch\'s FTS5 tokenizers registered; usearch\'s distance functions load on the first vector search.'
     if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     # apsw runs its bestpractice hook (100ms timeout, then `PRAGMA optimize`) *during* Connection
     # construction, so the window has to span the open -- retuning afterwards is already too late.
@@ -562,13 +646,23 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     from litesearch.sanskrit import register_sanskrit
     register_sanskrit(_db)
     _db._fts_tokenizers = _tokenizers_ok(_db.conn)
-    if sem_search:
-        from usearch import sqlite_path
-        _db.conn.enableloadextension(True)
-        _db.conn.loadextension(sqlite_path())
-        _db.conn.enableloadextension(False)
+    _db._sem_search = sem_search
     if shared: _db.conn = Conn(_db.conn)
     return _db
+
+@patch
+def usearch_sql(self:Database) -> bool:
+    "Load usearch's SQL distance functions into this connection on the first call; whether they are loaded."
+    if (s := getattr(self, '_usearch_sql', None)) is not None: return s
+    with db_lock(self):
+        if (s := getattr(self, '_usearch_sql', None)) is not None: return s
+        if (ok := getattr(self, '_sem_search', True) and usearch_ok('sql')):
+            c = self.conn
+            try: c.enableloadextension(True); c.loadextension(usearch_lib())
+            except Exception as e: warnings.warn(f"usearch's SQLite extension did not load ({e}); vector search uses numpy."); ok = False
+            finally: c.enableloadextension(False)
+        self._usearch_sql = ok
+    return ok
 
 
 # %% ../nbs/01_core.ipynb #55b9bb9c96df

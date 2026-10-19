@@ -25,8 +25,7 @@ Start with [`Index`](https://Karthik777.github.io/litesearch/api.html#index). It
 ## Install
 
 ``` python
-# usearch SQLite extensions are configured automatically on first import
-# (macOS needs one extra step — see litesearch.postfix)
+# usearch's SQLite extension is fetched, probed and configured on first use (see litesearch.postfix)
 !uv add litesearch
 ```
 
@@ -74,10 +73,11 @@ ix.add_code('litesearch')      # a directory, or the name of an installed packag
 
 ## Route 2: [`database()`](https://Karthik777.github.io/litesearch/core.html#database)
 
-[`database()`](https://Karthik777.github.io/litesearch/core.html#database) opens a SQLite database and returns a [fastlite](https://fastlite.answer.ai/) `Database`. fastlite is a thin layer over SQLite that gives each table a Python object. litesearch loads usearch’s SQLite extension into the connection, which adds vector distance functions you can call from SQL. Pass a file path to keep the database on disk, or nothing for one held in memory.
+[`database()`](https://Karthik777.github.io/litesearch/core.html#database) opens a SQLite database and returns a [fastlite](https://fastlite.answer.ai/) `Database`. fastlite is a thin layer over SQLite that gives each table a Python object. The first vector search loads usearch’s SQLite extension into the connection, which adds vector distance functions you can call from SQL. `db.usearch_sql()` loads it before that, for SQL of your own. Pass a file path to keep the database on disk, or nothing for one held in memory.
 
 ``` python
 db = database()
+db.usearch_sql()
 vecs = dict(v1=np.ones((100,), dtype=np.float32).tobytes(),
             v2=np.zeros((100,), dtype=np.float32).tobytes())
 {m: db.q(f'select distance_{m}_f32(:v1,:v2) as d', vecs)[0]['d']

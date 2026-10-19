@@ -1,5 +1,12 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.47
+- usearch is probed before it is loaded. Loading its SQLite extension segfaulted Python in `database()` on GitHub's AMD EPYC 9V74 and 9V45 runners, about one run in four. A subprocess now builds a small HNSW index and loads the extension first. The verdict is cached in `cache_dir()/usearch.json`, keyed by CPU model, usearch version and extension size. A part that fails is turned off with one warning: `vec_search` computes distances with numpy, and `get_index` returns `ExactIndex`, a numpy stand-in for usearch's `Index`. `LITESEARCH_USEARCH=0` keeps usearch out; `LITESEARCH_USEARCH=1` skips the probe. `LITESEARCH_CACHE` moves the cache folder.
+- usearch's SQLite extension is downloaded under a file lock, so concurrent processes no longer load a half-written file. `import litesearch` no longer downloads it.
+- `database()` no longer loads the extension. `vec_search` loads it on first use, and keyword search never does. Call `db.usearch_sql()` before using `distance_*` functions in your own SQL.
+- `get_index` builds the index from the table's vectors and saves it when the sidecar file is missing, or when a `.stale` file beside it says a session without usearch wrote to the store. A missing sidecar used to give an empty index.
+- New: `usearch_ok`, `usearch_lib`, `cache_dir`, `cpu_model`, `ExactIndex`, `Database.usearch_sql`. `usearch_fix(path=)`.
+
 ## 0.1.46
 - `add_dir(stop=)`: a callable asked before each file. When it returns True, `add_dir` stops: the files already stored stay stored and indexed, a parse in flight finishes, and no further parse starts. Given `stop`, the result is an `L` whose `cancelled` says whether files went unread and whose `unread` lists them. Without `stop`, the result is the plain list it was.
 

@@ -1,6 +1,5 @@
 __version__ = "0.1.47"
-from .postfix import usearch_fix
-usearch_fix()
+from .postfix import *
 from .core import *
 from .data import *
 from .utils import *

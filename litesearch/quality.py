@@ -14,6 +14,7 @@ import numpy as np
 from fastcore.all import AttrDict, L, patch
 from fastlite import Database
 from .core import NP_DTYPE
+from .postfix import usearch_ok
 
 # %% ../nbs/11_quality.ipynb #bf0dbd24
 #: Feature names, each a per-document average where a larger value means more likely noise.
@@ -48,7 +49,7 @@ def _knn(V:np.ndarray, k:int=10, exact_max:int=30_000, block:int=1024) -> tuple:
     n = len(V)
     k = min(k, n - 1)
     if n < 3 or k < 1: return np.zeros((n, 0), np.int32), np.zeros((n, 0), np.float32)
-    if n > exact_max:
+    if n > exact_max and usearch_ok('index'):
         from usearch.index import Index
         ix = Index(ndim=V.shape[1], metric='cos', dtype='f32')
         ix.add(np.arange(n), V)
