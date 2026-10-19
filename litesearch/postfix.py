@@ -49,8 +49,9 @@ def cpu_model() -> str:
     "The CPU's model name: `/proc/cpuinfo` on Linux, `sysctl` on macOS, else the machine type."
     try:
         if Path('/proc/cpuinfo').exists():
-            for l in open('/proc/cpuinfo'):
-                if l.startswith('model name'): return l.split(':', 1)[1].strip()
+            with open('/proc/cpuinfo') as f:
+                for l in f:
+                    if l.startswith('model name'): return l.split(':', 1)[1].strip()
         if platform.system() == 'Darwin':
             return subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], capture_output=True, text=True).stdout.strip() or platform.machine()
     except Exception: pass
