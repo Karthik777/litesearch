@@ -1,5 +1,11 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.43
+- `FastEncode` and `FastEncodeImage` load models with external data, such as the default EmbeddingGemma, under onnxruntime 1.31 and later. `ort_path` hard-links a cached model and its data files into one folder, which onnxruntime now requires.
+- `pre` returns None for a query made only of operator characters, such as `***`, instead of raising AttributeError. `Database.search` returns no keyword hits for such a query and still runs the vector leg.
+- `mv_skill_md(dry_run=True)` prints where it would copy and no longer prints "Installed".
+- `usearch_fix` gives SQLite advice for the platform: Homebrew's `sqlite` on macOS, `libsqlite3-dev` or `sqlite-devel` on Linux.
+
 ## 0.1.42
 - `fts_and(terms, prefix_last=)`: an FTS5 MATCH string AND-ing quoted terms, the last also as a prefix.
 - `QSTOP`: the stopwords `kw` drops, public. `_QSTOP` stays as an alias.

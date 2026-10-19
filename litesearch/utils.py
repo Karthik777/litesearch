@@ -3,9 +3,9 @@
 # %% auto #0
 __all__ = ['embedding_gemma_prompt', 'nomic_prompt', 'modernbert_prompt', 'embedding_gemma', 'modernbert', 'nomic_text_v15',
            'cr_instr', 'model', 'clip_vit_b32', 'nomic_vision_v15', 'siglip2_so400m', 'bge_instr', 'bge_model',
-           'static_code_embedder', 'static_embedder', 'download_model', 'FastEncode', 'doc_encoder', 'query_encoder',
-           'encoder_id', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts', 'encode_pdf_images',
-           'hash_embed']
+           'static_code_embedder', 'static_embedder', 'download_model', 'ort_path', 'FastEncode', 'doc_encoder',
+           'query_encoder', 'encoder_id', 'FastEncodeImage', 'FastEncodeMultimodal', 'encode_pdf_texts',
+           'encode_pdf_images', 'hash_embed']
 
 # %% ../nbs/03_utils.ipynb #initial_id
 from fastcore.all import AttrDict, L, filter_ex, store_attr, AttrDictDefault, Path, chunked, defaults, ifnone, bind, first, num_cpus
@@ -83,6 +83,19 @@ def download_model(repo_id=embedding_gemma.model,  # HF repo id
 	if md and Path(md).exists(): return md
 	return _cached_snapshot(repo_id) or hf.snapshot_download(repo_id=repo_id, token=token)
 
+def ort_path(p):
+	'`p`, or hard links to it and its external data files in one real folder when `p` is a symlink into the Hugging Face cache.'
+	p = Path(p)
+	fs = [f for f in p.parent.glob(p.name+'*') if f.is_symlink()]
+	if not p.is_symlink() or len(fs) < 2: return p
+	# ONNX Runtime 1.31+ refuses external data outside the model's resolved folder, and cache blobs live in separate folders
+	d = p.parent/'.ort'; d.mkdir(exist_ok=True)
+	for f in fs:
+		if (t := d/f.name).exists(): continue
+		try: os.link(f.resolve(), t)
+		except OSError: import shutil; shutil.copy(f.resolve(), t)
+	return d/p.name
+
 # %% ../nbs/03_utils.ipynb #408830ea692c2eca
 class FastEncode:
 	def __init__(self,
@@ -122,7 +135,7 @@ class FastEncode:
 		return q_p
 	def _load_enc(self):
 		try:
-			onnx_p = self._maybe_quantize(Path(self.md) / self.md_nm)
+			onnx_p = self._maybe_quantize(ort_path(Path(self.md) / self.md_nm))
 			ort = _ort()
 			sess_opt = ort.SessionOptions()
 			sess_opt.intra_op_num_threads = num_cpus()
@@ -237,7 +250,7 @@ class FastEncodeImage:
 		self._load_processor()
 	def _load_enc(self):
 		try:
-			onnx_p = Path(self.md) / self.model_dict.onnx_path
+			onnx_p = ort_path(Path(self.md) / self.model_dict.onnx_path)
 			ort = _ort()
 			sess_opt = ort.SessionOptions()
 			sess_opt.intra_op_num_threads = num_cpus()

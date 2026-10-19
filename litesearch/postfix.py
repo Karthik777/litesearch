@@ -7,6 +7,9 @@ __all__ = ['usearch_fix']
 import os, subprocess, platform
 
 # %% ../nbs/00_postfix.ipynb #aaef4f5a5e9a9eed
+_sqlite_hints = dict(Darwin='macOS ships it in /usr/lib, and Homebrew has it as `brew install sqlite`',
+                     Linux='`apt install libsqlite3-dev` on Debian or Ubuntu, `dnf install sqlite-devel` on Fedora')
+
 def usearch_fix(v:bool=False):
     """Add `/usr/lib` to the usearch SQLite extension's rpath on macOS so the extension can load; does nothing elsewhere."""
     if v: print('Applying usearch macOS fix if required...')
@@ -21,8 +24,8 @@ def usearch_fix(v:bool=False):
         subprocess.run(cmd, capture_output=True, text=True, check=True)
         if v: print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
     except ImportError as ie:
-        print('Warning: usearch not installed or import failed. you might need to install libsqlite3-dev. '
-              'For macs do `brew install libsqlite3-dev`. For linux `apt install libsqlite3-dev`. ', ie)
+        hint = _sqlite_hints.get(platform.system())
+        print(f'Warning: usearch failed to import ({ie}). Install it with `pip install usearch`' + (f'; if SQLite is missing, {hint}' if hint else '') + '.')
     except subprocess.CalledProcessError as e:
         out = subprocess.run(['otool', '-l', dylib_path], capture_output=True, text=True).stdout
         if '/usr/lib' in out:

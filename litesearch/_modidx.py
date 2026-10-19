@@ -293,5 +293,6 @@ d = { 'settings': { 'branch': 'main',
                                   'litesearch.utils.encode_pdf_texts': ('utils.html#encode_pdf_texts', 'litesearch/utils.py'),
                                   'litesearch.utils.encoder_id': ('utils.html#encoder_id', 'litesearch/utils.py'),
                                   'litesearch.utils.hash_embed': ('utils.html#hash_embed', 'litesearch/utils.py'),
+                                  'litesearch.utils.ort_path': ('utils.html#ort_path', 'litesearch/utils.py'),
                                   'litesearch.utils.query_encoder': ('utils.html#query_encoder', 'litesearch/utils.py'),
                                   'litesearch.utils.static_embedder': ('utils.html#static_embedder', 'litesearch/utils.py')}}}

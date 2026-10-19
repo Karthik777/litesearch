@@ -416,10 +416,9 @@ def pre(q:str,          # the user's query
         extract_kw=True, # drop stopwords with `kw`
         pattern=r'[*,"\(\)\^]|-(?=\S)' # characters `clean` replaces with a space
         ):
-    '''Turn a user's query into an FTS5 query: cleaned, stopwords dropped, each word a prefix, joined with OR.'''
-    q = clean(q, pattern)
-    if not q.strip(): return None
-    if extract_kw: q = kw(q)
+    '''Turn a user's query into an FTS5 query: cleaned, stopwords dropped, each word a prefix, joined with OR; None when no word is left.'''
+    if not (q := clean(q, pattern)): return None
+    if extract_kw and not (q := kw(q)): return None
     if wc: q = add_wc(q)
     if wide: q = mk_wider(q)
     return q
@@ -486,6 +485,6 @@ def mv_skill_md(dry_run:bool=True, dir=None) -> None:
     ts = [root/'.agents/skills/litesearch/SKILL.md',
           root/'.claude/skills/litesearch/SKILL.md',
           root/'.Codex/skills/litesearch/SKILL.md']
-    if dry_run: print(f'Copying {src} to: {list(map(str,ts))}')
-    else: [p.mk_write(src.read_text(encoding='utf-8')) for p in ts]
+    if dry_run: return print(f'Would copy {src} to: {list(map(str,ts))}')
+    for p in ts: p.mk_write(src.read_text(encoding='utf-8'))
     print(f'Installed -> {list(map(str,ts))}')

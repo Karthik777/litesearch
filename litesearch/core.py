@@ -758,11 +758,11 @@ def search(self: Database,  # database connection
     if (reranking or term_rank) and 'content' not in cols: cols = cols + ['content']  # the text the cross-encoder and term ranking read
     lim, off = (limit + offset) if rrf and offset else limit, offset if not rrf else None
     use_ann = ann and not where
-    fts_q, fts_quote = q, quote
-    if fts_pre and (p := pre(q)): fts_q, fts_quote = p, False
+    fts_q, fts_quote = (pre(q), False) if fts_pre else (q, quote)
     vec_leg = lambda t: (lambda: t.ann_search(emb,cols,lim,where,where_args,dtype) if use_ann else t.vec_search(
 	          emb,cols,where,where_args,emb_col,emb_metric,dtype,lim,off))
     def fts_leg():
+        if not fts_q: return []
         if not term_rank: return tbl.fts_search(fts_q, cols, 'rank', lim, off, where, where_args, fts_quote)
         o = ifnone(off, 0)
         hs = tbl.fts_search(fts_q, cols, 'rank', lim and max(ifnone(fts_depth, 0), lim + o), None, where, where_args, fts_quote)
