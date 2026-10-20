@@ -216,3 +216,54 @@ A writer on a shared connection holds it for each whole transaction. Python's lo
 `ann_search` runs the usearch search outside the connection lock, so a shared connection keeps pace with separate connections up to 4 threads. At 8 threads separate connections fall to 0.6 times shared. The cause of that drop is not investigated.
 
 The shared FTS drop from 1,134 to 608 queries per second at 8 threads with statistics on did not repeat with statistics off (1,114). It is not investigated.
+
+## Query rewriting for a static embedder: strip rules help the vector leg, feedback expansion hurts
+
+`python -m evals.rewrite` (`evals/rewrite.py`, `evals/results/rewrite.json`). Algorithmic rewriters
+only, no LLM. A LLM rewriter is not measured.
+
+### Method
+
+6,000 vedicreader section meanings (English, up to 1,200 per category), `potion-multilingual-128M`.
+888 known-item queries, each from one sentence of its target. Four flavours: `keyword` (control),
+`sparse` (3 words), `verbose` (keywords in a chatty request), `negated` (keywords plus "but not" and
+two words of another doc). `verbose` and `negated` are synthetic and built to favour a rewriter.
+Vector leg is exact cosine. Hybrid is `Index.search` (FTS + vector, RRF). MRR@10, paired bootstrap
+over queries against the raw query of the same leg.
+
+### MRR@10
+
+| flavour | leg | raw | strip | strip+expand | rocchio | oracle drop |
+|---|---|---|---|---|---|---|
+| keyword | vector | 0.265 | 0.265 | 0.163 (−0.102) | 0.255 (−0.010) | 0.341 |
+| keyword | hybrid | 0.668 | 0.668 (no diff) | 0.434 (−0.233) | | |
+| sparse | vector | 0.138 | 0.138 | 0.095 (−0.043) | 0.137 (no diff) | 0.168 |
+| sparse | hybrid | 0.521 | 0.520 (no diff) | 0.280 (−0.241) | | |
+| verbose | vector | 0.196 | 0.211 (+0.015) | 0.140 (−0.056) | 0.188 (no diff) | 0.317 |
+| verbose | hybrid | 0.655 | 0.661 (no diff) | 0.428 (−0.227) | | |
+| negated | vector | 0.207 | 0.264 (+0.057) | 0.161 (−0.046) | 0.254 (+0.047) | 0.341 |
+| negated | hybrid | 0.625 | 0.666 (+0.041) | 0.433 (−0.193) | | |
+
+`strip` drops negated clauses (negator plus two words), stopwords and repeats. `strip+expand` adds
+three words from the top 5 docs that raise cosine to their centroid. `rocchio` adds 0.5 of that
+centroid to the query vector. `oracle drop` removes each query word that lowers the gold rank, using
+the answer: a ceiling for any token-subset rewrite, not a method.
+
+### Reading
+
+- Hybrid beats vector alone by 0.40 to 0.46 MRR on every flavour. FTS carries these queries, and
+  `keyword` is built from target words, so it favours FTS (see `queries.py`).
+- `strip` is free on a clean query (no difference on `keyword`, `sparse`) and gains on filler and
+  negation: +0.015 and +0.057 vector, +0.041 hybrid on `negated`. The negation rule is fitted to the
+  template, so +0.041 is an upper bound.
+- Feedback expansion loses everywhere, −0.04 to −0.24. One target per query, and the top 5 mostly
+  miss it, so the added words pull toward the wrong docs. The hybrid loss is larger because the
+  added words also enter FTS.
+- Headroom is real: the oracle gains +0.03 to +0.12 vector. A rewriter that knows which words hurt
+  would pay. Nothing algorithmic here finds them.
+
+### Decision
+
+Nothing ships. `strip` gains only where the query is synthetic filler, and `Index.search` already
+takes the stopword path inside FTS. Not measured: a LLM rewriter, HyDE, multi-intent split, real
+user questions, synonym mismatch (WordNet could not be downloaded in this environment).
