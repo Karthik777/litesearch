@@ -1,5 +1,17 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.50
+- One text is stored once. Before, a document was keyed by its source string and title, so one file added by a relative path, an absolute path, a symlink and a copy was stored four times, and a string with the same text a fifth. A file edited since it was added was skipped, so search kept returning the old text.
+- A file's source is its resolved path. A document's id is still a hash of its source and title, so it stays the same when the file is edited. Docs gain a `hash` column over their `(page, text)` pairs, and a new `sources` table (`<store>_sources` for a named store) maps every source to the document holding its text.
+- `add_doc`, `add_file`, `add_dir`, `Index.add` and `Index.add_code`: unchanged text is skipped as `unchanged`; text another source already stored is skipped as `same text as <source>` and records the new source; an edited source replaces its chunks and nodes in place. A text added with no `source` is keyed by its title and, as before, a second text under the same title is skipped.
+- `Database.delete_source` and `Index.remove` forget one source. A document goes when its last source does. `delete_doc` forgets the document's own source and keeps text another source shares, under that source. An edit to text another source shares first moves the old text to an id of its own for that source, keeping its vectors.
+- `add_dir` stores a batch's chunks before its doc rows and sources, so a run that fails partway leaves the documents it would have replaced whole.
+- `Index.add_code` writes one document of kind `code` per file, with one node, under the same rules. Its chunks now carry `doc_id`, `node_id` and `heading`, and an edited file no longer leaves its old chunks behind.
+- Hits from `doc_search` and `Index.search` carry their document's `source`; `toc()` entries and `Index.docs` list every source in `sources`. Default titles of symlinked files come from the target.
+- `Index.add` takes a string too long to be a path as text. It raised `OSError: File name too long`.
+- Stores written before 0.1.50 open unchanged: `get_tree` creates `sources` from `docs.source`. Re-adding a file by the path it was first added under moves its document to the resolved-path id, keeping its vectors, and re-embeds it once to record its hash. Duplicates an old store holds go as their sources are re-added. A litesearch older than 0.1.50 can still open a newer store; it ignores `sources`, and rows it orphans are cleaned when 0.1.50 next opens the store.
+- New: `doc_hash`, `source_key`, `is_path`, `Database.delete_source`, `Index.remove`, `add_doc(jobs=)`, `add_code(force=)`.
+
 ## 0.1.49
 - `get_index` and `usearch_sql` no longer take `db_lock`. Since 0.1.47 they did, so a thread that held `db_lock` while workers read the same connection waited forever: Leela holds it around `Kosha.context`, whose repo and package legs run on worker threads. On an ordinary connection they now load under a lock of their own, which nothing holds while it waits on another thread. On a `database(shared=True)` connection they still take the connection's lock, which every statement takes anyway. Each store still gets one index per connection, and a reader never sees one half loaded.
 

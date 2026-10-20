@@ -32,8 +32,14 @@ ix.add('docs/')                         # dir, file, string, list of strings, or
 ix.search('how does get_store create FTS triggers', limit=10)
 ```
 
-Hits carry `content`, `heading` (a breadcrumb), `node_id`, `page` and `doc_id`. Re-adding the same
-source is a no-op — the store is content-addressed.
+Hits carry `content`, `heading` (a breadcrumb), `node_id`, `page`, `doc_id` and `source`.
+
+One text is stored once. A file's source is its resolved path, so relative, absolute and symlinked
+paths are one source. Re-adding unchanged text is skipped; a copy or a string with stored text only
+records its source (`ix.docs[i]['sources']`); a file edited since it was added replaces its old
+chunks under the same `doc_id`. `ix.remove(src)` forgets a source, and the text stays while another
+source shares it. A text added with no source is keyed by its title, and a second text under the same
+title is skipped. `force=True` rebuilds, for a new chunker or mode.
 
 ```python
 ix.search(q, rerank=True)               # +0.026 to +0.077 MRR, ~10x latency, 4 MB model
@@ -131,7 +137,8 @@ call that assembles a whole answer is where you set them.
 | Function | Description |
 |---|---|
 | `Index(path)` | The front door: encoder, dtype, chunking, tree and strategy all decided |
-| `ix.add(src)` / `ix.add_code(src)` | Ingest documents/text, or source code via the AST |
+| `ix.add(src)` / `ix.add_code(src)` | Ingest documents/text, or source code via the AST, one text stored once |
+| `ix.remove(src)` | Forget a source; shared text stays for the others |
 | `ix.search(q, rerank=)` | Hybrid search; `rerank=True` is the one lever worth a decision |
 | `ix.sections(q)` / `ix.read(nid)` / `ix.toc()` / `ix.context(q)` | Section ranking, assembly, navigation |
 | `ix.db` | The `database()` underneath — everything below is still reachable |
@@ -142,6 +149,7 @@ call that assembles a whole answer is where you set them.
 | `store.clusters()` / `store.peers(rowid)` | Labelled clusters; the cluster a row belongs to |
 | `db.get_tree(store)` | Add docs/nodes tables to a chunk store |
 | `db.add_file(path)` / `db.add_dir(dir)` | Ingest: tree → node-linked chunks → embed |
+| `db.delete_source(src)` / `db.delete_doc(id)` | Forget a source or a document; text another source shares stays |
 | `db.add_dir(files=[...])` | The same bulk load over an explicit list, for callers that route per file |
 | `db.doc_search(q, emb)` / `db.sections(q, emb)` | Search with breadcrumbs / ranked sections |
 | `db.toc(doc)` / `db.read(node_id)` | Navigate structure, no embeddings |

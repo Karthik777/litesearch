@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['MAX_HEAD_DENSITY', 'MIN_CHUNK', 'DOC_EXTS', 'PARSE_HEAVY', 'MIN_PARALLEL_DOCS', 'TreeNode', 'summarize_extractive',
-           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'pack_target', 'store_chunks',
-           'adaptive_weights', 'merge_spans']
+           'struct_levels', 'detect_mode', 'build_tree', 'heading_path', 'doc_id', 'doc_hash', 'is_path', 'source_key',
+           'pack_target', 'store_chunks', 'adaptive_weights', 'merge_spans']
 
 # %% ../nbs/06_tree.ipynb #e63511a36b1e00c0
 from fastcore.all import Path, patch, first, L, chunked, AttrDict, ifnone, defaults, ProcessPoolExecutor
@@ -227,6 +227,19 @@ def doc_id(source, title='') -> str:
     'Return a 16-character document id computed from the source and title.'
     return hash_record({'k': f'{source}|{title}'})[:16]
 
+def doc_hash(pages) -> str:
+    'Return a hash of a document\'s `(page, text)` pairs, the same from any source.'
+    return hash_record({'p': [[p, t or ''] for p, t in pages]})
+
+def is_path(s) -> bool:
+    'Return whether `s` names an existing file or folder; a string too long to be a path is not one.'
+    try: return isinstance(s, (str, Path)) and Path(s).exists()
+    except (OSError, ValueError): return False
+
+def source_key(s) -> str:
+    'Return the key a source is stored under: the resolved absolute path for an existing path, else the string.'
+    return str(Path(s).resolve()) if is_path(s) else str(s)
+
 @patch
 def get_tree(self:Database,
              store:str='store',   # chunk store the tree is built over
@@ -235,21 +248,29 @@ def get_tree(self:Database,
              encoder:str=None,    # the encoder whose vectors the chunk store holds; checked on reopen
              **kw                 # extra typed columns for the chunk store
 ) -> AttrDict:
-    """Create the docs and nodes tables and a chunk store with node columns, or open them if they exist."""
+    """Create the docs, nodes and sources tables and a chunk store with node columns, or open them if they exist."""
     p = prefix if prefix is not None else ('' if store == 'store' else f'{store}_')
-    dt, nt = f'{p}docs', f'{p}nodes'
+    dt, nt, srt = f'{p}docs', f'{p}nodes', f'{p}sources'
     key = ('tree', store, p, bool(ann))
     if key in self.ensured: return self.ensured[key]
     st = self.get_store(store, hash=True, ann=ann, encoder=encoder, doc_id=str, node_id=str,
                         page=int, heading=str, **kw)
+    fresh = srt not in self.t
     with write_txn(self):
         self.t[dt].create(id=str, title=str, source=str, kind=str, pages=int, meta=str, added_at=float,
                           pk='id', if_not_exists=True, defaults=dict(added_at='CURRENT_TIMESTAMP'))
         self.t[nt].create(id=str, doc_id=str, parent_id=str, level=int, seq=int, title=str,
                           page_start=int, page_end=int, summary=str, nchunks=int, pk='id', if_not_exists=True)
-        for t, c in ((nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id')):
+        self.t[srt].create(source=str, doc_id=str, added_at=float, pk='source', if_not_exists=True,
+                           defaults=dict(added_at='CURRENT_TIMESTAMP'))
+        if 'hash' not in self.t[dt].columns_dict: self.t[dt].add_column('hash', str)
+        for t, c in ((dt,'hash'), (nt,'doc_id'), (nt,'parent_id'), (store,'doc_id'), (store,'node_id'), (srt,'doc_id')):
             self.t[t].create_index([c], if_not_exists=True)
-    self.ensured[key] = AttrDict(docs=self.t[dt], nodes=self.t[nt], store=st, prefix=p)
+        # a store written before 0.1.50 has no sources: each document keeps the one it was added under
+        if fresh: self.execute(f'insert or ignore into [{srt}](source, doc_id) select coalesce(source, title), id from [{dt}]')
+        # an older litesearch deletes documents without touching sources
+        self.execute(f'delete from [{srt}] where doc_id not in (select id from [{dt}])')
+    self.ensured[key] = AttrDict(docs=self.t[dt], nodes=self.t[nt], sources=self.t[srt], store=st, prefix=p)
     return self.ensured[key]
 
 # %% ../nbs/06_tree.ipynb #538721312f0bb5f
@@ -300,10 +321,103 @@ def _tree_ann(self:Database, store):
     return store not in self.t or bool(self._ann_meta(store))
 
 @patch
+def _drop(self:Database, g, did:str) -> list:
+    'Delete a document\'s chunks, nodes, row and sources in the open transaction, returning the rowids the ANN index must drop.'
+    rm = L(g.store(select=rowid_sel(), where='doc_id=?', where_args=[did])).itemgot('rowid')
+    for t, c in ((g.store,'doc_id'), (g.nodes,'doc_id'), (g.docs,'id'), (g.sources,'doc_id')): t.delete_where(f'{c}=?', [did])
+    return list(rm)
+
+@patch
+def _unindex(self:Database, store:str, rm):
+    'Drop chunk rowids from the store\'s ANN index, after the transaction that deleted them commits.'
+    if rm and (m := self._ann_meta(store)): self.t[store]._sync_index([], list(rm), NP_DTYPE.get(m['dtype'], np.float16))
+
+@patch
+def _rekey(self:Database, g, old:str, new:str):
+    'Move document `old` with its nodes, chunks and sources to id `new` in the open transaction, keeping its vectors.'
+    n = len(old) + 1
+    self.execute(f'update [{g.docs.name}] set id=? where id=?', [new, old])
+    self.execute(f'update [{g.nodes.name}] set id=?||substr(id,?), doc_id=?, parent_id=?||substr(parent_id,?) where doc_id=?',
+                 [new, n, new, new, n, old])
+    for r in g.store(select='rowid as rowid, node_id, content', where='doc_id=?', where_args=[old]):
+        nid = r['node_id'] and new + r['node_id'][n-1:]
+        self.execute(f'update [{g.store.name}] set id=?, doc_id=?, node_id=? where rowid=?',
+                     [hash_record(dict(node_id=nid, content=r['content']), ['node_id','content']), new, nid, r['rowid']])
+    self.execute(f'update [{g.sources.name}] set doc_id=? where doc_id=?', [new, old])
+
+@patch
+def _release(self:Database, g, did:str) -> list:
+    'Delete document `did` once no source points at it, else keep its `source` on one that does; return rowids to unindex.'
+    if not did or not first(g.docs(where='id=?', where_args=[did])): return []
+    if not (left := L(g.sources(select='source', where='doc_id=?', where_args=[did])).itemgot('source')): return self._drop(g, did)
+    self.execute(f'update [{g.docs.name}] set source=? where id=? and coalesce(source, \'\') not in '
+                 f'(select source from [{g.sources.name}] where doc_id=?)', [left[0], did, did])
+    return []
+
+@patch
+def _link(self:Database, g, src:str, did:str, replace:bool=True) -> list:
+    'Point `src` at document `did` in the open transaction, releasing the one it pointed at; return rowids to unindex.'
+    prev = (r := first(g.sources(where='source=?', where_args=[src]))) and r['doc_id']
+    if prev == did or (prev and not replace): return []
+    g.sources.insert(dict(source=src, doc_id=did), replace=True)
+    return self._release(g, prev)
+
+@patch
+def _commit(self:Database, g, jobs:list, store:str='store', emb_fn=None, with_heading:bool=True, index:bool=True):
+    'Store ingest jobs: move shared text aside, store the new chunks, then swap in nodes and doc rows and point sources at them.'
+    with write_txn(self):
+        for j in jobs:
+            if j.get('rekey'): self._rekey(g, j['did'], j['rekey'])
+    chunks = [c for j in jobs for c in j.get('chunks') or []]
+    store_chunks(g.store, chunks, emb_fn, with_heading)
+    rm = []
+    with write_txn(self):
+        for j in jobs:
+            if not j.get('doc'): continue
+            keep = [c['id'] for c in j['chunks'] if c.get('id')]
+            stale = L(g.store(select='rowid as rowid, id', where='doc_id=?', where_args=[j['did']])).filter(lambda r: r['id'] not in set(keep))
+            for b in chunked(stale.itemgot('rowid'), 400): g.store.delete_where(sql_in('rowid', b))
+            rm += list(stale.itemgot('rowid'))
+            g.nodes.delete_where('doc_id=?', [j['did']]); g.nodes.insert_all(j['nodes'], replace=True)
+            g.docs.insert(j['doc'], replace=True)
+        for j in jobs: rm += self._link(g, j['src'], j['did'], j['replace'])
+    self._unindex(store, rm)
+    if index and chunks and (m := self._ann_meta(store)):
+        ids = [i for j in jobs if j.get('doc') for i in L(g.store(select='id', where='doc_id=?', where_args=[j['did']])).itemgot('id')]
+        if ids: g.store._sync_index(ids, [], NP_DTYPE.get(m['dtype'], np.float16))
+
+@patch
+def _plan(self:Database, g, raw:str, src:str, title:str, h:str, rep:bool=True, force:bool=False, jobs:list=None, store:str='store'):
+    'Decide one ingest: return a skip result after pointing `src` at text already stored, or `(None, (doc id, id to move shared text to))`.'
+    did = doc_id(src, title)
+    if raw != src: self._adopt(g, raw, src, doc_id(raw, title), did)
+    # a batch not yet committed: documents it will write, and stored ones it will move aside for their other sources
+    pend = {j['did']: j['doc'] for j in jobs or [] if j.get('doc')}
+    moved = {j['did']: j['rekey'] for j in jobs or [] if j.get('rekey')}
+    def row(i): return i and (pend.get(i) or first(g.docs(where='id=?', where_args=[i])))
+    def link(d, why):
+        job = dict(src=src, did=(to := moved.get(d['id'], d['id'])), replace=rep)
+        if to in pend or to in moved.values(): jobs.append(job)
+        else: self._commit(g, [job], store, index=False)
+        return dict(doc_id=to, title=d['title'], skipped=why), (None, None)
+    cur = (r := first(g.sources(where='source=?', where_args=[src]))) and r['doc_id']
+    own = row(did)
+    if not force:
+        for d in (row(cur), own):
+            if d and d.get('hash') == h and (d['title'] == title or d['source'] != src): return link(d, 'unchanged')
+        if own and not rep: return dict(doc_id=did, title=title, skipped='already ingested under this title; pass force=True'), (None, None)
+        twin = (first(d for i, d in pend.items() if d['hash'] == h and i != did and d['source'] != src)
+                or first(g.docs(where="hash=? and id!=? and coalesce(source, '')!=?", where_args=[h, did, src])))
+        if twin: return link(twin, f"same text as {twin['source']}")
+    others = own and L(g.sources(select='source', where='doc_id=? and source!=?', where_args=[did, src])).itemgot('source')
+    to = others and doc_id(others[0], own['title'])
+    return None, (did, to if others and own.get('hash') != h and not row(to) else None)
+
+@patch
 def add_doc(self:Database,
             pages,                  # list of (page number, text), or one string
             title:str,              # document title
-            source:str=None,        # path or url (defaults to the title)
+            source:str=None,        # path or url; an existing path is stored resolved. None keys the text by its title
             kind:str='text',        # a label stored on the doc row to filter on, such as 'pdf', 'web' or 'md'
             store:str='store',      # chunk store
             prefix:str=None,        # tree table prefix
@@ -312,42 +426,47 @@ def add_doc(self:Database,
             summarize=None,         # function from section text to a summary
             with_heading:bool=True, # embed each chunk together with its heading path
             meta:dict=None,         # arbitrary json metadata for the doc row
-            force:bool=False,       # replace a document with the same source and title instead of skipping it
+            force:bool=False,       # rebuild the document even when its text is already stored
             index:bool=True,        # mirror this document's chunks into the ANN index
             mode:str=None,          # force a build_tree structural mode instead of detecting one
             meta_fn=None,           # (chunk text) -> dict of facets stored as the chunk's `metadata`
-            defer:list=None         # collect chunks here instead of embedding and storing them
+            defer:list=None,        # collect chunks here instead of embedding and storing them
+            jobs:list=None          # collect the whole write here for `_commit`, as `add_dir` does
 ) -> dict:
     '''Ingest one document: build its tree, chunk each section, embed the chunks and store them.'''
     import json
     with db_lock(self):
         if isinstance(pages, str): pages = [(0, pages)]
         pages = [(p, t or '') for p, t in pages]
-        g, src = self.get_tree(store, prefix, ann=self._tree_ann(store)), str(ifnone(source, title))
-        did = doc_id(src, title)
-        if first(g.docs(where=f'id={did!r}')):
-            if not force: return dict(doc_id=did, title=title, skipped='already ingested; pass force=True')
-            self.delete_doc(did, store, prefix)
+        g, raw = self.get_tree(store, prefix, ann=self._tree_ann(store)), str(ifnone(source, title))
+        src = raw if source is None else source_key(raw)
+        h, rep = doc_hash(pages), source is not None
+        skip, (did, rekey) = self._plan(g, raw, src, title, h, rep, force, jobs, store)
+        if skip: return skip
         tree = build_tree(pages, title=title, summarize=summarize, mode=mode)
         chunks = _node_chunks(tree, title, did, chunker, meta_fn=meta_fn)
         counts = {}
         for c in chunks: counts[c['node_id']] = counts.get(c['node_id'], 0) + 1
-        with write_txn(self):
-            g.docs.insert(dict(id=did, title=title, source=src, kind=kind,
-                               pages=(max(p for p, _ in pages)+1 if pages else 0),
-                               meta=json.dumps(meta or {})), replace=True)
-            g.nodes.insert_all([dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
-                                     parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
-                                     title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
-                                     summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0))
-                                for nd in tree], replace=True)
-        if chunks and defer is not None: defer.extend(chunks)
-        elif chunks:
-            store_chunks(g.store, chunks, emb_fn, with_heading)
-            if index and (m := self._ann_meta(store)):
-                ids = L(g.store(select='id', where=f'doc_id={did!r}')).itemgot('id')
-                if ids: g.store._sync_index(list(ids), [], NP_DTYPE.get(m['dtype'], np.float16))
+        job = dict(src=src, did=did, replace=rep, rekey=rekey, chunks=chunks,
+                   doc=dict(id=did, title=title, source=src, kind=kind, hash=h, meta=json.dumps(meta or {}),
+                            pages=(max(p for p, _ in pages)+1 if pages else 0)),
+                   nodes=[dict(id=f'{did}#{nd.seq}', doc_id=did, seq=nd.seq, level=nd.level,
+                               parent_id=None if nd.parent is None else f'{did}#{nd.parent}',
+                               title=nd.title, page_start=nd.page_start, page_end=nd.page_end,
+                               summary=nd.summary, nchunks=counts.get(f'{did}#{nd.seq}', 0)) for nd in tree])
+        if jobs is not None: jobs.append(job)
+        elif defer is not None: self._commit(g, [dict(job, chunks=[])], store, index=False); defer.extend(chunks)
+        else: self._commit(g, [job], store, emb_fn, with_heading, index)
         return dict(doc_id=did, title=title, kind=kind, nodes=len(tree), chunks=len(chunks))
+
+@patch
+def _adopt(self:Database, g, raw:str, src:str, legacy:str, did:str):
+    'Move a document added before 0.1.50 under the unresolved `raw` to the id its resolved source gives it.'
+    if legacy == did or first(g.docs(where='id=?', where_args=[did])) or not first(g.docs(where='id=?', where_args=[legacy])): return
+    with write_txn(self):
+        self._rekey(g, legacy, did)
+        self.execute(f'update [{g.docs.name}] set source=? where id=?', [src, did])
+        g.sources.delete_where('source=?', [raw]); g.sources.insert(dict(source=src, doc_id=did), replace=True)
 
 def store_chunks(store,                 # chunk store table
                  chunks,                # chunk dicts from `_node_chunks`, from one document or many
@@ -365,17 +484,33 @@ def store_chunks(store,                 # chunk store table
 
 @patch
 def delete_doc(self:Database, did:str, store:str='store', prefix:str=None):
-    'Remove a document, its nodes and its chunks, dropping just those keys from the ANN index.'
+    'Remove a document with its nodes and chunks; text another source shares stays, under that source.'
     with db_lock(self):
         g = self.get_tree(store, prefix, ann=self._tree_ann(store))
-        m = self._ann_meta(store)
-        rm = L(g.store(select=rowid_sel(), where=f'doc_id={did!r}')).itemgot('rowid') if m else L()
         with write_txn(self):
-            g.store.delete_where(where=f'doc_id={did!r}')
-            g.nodes.delete_where(where=f'doc_id={did!r}')
-            g.docs.delete_where(where=f'id={did!r}')
-        if m and rm: g.store._sync_index([], list(rm), NP_DTYPE.get(m['dtype'], np.float16))
+            if (d := first(g.docs(where='id=?', where_args=[did]))): g.sources.delete_where('source=? and doc_id=?', [d['source'], did])
+            rm = self._release(g, did) if d else self._drop(g, did)
+        self._unindex(store, rm)
 
+def _keys(s) -> list:
+    'The keys source `s` may be stored under: resolved if it exists, resolved as far as it can be, and as given.'
+    out = [source_key(s), str(s)]
+    try: out.insert(1, str(Path(s).resolve()))
+    except (OSError, ValueError, RuntimeError): pass
+    return list(dict.fromkeys(out))
+
+@patch
+def delete_source(self:Database, source:str, store:str='store', prefix:str=None) -> dict:
+    'Forget one source; its document goes too unless another source still points at it.'
+    with db_lock(self):
+        g = self.get_tree(store, prefix, ann=self._tree_ann(store))
+        r = first(r for k in _keys(source) if (r := first(g.sources(where='source=?', where_args=[k]))))
+        if not r: return dict(source=str(source), doc_id=None, deleted=False)
+        with write_txn(self):
+            g.sources.delete_where('source=?', [r['source']])
+            rm = self._release(g, r['doc_id'])
+        self._unindex(store, rm)
+        return dict(source=r['source'], doc_id=r['doc_id'], deleted=not first(g.docs(where='id=?', where_args=[r['doc_id']])))
 
 # %% ../nbs/06_tree.ipynb #470e83335ade7f42
 DOC_EXTS = '.pdf,.md,.markdown,.txt,.rst,.ipynb,.xml,.tei,.htm,.html,.conllu'
@@ -391,7 +526,7 @@ def assets(self:Database, name:str=None) -> Path:
 @patch
 def add_file(self:Database,
              path,                 # file to ingest
-             title:str=None,       # None uses the file name with underscores and hyphens as spaces
+             title:str=None,       # None uses the file name, resolved through symlinks, with underscores and hyphens as spaces
              store:str='store',
              prefix:str=None,
              kind:str=None,        # overrides the kind inferred from the extension
@@ -426,7 +561,7 @@ def _add_parsed(self:Database, p, parsed, title=None, store='store', prefix=None
     'Store a file already read by `_parse_doc`, applying its profile\'s chunker, mode and metadata function.'
     from litesearch.data import profile_for
     pages, pmeta, knd, pname = parsed
-    ttl = title or Path(p).stem.replace('_',' ').replace('-',' ').strip()
+    ttl = title or Path(source_key(p)).stem.replace('_',' ').replace('-',' ').strip()   # a symlink is titled by its target
     if pname and (prof := profile_for(name=pname)) is not None:
         # the chunker and the facet function are built in the parent: one is a live object and the
         # other a closure, and neither has any business crossing a process boundary
@@ -480,20 +615,22 @@ def add_dir(self:Database,
     prof, outp = kw.pop('profile', None), kw.pop('out_path', None)
     nw = _n_parse_workers(files, n_workers)
     pend, emb_fn, wh = [], kw.get('emb_fn'), kw.get('with_heading', True)
+    # a document's row and its sources are written only once its chunks are, so a failed run leaves the old one whole
     def flush(force=False):
-        if pend and (force or len(pend) >= embed_batch):
-            store_chunks(g.store, pend, emb_fn, wh); pend.clear()
-    if embed_batch: kw['defer'] = pend
+        if pend and (force or sum(len(j.get('chunks') or []) for j in pend) >= embed_batch):
+            self._commit(g, pend, store, emb_fn, wh, index=False); pend.clear()
+    if embed_batch: kw['jobs'] = pend
     out, halt = [], (lambda: False) if stop is None else stop
     with (g.store.bulk_load() if bulk else nullcontext()):
+      try:
         if nw and nw > 1 and files:
-            jobs = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
+            args = [(str(p), prof or _profile_name(p), str(outp or self.assets(p.stem))) for p in files]
             mp = dict(mp_context=get_context('fork')) if sys.platform == 'darwin' else {}
             # the worker by its module: a docs build runs these cells outside `__main__`, where a worker cannot find it
             from litesearch.tree import _parse_doc as parse
             with ProcessPoolExecutor(nw, **mp) as ex:
                 # read lazily, so a stop leaves the parses not yet started unstarted
-                for p, parsed in zip(files, ex.map(parse, jobs)):
+                for p, parsed in zip(files, ex.map(parse, args)):
                     if halt(): ex.shutdown(cancel_futures=True); break
                     if parsed is not None: out.append(self._add_parsed(p, parsed, store=store, prefix=prefix, index=False, **kw))
                     else: out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
@@ -503,7 +640,7 @@ def add_dir(self:Database,
                 if halt(): break
                 out.append(self.add_file(p, store=store, prefix=prefix, index=False, profile=prof, out_path=outp, **kw))
                 flush()
-        flush(force=True)
+      finally: flush(force=True)
     if self._ann_meta(store): g.store.rebuild_index()
     if stop is None: return out
     out = L(out)
@@ -522,9 +659,10 @@ def toc(self:Database,
     'Return the document tree as nested dicts of titles, page ranges, chunk counts and summaries.'
     g = self.get_tree(store, prefix)
     docs = list(g.docs(where=f'id={doc!r} or title like {"%"+doc+"%"!r}') if doc else g.docs())
-    by_doc, ids = {}, [d['id'] for d in docs]
+    by_doc, ids, srcs = {}, [d['id'] for d in docs], {}
     for b in chunked(ids, 400):
         for r in g.nodes(where=sql_in('doc_id', b)): by_doc.setdefault(r['doc_id'], []).append(r)
+        for r in g.sources(where=sql_in('doc_id', b), order_by='source'): srcs.setdefault(r['doc_id'], []).append(r['source'])
     out = []
     for d in docs:
         rows = sorted(by_doc.get(d['id'], []), key=lambda r: r['seq'])
@@ -537,7 +675,7 @@ def toc(self:Database,
             if r['level'] < max_depth and (ch := kids.get(r['id'])): o['children'] = [node(c) for c in ch]
             return o
         root = first(rows, lambda r: r['parent_id'] is None)
-        out.append(dict(doc_id=d['id'], title=d['title'], source=d['source'], pages=d['pages'],
+        out.append(dict(doc_id=d['id'], title=d['title'], source=d['source'], sources=srcs.get(d['id'], []), pages=d['pages'],
                         tree=node(root) if root else None))
     return out
 
@@ -624,7 +762,7 @@ def merge_spans(hits,            # ranked hits carrying node_id + page
 def doc_search(self:Database,
                q:str,                 # query string
                emb:bytes,             # query embedding
-               columns:list=None,     # extra columns (node_id, page, heading, doc_id always included)
+               columns:list=None,     # extra columns (node_id, page, heading, doc_id always included; each hit also gets its document's `source`)
                limit:int=10,
                store:str='store',
                prefix:str=None,
@@ -648,6 +786,9 @@ def doc_search(self:Database,
         hits = rerank_hits(q, hits[:n], None, limit)
         for i, h in enumerate(hits): h['_rrf_score'] = 1.0/(rrf_k + i)
     for h in hits[:limit]: h['breadcrumb'] = h.get('heading') or self.breadcrumb(h.get('node_id') or '', store, prefix)
+    if 'source' not in cols and (ids := list({h['doc_id'] for h in hits[:limit] if h.get('doc_id')})):
+        src = {r['id']: r['source'] for r in self.get_tree(store, prefix).docs(select='id, source', where=sql_in('id', ids))}
+        for h in hits[:limit]: h['source'] = src.get(h.get('doc_id'))
     return hits[:limit]
 
 @patch

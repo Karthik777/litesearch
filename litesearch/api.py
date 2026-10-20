@@ -5,10 +5,11 @@ __all__ = ['DTYPE', 'HIT_COLS', 'Index']
 
 # %% ../nbs/07_api.ipynb #b0f50ba2adb2
 import numpy as np
-from fastcore.all import Path, patch
-from .core import database, rerank_hits, RERANK_FANOUT
+from fastcore.all import Path, patch, chunked
+from apswutils.utils import hash_record
+from .core import database, rerank_hits, RERANK_FANOUT, db_lock, sql_in
 from .data import dir2chunks, pkg2chunks
-from .tree import DOC_EXTS
+from .tree import DOC_EXTS, is_path, source_key, doc_hash
 from .utils import static_embedder, doc_encoder, query_encoder, encoder_id
 
 # %% ../nbs/07_api.ipynb #ce3d9743bc59
@@ -43,8 +44,14 @@ class Index:
 
     @property
     def docs(self) -> list:
-        'One row per document added, with its id, title, source, kind and page count.'
-        return list(self.t.docs())
+        'One row per document added, with its id, title, source, every source it is stored for, kind and page count.'
+        srcs = {}
+        for r in self.t.sources(order_by='source'): srcs.setdefault(r['doc_id'], []).append(r['source'])
+        return [dict(d, sources=srcs.get(d['id'], [])) for d in self.t.docs()]
+
+    def remove(self, src) -> dict:
+        'Forget a file, URL or title added before; its text stays while another source shares it.'
+        return self.db.delete_source(src, store=self.name)
 
     def __repr__(self):
         return f'Index(path={self.path!r}, chunks={len(self):,}, docs={len(self.docs)})'
@@ -63,9 +70,9 @@ def add(self:Index,
         types:str=DOC_EXTS,     # extensions to pick up when `src` is a directory
         **kw                    # forwarded to add_dir / add_file / add_doc
         ) -> int:
-    'Add documents or text to the index and return the number of chunks the store gained.'
+    'Add documents or text to the index and return the change in its chunk count, negative when an edit shortened a document.'
     before = len(self)
-    if isinstance(src, (str, Path)) and Path(src).exists():
+    if is_path(src):
         p = Path(src)
         if p.is_dir(): self.db.add_dir(str(p), types=types, store=self.name, emb_fn=self.emb, **kw)
         else:          self.db.add_file(str(p), store=self.name, emb_fn=self.emb, **kw)
@@ -78,19 +85,35 @@ def add(self:Index,
 # %% ../nbs/07_api.ipynb #a70c097d20dc
 @patch
 def add_code(self:Index,
-             src,       # a source directory, or an installed package name
-             **kw       # forwarded to dir2chunks / pkg2chunks
+             src,               # a source directory, or an installed package name
+             force:bool=False,  # rewrite files whose code is already stored
+             **kw               # forwarded to dir2chunks / pkg2chunks
              ) -> int:
-    'Add the source code in a directory or installed package, cut at top-level definitions, and return the number of chunks written.'
-    chunks = dir2chunks(str(src), **kw) if Path(src).exists() else pkg2chunks(str(src), **kw)
-    rows = [dict(content=c['content'], metadata=str(c.get('metadata') or {}))
-            for c in chunks if (c.get('content') or '').strip()]
-    if not rows: return 0
-    for r, v in zip(rows, self.emb([r['content'] for r in rows])):
-        r['embedding'] = np.asarray(v, dtype=DTYPE).tobytes()
-    self.store.insert_all(rows, upsert=True, hash_id='id', hash_id_columns=['content'])
-    if self.ann: self.store.rebuild_index()
-    return len(rows)
+    'Add the source code in a directory or installed package, one document per file cut at top-level definitions, and return the number of chunks written.'
+    chunks = dir2chunks(str(src), **kw) if is_path(src) else pkg2chunks(str(src), **kw)
+    files = {}
+    for c in chunks:
+        if (c.get('content') or '').strip(): files.setdefault((c.get('metadata') or {}).get('path', ''), []).append(c)
+    db, g, jobs, old = self.db, self.t, [], []
+    with db_lock(db):
+        for raw, cs in files.items():
+            f, name, h = source_key(raw), Path(raw).name, doc_hash([(0, c['content']) for c in cs])
+            skip, (did, rekey) = db._plan(g, str(raw), f, name, h, True, force, jobs, self.name)
+            if skip: continue
+            nid = f'{did}#0'
+            rows = [dict(content=c['content'], metadata=str(c.get('metadata') or {}), doc_id=did, node_id=nid, page=0, heading=name) for c in cs]
+            jobs.append(dict(src=f, did=did, replace=True, rekey=rekey, chunks=rows,
+                             doc=dict(id=did, title=name, source=f, kind='code', hash=h, meta='{}', pages=1),
+                             nodes=[dict(id=nid, doc_id=did, seq=0, level=0, parent_id=None, title=name, page_start=0, page_end=0,
+                                         summary='', nchunks=len(rows))]))
+            # rows add_code wrote before 0.1.50 carry no doc_id, and an id hashed over the content alone
+            old += [(hash_record(r, ['content']), f"'path': {raw!r}") for r in rows]
+        for b in chunked(old, 200):
+            self.store.delete_where(f"doc_id is null and ({sql_in('id', [i for i, _ in b])} or "
+                                    + ' or '.join(['instr(metadata, ?) > 0'] * len(b)) + ')', [m for _, m in b])
+        if jobs: db._commit(g, jobs, self.name, self.emb, with_heading=False, index=False)
+    if self.ann and (jobs or old): self.store.rebuild_index()
+    return sum(len(j.get('chunks') or []) for j in jobs)
 
 # %% ../nbs/07_api.ipynb #3a413a326270
 @patch
