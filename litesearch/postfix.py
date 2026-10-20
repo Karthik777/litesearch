@@ -24,13 +24,13 @@ def usearch_fix(v:bool=False,  # print each step
         dylib_path = (path or sqlite_path())+'.dylib'
         if v: print('usearch dylib path: ', dylib_path)
         cmd = ['install_name_tool', '-add_rpath', '/usr/lib', dylib_path]
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True, stdin=subprocess.DEVNULL)
         if v: print(f'✓ Applied usearch fix: Added /usr/lib rpath to {dylib_path}')
     except ImportError as ie:
         hint = _sqlite_hints.get(platform.system())
         print(f'Warning: usearch failed to import ({ie}). Install it with `pip install usearch`' + (f'; if SQLite is missing, {hint}' if hint else '') + '.')
     except subprocess.CalledProcessError as e:
-        out = subprocess.run(['otool', '-l', dylib_path], capture_output=True, text=True).stdout
+        out = subprocess.run(['otool', '-l', dylib_path], capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout
         if '/usr/lib' in out:
             if v: print('rpath already present. Skipping.')
             return
@@ -53,7 +53,7 @@ def cpu_model() -> str:
                 for l in f:
                     if l.startswith('model name'): return l.split(':', 1)[1].strip()
         if platform.system() == 'Darwin':
-            return subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], capture_output=True, text=True).stdout.strip() or platform.machine()
+            return subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout.strip() or platform.machine()
     except Exception: pass
     return platform.machine()
 
@@ -101,7 +101,8 @@ def _signame(n):
 
 def _probe(lib=None) -> dict:
     "Run `_PROBE` in a fresh interpreter: which of `index` and `sql` passed, and `why` the rest did not."
-    try: r = subprocess.run([sys.executable, '-c', _PROBE] + ([lib] if lib else []), capture_output=True, text=True, timeout=120)
+    try: r = subprocess.run([sys.executable, '-c', _PROBE] + ([lib] if lib else []), capture_output=True, text=True, timeout=120,
+                                stdin=subprocess.DEVNULL)   # a child on the terminal can freeze or steal its input
     except (OSError, subprocess.TimeoutExpired) as e: return dict(index=False, sql=False, why=f'the probe did not finish ({e})')
     out = r.stdout.split()
     why = (f'the probe died of {_signame(-r.returncode)}' if r.returncode < 0 else

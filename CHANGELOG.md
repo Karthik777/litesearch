@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.51
+- The usearch probe, `otool`, `sysctl` and the `install_name_tool` fix get `/dev/null` as standard input. Before, they shared the terminal of the process that imported litesearch, so a child could block on it or read keys typed for the parent.
+
 ## 0.1.50
 - One text is stored once. Before, a document was keyed by its source string and title, so one file added by a relative path, an absolute path, a symlink and a copy was stored four times, and a string with the same text a fifth. A file edited since it was added was skipped, so search kept returning the old text.
 - A file's source is its resolved path. A document's id is still a hash of its source and title, so it stays the same when the file is edited. Docs gain a `hash` column over their `(page, text)` pairs, and a new `sources` table (`<store>_sources` for a named store) maps every source to the document holding its text.
