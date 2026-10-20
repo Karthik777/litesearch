@@ -1,4 +1,4 @@
-__version__ = "0.1.51"
+__version__ = "0.1.52"
 from .postfix import *
 from .core import *
 from .data import *
