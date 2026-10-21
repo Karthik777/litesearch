@@ -305,8 +305,11 @@ def get_index(self:Database,        # database connection
                    {k:m[k] for k in ('connectivity','expansion_add','expansion_search') if m[k]})
         if (ok := usearch_ok('index')): from usearch.index import Index
         idx, p, built = (Index if ok else ExactIndex)(**kw), m['path'], False
-        if load and ok and p and Path(p).exists() and not _stale(p).exists(): idx.load(p)
-        elif load and len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]): idx.add(*kv); built = ok
+        if load and ok and p and Path(p).exists() and not _stale(p).exists():
+            # a torn sidecar is rebuilt from the table, like a stale one
+            try: idx.load(p); load = False
+            except RuntimeError: idx = Index(**kw)
+        if load and len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]): idx.add(*kv); built = ok
         self.ann_indices[name] = idx   # only once filled: a reader outside the lock takes what it finds here
         if built: self._save_index(name)
         return idx
@@ -439,6 +442,17 @@ def _sync_index(self:Table, add_ids, rm_rowids, dtype=np.float16, save=True):
         if save: self.db._save_index(self.name)
 
 @patch
+def _refresh(self:Table, ids, rows, chunk=5_000):
+    'Rewrite the columns other than `id`, `content` and `embedding` that differ for `ids`, in place, so a moved chunk keeps its rowid and vector.'
+    from apswutils.db import jsonify_if_needed as _j
+    cols = [c for c in dict.fromkeys(k for i in ids for k in rows[i]) if c in self.columns_dict and c not in ('id','content','embedding')]
+    if not cols: return
+    old = {r['id']: r for r in self(select=','.join(f'[{c}]' for c in ['id',*cols]), where=sql_in('id', ids))}
+    upd = [dict(id=i, **{c: rows[i].get(c) for c in cols}) for i in ids
+           if any(_j(rows[i].get(c)) != old.get(i, {}).get(c) for c in cols)]
+    if upd: upsert_all(self, upd, 'id', chunk)
+
+@patch
 def sync(self:Table,            # store table (hash-id; ANN mirrored if registered)
          content,               # iterable of chunk dicts with 'content'
          key_col:str=None,      # scope existing rows by this column's values (e.g. 'path','package'); None = whole table
@@ -464,6 +478,7 @@ def sync(self:Table,            # store table (hash-id; ANN mirrored if register
         rm_rowids = L(self(select=rowid_sel(), where=sql_in('id', stale))).itemgot('rowid') if (m and stale) else L()
         if stale: self.delete_where(where=sql_in('id', stale))
         if to_add: process_content(self, list(to_add.values()), embed=embed, emb_fn=emb_fn, parallel=parallel, chunk=chunk)
+        if same := [i for i in cont_hash if i in ex]: self._refresh(same, cont_hash, chunk)
         if m: self._sync_index(list(to_add), list(rm_rowids), dt)
         return dict(changed=len(to_add), same=len(ex)-len(stale), removed=len(stale))
 

@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.52
+- `Table.sync` rewrites the other columns of a row whose content is unchanged when they differ, in place. Before, a chunk whose text stayed the same kept its old metadata, so a function pushed down by an edit above it kept its old `lineno`. The row keeps its id, rowid and vector, and the embedder is not called.
+- `get_index` rebuilds an HNSW sidecar that usearch cannot read from the vectors in the table, as it does for a missing or stale one. Before, a torn sidecar raised `RuntimeError: Magic header mismatch` on every vector search of that store.
+
 ## 0.1.51
 - The usearch probe, `otool`, `sysctl` and the `install_name_tool` fix get `/dev/null` as standard input. Before, they shared the terminal of the process that imported litesearch, so a child could block on it or read keys typed for the parent.
 
