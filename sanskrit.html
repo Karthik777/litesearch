@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="an FTS5 tokenizer that folds Sanskrit, so a query matches whatever script it is typed in">
+
+<title>sanskrit – litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-da67263a7df5340935003c9d91ab9053.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="sanskrit – litesearch">
+<meta property="og:description" content="an FTS5 tokenizer that folds Sanskrit, so a query matches whatever script it is typed in">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="sanskrit – litesearch">
+<meta name="twitter:description" content="an FTS5 tokenizer that folds Sanskrit, so a query matches whatever script it is typed in">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./sanskrit.html">sanskrit</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">store</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#the-problem" id="toc-the-problem" class="nav-link active" data-scroll-target="#the-problem">The problem</a></li>
+  <li><a href="#folding-a-word" id="toc-folding-a-word" class="nav-link" data-scroll-target="#folding-a-word">Folding a word</a></li>
+  <li><a href="#the-tokenizer" id="toc-the-tokenizer" class="nav-link" data-scroll-target="#the-tokenizer">The tokenizer</a></li>
+  <li><a href="#citations" id="toc-citations" class="nav-link" data-scroll-target="#citations">Citations</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="sanskrit.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">sanskrit</h1>
+</div>
+
+<div>
+  <div class="description">
+    an FTS5 tokenizer that folds Sanskrit, so a query matches whatever script it is typed in
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="the-problem" class="level2">
+<h2 class="anchored" data-anchor-id="the-problem">The problem</h2>
+<p>Full-text search matches words exactly as they were indexed. SQLite’s FTS5, the full-text engine litesearch uses, splits text into tokens with a tokenizer and stores every token in an index; a query matches a row only when the query’s tokens are in that index. Sanskrit breaks this in three ways. The same word can be printed in Devanagari or in IAST, the Latin transliteration with diacritics. Vedic texts add tone marks above and below the letters. And many readers type a plain-English spelling with no diacritics at all. Before this module, these searches found nothing:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>query</th>
+<th>against</th>
+<th>hits</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>देवी</code></td>
+<td><code>दे॒वी</code>, the same word with Vedic accents</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<td><code>श्रीमाता</code></td>
+<td><code>śrīmātā</code>, the same word in IAST</td>
+<td>0</td>
+</tr>
+<tr class="odd">
+<td><code>kuṇḍa</code></td>
+<td><code>cidagnikuṇḍasambhūtā</code></td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>The fix is to reduce every word, whatever its script, to a lossy ASCII key when it is indexed, and to do the same to the query. <code>श्रीमाता</code>, <code>śrīmātā</code> and <code>srimata</code> all become <code>srimata</code>, so each of them finds the other two. Nothing is transliterated at query time and no second column is added.</p>
+<p>Every store litesearch creates uses this, Sanskrit or not. English text keeps its own tokens, so an English search behaves as before, but the extra keys do take space: on this repository’s notebooks the FTS index grows 14.7%. Metre, verse chunking, citations beyond the pattern below, and lemmas live in <a href="https://github.com/vedicreader/ganapati">ganapati</a>.</p>
+</section>
+<section id="folding-a-word" class="level2">
+<h2 class="anchored" data-anchor-id="folding-a-word">Folding a word</h2>
+<p>Folding means mapping several spellings of a word to one key. This module folds at two strengths.</p>
+<p><a href="https://Karthik777.github.io/litesearch/sanskrit.html#fold_token"><code>fold_token</code></a> is the strict fold. It removes Vedic tone marks (<a href="https://Karthik777.github.io/litesearch/sanskrit.html#strip_vedic"><code>strip_vedic</code></a>), turns Devanagari into ASCII letter by letter (<a href="https://Karthik777.github.io/litesearch/sanskrit.html#deva2ascii"><code>deva2ascii</code></a>), and strips diacritics from Latin letters. Aspirates survive: <code>भीष्म</code> folds to <code>bhisma</code> and <code>kṛṣṇa</code> to <code>krsna</code>, and the consonants ś, ṣ and s all become <code>s</code>. <a href="https://Karthik777.github.io/litesearch/sanskrit.html#detect_script"><code>detect_script</code></a> reports whether a string is mostly Devanagari or Latin.</p>
+<p><a href="https://Karthik777.github.io/litesearch/sanskrit.html#roman_fold"><code>roman_fold</code></a> is the loose fold, built on <a href="https://Karthik777.github.io/litesearch/sanskrit.html#fold_token"><code>fold_token</code></a> for readers who type English spellings. It drops the <code>h</code> after a consonant (so bh, ch, dh, kh, sh, th all lose it), shortens ee to i, oo to u and any doubled vowel to one, turns w into v, and reads <code>ri</code> before a consonant as the vowel ṛ. <code>Bheeshma</code>, <code>Bhishma</code>, <code>Bhīṣma</code> and <code>भीष्म</code> all become <code>bisma</code>; <code>Krishna</code> and <code>कृष्ण</code> become <code>krsna</code>; <code>chandra</code> and <code>चन्द्र</code> become <code>candra</code>. The <code>ri</code> rule also catches words that never had a ṛ, so <code>śrīmātā</code> folds to <code>srmata</code>. That is harmless in an index, because the query folds the same way.</p>
+<p><a href="https://Karthik777.github.io/litesearch/sanskrit.html#skeleton"><code>skeleton</code></a> goes further still and keeps a folded word’s first letter and its consonants, with vowels and <code>y</code> removed and repeated letters collapsed: <code>saundarya</code> and <code>soundarya</code> both become <code>sndr</code>. It is too loose for an index. <code>correct(skeleton=True)</code> uses it as a last resort when looking for the index term a misspelled query word was meant to be.</p>
+<div id="a743ff74" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.481417+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.516335+00:00&quot;,&quot;total&quot;:0.03492383599999016}}" data-execution_count="3">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L100" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="skeleton" class="level3">
+<h3 class="anchored" data-anchor-id="skeleton">skeleton</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> skeleton(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    k:<span class="bu">str</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Keep a folded word’s first letter and its later consonants, with repeats collapsed, so <code>saundarya</code> and <code>soundarya</code> both give <code>sndr</code>.</em></p>
+</section>
+</div>
+<div id="71bfe060" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.516498+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.530585+00:00&quot;,&quot;total&quot;:0.014096800999993775}}" data-execution_count="4">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L88" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="roman_fold" class="level3">
+<h3 class="anchored" data-anchor-id="roman_fold">roman_fold</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> roman_fold(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    s:<span class="bu">str</span>, doubles:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># a doubled letter single: Lakshmana and Lakṣmaṇa, Raghuvamsha and Raghuvaṃśa</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    endings:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># an English plural or past ending off, leaving three letters: duties and duty</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    numbers:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># a number by its value: 02 and 2</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Fold a token like <a href="https://Karthik777.github.io/litesearch/sanskrit.html#fold_token"><code>fold_token</code></a>, then also match plain-English spellings, so <code>Bheeshma</code> and <code>भीष्म</code> both give <code>bisma</code>.</em></p>
+</section>
+</div>
+<div id="656fa407" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.530748+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.554552+00:00&quot;,&quot;total&quot;:0.023809593000009954}}" data-execution_count="5">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L77" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="fold_token" class="level3">
+<h3 class="anchored" data-anchor-id="fold_token">fold_token</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> fold_token(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    s:<span class="bu">str</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Fold one token, in Devanagari or Latin script, to its lowercase ASCII index key.</em></p>
+</section>
+</div>
+<div id="d91ebbcf" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.554698+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.564705+00:00&quot;,&quot;total&quot;:0.01001210300000821}}" data-execution_count="6">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L68" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="detect_script" class="level3">
+<h3 class="anchored" data-anchor-id="detect_script">detect_script</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> detect_script(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    s:<span class="bu">str</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return <code>'deva'</code> when Devanagari letters are at least as many as Latin ones, <code>'latn'</code> when there are Latin letters, else <code>'other'</code>.</em></p>
+</section>
+</div>
+<div id="4fb5a3ab" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.564834+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.581843+00:00&quot;,&quot;total&quot;:0.017014627000008886}}" data-execution_count="7">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L41" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="deva2ascii" class="level3">
+<h3 class="anchored" data-anchor-id="deva2ascii">deva2ascii</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> deva2ascii(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    s:<span class="bu">str</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Transliterate Devanagari to plain ASCII letters, adding the <code>a</code> a consonant carries when no vowel sign or virama follows it.</em></p>
+</section>
+</div>
+<div id="d6cffa6c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.581983+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.591516+00:00&quot;,&quot;total&quot;:0.009537184000009802}}" data-execution_count="8">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L36" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="strip_vedic" class="level3">
+<h3 class="anchored" data-anchor-id="strip_vedic">strip_vedic</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> strip_vedic(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    s:<span class="bu">str</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Remove Vedic tone marks from Devanagari text, leave Latin diacritics alone, and return NFC-normalised text.</em></p>
+</section>
+</div>
+<div id="7c2ed4a7" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> roman_fold(<span class="st">'02'</span>, numbers<span class="op">=</span><span class="va">True</span>) <span class="op">==</span> <span class="st">'2'</span> <span class="kw">and</span> roman_fold(<span class="st">'02'</span>) <span class="op">==</span> <span class="st">'02'</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> skeleton(roman_fold(<span class="st">'saundarya'</span>)) <span class="op">==</span> skeleton(roman_fold(<span class="st">'soundarya'</span>))</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> skeleton(<span class="st">'laharii'</span>) <span class="op">==</span> <span class="st">'lhr'</span> <span class="kw">and</span> skeleton(<span class="st">'sukra'</span>) <span class="op">!=</span> skeleton(<span class="st">'sukta'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Reading the tests above as examples: <code>roman_fold('Bheeshma')</code> is <code>bisma</code>, the same key as <code>भीष्म</code>, <code>Bhīṣma</code> and <code>Bhishma</code>. Distinct names stay distinct, so <code>agni</code> and <code>aṅga</code> do not meet.</p>
+<p>The FTS5 tokenizer below emits the <a href="https://Karthik777.github.io/litesearch/sanskrit.html#roman_fold"><code>roman_fold</code></a> key as one more token beside each word whose strict fold is at least four letters long. That third token is what lets <code>Bheeshma</code> reach <code>भीष्म</code> and <code>Bhīṣma</code> in a search. On this repository’s notebooks it grows the FTS index by 14.7%, from 178,705 to 204,979 bytes.</p>
+<p><a href="https://Karthik777.github.io/litesearch/sanskrit.html#roman_fold"><code>roman_fold</code></a> has three switches, all off by default and all off in the tokenizer. They are for matching a reader’s word against a list of known words, not for building an index. <code>doubles=True</code> collapses a doubled letter, so <code>Raghuvamsha</code> and <code>Raghuvaṃśa</code> meet. <code>endings=True</code> cuts an English plural or past ending when three letters remain, so <code>duties</code> and <code>duty</code> both become <code>dut</code>. <code>numbers=True</code> reads a string of digits as a number, so <code>02</code> becomes <code>2</code>.</p>
+<div id="86b34b1ef38f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.593262+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.596271+00:00&quot;,&quot;total&quot;:0.0030116910000117514}}" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.test <span class="im">import</span> test_eq</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'Lakshmana'</span>), <span class="st">'laksmana'</span>)<span class="op">;</span> test_eq(roman_fold(<span class="st">'Lakshmana'</span>), roman_fold(<span class="st">'Lakṣmaṇa'</span>))</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'Lakkshmana'</span>, doubles<span class="op">=</span><span class="va">True</span>), roman_fold(<span class="st">'Lakṣmaṇa'</span>))</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'Raghuvamsha'</span>, doubles<span class="op">=</span><span class="va">True</span>), roman_fold(<span class="st">'Raghuvaṃśa'</span>, doubles<span class="op">=</span><span class="va">True</span>))</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'duties'</span>, endings<span class="op">=</span><span class="va">True</span>), roman_fold(<span class="st">'duty'</span>, endings<span class="op">=</span><span class="va">True</span>))</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'worshipped'</span>, doubles<span class="op">=</span><span class="va">True</span>, endings<span class="op">=</span><span class="va">True</span>), <span class="st">'vorsip'</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'yes'</span>, endings<span class="op">=</span><span class="va">True</span>), <span class="st">'yes'</span>)   <span class="co"># three letters stay</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'duties'</span>), <span class="st">'duties'</span>)            <span class="co"># both off by default</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'11'</span>, doubles<span class="op">=</span><span class="va">True</span>, numbers<span class="op">=</span><span class="va">True</span>), <span class="st">'11'</span>)   <span class="co"># a digit is no letter: 11 stays eleven</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'0100'</span>, doubles<span class="op">=</span><span class="va">True</span>, numbers<span class="op">=</span><span class="va">True</span>), <span class="st">'100'</span>)</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>test_eq(roman_fold(<span class="st">'திருக்குறள்'</span>, doubles<span class="op">=</span><span class="va">True</span>), roman_fold(<span class="st">'திருக்குறள்'</span>))   <span class="co"># a script fold_token leaves as it is keeps its letters</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="the-tokenizer" class="level2">
+<h2 class="anchored" data-anchor-id="the-tokenizer">The tokenizer</h2>
+<p>An FTS5 tokenizer is the function that turns a row’s text into the tokens the index stores, and a query’s text into the tokens it looks up. FTS5 lets tokenizers wrap each other: in a chain such as <code>porter unicode61</code>, <code>unicode61</code> splits the text into words and <code>porter</code> stems each word it receives, so <code>running</code> is stored as <code>run</code>.</p>
+<p><a href="https://Karthik777.github.io/litesearch/sanskrit.html#sanskrit_tokenizer"><code>sanskrit_tokenizer</code></a> is a wrapping tokenizer of that kind. It asks the tokenizer inside it for words and passes each word on together with its <a href="https://Karthik777.github.io/litesearch/sanskrit.html#fold_token"><code>fold_token</code></a> key and, for longer words, its <a href="https://Karthik777.github.io/litesearch/sanskrit.html#roman_fold"><code>roman_fold</code></a> key. FTS5 calls tokens that share a position colocated: they count as the same word, so a query matches the row through any of them. The original word is kept, so nothing an English search relied on is lost. Passing <code>original=0</code> drops it and keeps only the keys.</p>
+<p><code>SANSKRIT_TOKENIZE</code> is the tokenizer’s registered name, <code>'sanskrit'</code>. litesearch’s default chain, <code>_FTS_TOKENIZE</code> in <code>litesearch.core</code>, is <code>porter simplify casefold 1 sanskrit unicodewords</code>. Read it from the right: apsw’s <code>unicodewords</code> splits words by the Unicode rules and keeps <code>fts_search</code> whole, <code>sanskrit</code> adds the folded keys, <code>simplify casefold 1</code> lowercases every token without removing diacritics, and <code>porter</code> stems English. <code>sanskrit</code> has to sit inside <code>porter</code>. If it wrapped porter instead, it would fold porter’s output, the index would hold <code>dharmaksetre</code> while the query <code>dharmaksetre</code> stems to <code>dharmaksetr</code>, and the search would miss. The regression test below checks exactly this case.</p>
+<p>A store’s tokenizer is fixed when its FTS table is created. <a href="https://Karthik777.github.io/litesearch/core.html#database"><code>database()</code></a> registers <code>sanskrit</code> on every connection it opens, and <a href="https://Karthik777.github.io/litesearch/sanskrit.html#register_sanskrit"><code>register_sanskrit</code></a> does the same for a connection you opened yourself. A connection without it, such as Python’s <code>sqlite3</code> module or the <code>sqlite3</code> shell, can still read the store’s ordinary columns, but every FTS query and every insert into the store fails with <code>error in tokenizer constructor</code>, because the insert triggers update the FTS index.</p>
+<div id="41d5b139" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.599480+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.603914+00:00&quot;,&quot;total&quot;:0.004438507000003256}}" data-execution_count="11">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L125" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="register_sanskrit" class="level3">
+<h3 class="anchored" data-anchor-id="register_sanskrit">register_sanskrit</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> register_sanskrit(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    db</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Register the <code>sanskrit</code> FTS5 tokenizer on a connection; calling it again does nothing.</em></p>
+</section>
+</div>
+<div id="d8e1a825" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.604045+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.609799+00:00&quot;,&quot;total&quot;:0.005758357999980035}}" data-execution_count="12">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L108" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="sanskrit_tokenizer" class="level3">
+<h3 class="anchored" data-anchor-id="sanskrit_tokenizer">sanskrit_tokenizer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sanskrit_tokenizer(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    con, args</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Build an FTS5 tokenizer that wraps another and adds each token’s folded keys beside it, so a query matches in any script.</em></p>
+</section>
+</div>
+</section>
+<section id="citations" class="level2">
+<h2 class="anchored" data-anchor-id="citations">Citations</h2>
+<p>GRETIL, the Göttingen archive of Sanskrit e-texts, marks each verse with its address between double bars or double slashes, as in <code>// Mn_1.1 //</code> (Manusmṛti 1.1) or <code>|| BrhUp_1,1.2 ||</code>. <code>CITE_RE</code> finds these markers and <a href="https://Karthik777.github.io/litesearch/sanskrit.html#cite_parts"><code>cite_parts</code></a> splits one into its siglum, the abbreviation for the work, and its numbered levels. <code>litesearch.tree</code> builds a document’s tree from them, so a GRETIL text gets chapters and verses as sections with no other markup.</p>
+<div id="8e3028f6" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.618590+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.623558+00:00&quot;,&quot;total&quot;:0.004974070999992364}}" data-execution_count="15">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/sanskrit.py#L134" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="cite_parts" class="level3">
+<h3 class="anchored" data-anchor-id="cite_parts">cite_parts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cite_parts(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    c:<span class="bu">str</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">tuple</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split a citation into its siglum and its levels: <code>'BrhUp_1,1.2'</code> gives <code>('BrhUp', ['1','1','2'])</code>.</em></p>
+</section>
+</div>
+<div id="c2f4d5f835f3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.623843+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.626077+00:00&quot;,&quot;total&quot;:0.002238386000016135}}" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litesearch.sanskrit <span class="im">import</span> cite_parts</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> cite_parts(<span class="st">'BrhUp_1,1.2'</span>) <span class="op">==</span> (<span class="st">'BrhUp'</span>, [<span class="st">'1'</span>,<span class="st">'1'</span>,<span class="st">'2'</span>])</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> cite_parts(<span class="st">'Mn_1.1'</span>) <span class="op">==</span> (<span class="st">'Mn'</span>, [<span class="st">'1'</span>,<span class="st">'1'</span>])</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> cite_parts(<span class="st">'IsUp_4[57M]'</span>) <span class="op">==</span> (<span class="st">'IsUp'</span>, [<span class="st">'4'</span>])      <span class="co"># the alternate-edition number is dropped</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> cite_parts(<span class="st">'not a citation'</span>) <span class="op">==</span> (<span class="st">'not a citation'</span>, [])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

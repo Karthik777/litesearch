@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Build an array once, keep it on disk, and let every process read the same copy. Also an index from string keys to rows, for lookups FTS5 cannot do.">
+
+<title>store – litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-da67263a7df5340935003c9d91ab9053.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="store – litesearch">
+<meta property="og:description" content="Build an array once, keep it on disk, and let every process read the same copy. Also an index from string keys to rows, for lookups FTS5 cannot do.">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="store – litesearch">
+<meta name="twitter:description" content="Build an array once, keep it on disk, and let every process read the same copy. Also an index from string keys to rows, for lookups FTS5 cannot do.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./store.html">store</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./store.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">store</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#stored-arrays" id="toc-stored-arrays" class="nav-link active" data-scroll-target="#stored-arrays">Stored arrays</a></li>
+  <li><a href="#a-key-index" id="toc-a-key-index" class="nav-link" data-scroll-target="#a-key-index">A key index</a></li>
+  <li><a href="#a-vector-matrix" id="toc-a-vector-matrix" class="nav-link" data-scroll-target="#a-vector-matrix">A vector matrix</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="store.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">store</h1>
+</div>
+
+<div>
+  <div class="description">
+    Build an array once, keep it on disk, and let every process read the same copy. Also an index from string keys to rows, for lookups FTS5 cannot do.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="stored-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="stored-arrays">Stored arrays</h2>
+<p>Some search structures are expensive to build and cheap to read: a matrix of every embedding in a store, or a lookup table of folded spellings. A web app usually runs several worker processes, and if each one builds the structure itself, it pays the build time at every start and holds its own copy in memory.</p>
+<p><a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a> builds the arrays once, saves them as <code>.npy</code> files under <code>root/&lt;name&gt;-&lt;key&gt;/</code>, and returns them memory-mapped. A memory-mapped array is read from the file by the operating system as pages are touched, instead of being loaded into the process. Every process that maps the same file shares those pages, so ten workers reading a 100 MB matrix use about 100 MB between them, not 1 GB.</p>
+<p><code>key</code> says what the arrays were built from. Choose something that changes whenever the source data changes: an index’s FTS signature, a row count with the highest rowid, plus the versions of the libraries that shaped the build. When the key changes, <a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a> builds a new set and removes the old sets of the same <code>name</code>. A process that still has an old set mapped keeps reading it safely, since a deleted file stays readable while it is mapped.</p>
+<p>The first process to need a set takes a file lock, builds the arrays into a temporary folder and renames the folder into place. Other processes starting at the same moment wait on the lock and then map the finished set, so they never see half-written files and the build runs once. If <code>root</code> cannot be written, <a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a> builds the arrays in memory and returns them unshared. Call it without <code>build</code> in a process that should only read: it returns the set if one exists for that key, and None if not.</p>
+<div id="3f3b5934" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.720653+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.731674+00:00&quot;,&quot;total&quot;:0.011025176999993391}}" data-execution_count="4">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/store.py#L20" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="stored" class="level3">
+<h3 class="anchored" data-anchor-id="stored">stored</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> stored(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    root, <span class="co"># folder that holds every stored set</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    name, <span class="co"># what the arrays are; the prefix of their folder</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    key, <span class="co"># what the arrays are built from; a new key triggers a rebuild</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    build:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># `() -&gt; {name: array}`; None only maps an existing set, or returns None</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">dict</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return <code>build()</code>’s arrays memory-mapped from <code>root/&lt;name&gt;-&lt;key&gt;</code>, building them once across all processes.</em></p>
+</section>
+</div>
+<div id="789411f5" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>_root <span class="op">=</span> Path(tempfile.mkdtemp())</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>_n <span class="op">=</span> [<span class="dv">0</span>]</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _b(): _n[<span class="dv">0</span>] <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span> <span class="cf">return</span> <span class="bu">dict</span>(a<span class="op">=</span>np.arange(<span class="dv">5</span>), b<span class="op">=</span>np.array([<span class="st">'x'</span>, <span class="st">'y'</span>]))</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>_s <span class="op">=</span> stored(_root, <span class="st">'demo'</span>, <span class="st">'k1'</span>, _b)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>test_eq(_s[<span class="st">'a'</span>].tolist(), [<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>])<span class="op">;</span> <span class="cf">assert</span> <span class="bu">isinstance</span>(_s[<span class="st">'a'</span>], np.memmap)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>stored(_root, <span class="st">'demo'</span>, <span class="st">'k1'</span>, _b)<span class="op">;</span> test_eq(_n[<span class="dv">0</span>], <span class="dv">1</span>)            <span class="co"># built once</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>stored(_root, <span class="st">'demo'</span>, <span class="st">'k2'</span>, _b)<span class="op">;</span> test_eq(_n[<span class="dv">0</span>], <span class="dv">2</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">sorted</span>(p.name <span class="cf">for</span> p <span class="kw">in</span> _root.glob(<span class="st">'demo-*'</span>)), [<span class="st">'demo-k2'</span>])   <span class="co"># the older set is gone</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>test_eq(stored(_root, <span class="st">'demo'</span>, <span class="st">'k1'</span>), <span class="va">None</span>)                   <span class="co"># no build: only what is there</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>test_eq(stored(_root, <span class="st">'demo'</span>, <span class="st">'k2'</span>)[<span class="st">'a'</span>].tolist(), [<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>])<span class="op">;</span> test_eq(_n[<span class="dv">0</span>], <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="3d8424c3" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>_pr <span class="op">=</span> Path(tempfile.mkdtemp())</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>_src <span class="op">=</span> <span class="ss">f"""import numpy as np, time; from pathlib import Path; from litesearch.store import stored</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="ss">def b(): open(Path(</span><span class="sc">{</span><span class="bu">str</span>(_pr)<span class="sc">!r}</span><span class="ss">)/'built', 'a').write('x'); time.sleep(.3); return dict(a=np.ones(3))</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="ss">stored(</span><span class="sc">{</span><span class="bu">str</span>(_pr)<span class="sc">!r}</span><span class="ss">, 'par', 'k', b)"""</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>_ps <span class="op">=</span> [subprocess.Popen([sys.executable, <span class="st">'-c'</span>, _src]) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">3</span>)]</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>test_eq([p.wait() <span class="cf">for</span> p <span class="kw">in</span> _ps], [<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>])</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>test_eq((_pr<span class="op">/</span><span class="st">'built'</span>).read_text(), <span class="st">'x'</span>)                      <span class="co"># three processes, one build</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="a-key-index" class="level2">
+<h2 class="anchored" data-anchor-id="a-key-index">A key index</h2>
+<p>FTS5 matches the tokens its tokenizer produced. Sometimes an app needs to find rows by a key the tokenizer never made: an alias for a name, a romanised title, or a spelling folded by a rule of your own. <a href="https://Karthik777.github.io/litesearch/store.html#keyindex"><code>KeyIndex</code></a> is an inverted index for that case. For each key it keeps a posting list, the list of row numbers that hold the key, so a lookup returns rows directly without scanning text.</p>
+<p><code>KeyIndex.build(pairs)</code> takes <code>(key, row)</code> pairs and returns plain arrays, which you can pass to <a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a> so every process shares them. <code>KeyIndex(arrays)</code> wraps the arrays for reading. The keys are sorted and packed into one UTF-8 byte string, so <code>lookup(key)</code> is a binary search. It returns the rows holding <code>key</code>, or with <code>prefix=True</code> the rows of every key that starts with <code>key</code>, sorted and without repeats.</p>
+<p>Use FTS5 for words in running text. Use <a href="https://Karthik777.github.io/litesearch/store.html#keyindex"><code>KeyIndex</code></a> when you already know the exact keys each row should answer to.</p>
+<div id="ce9de78a" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.738587+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.742878+00:00&quot;,&quot;total&quot;:0.004295311999982232}}" data-execution_count="6">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/store.py#L44" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="keyindex" class="level3">
+<h3 class="anchored" data-anchor-id="keyindex">KeyIndex</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> KeyIndex(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    a</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Look up row numbers by string key, exactly or by prefix, from arrays made by <a href="https://Karthik777.github.io/litesearch/store.html#keyindex.build"><code>KeyIndex.build</code></a>.</em></p>
+</section>
+</div>
+<div id="81872743" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>_k <span class="op">=</span> KeyIndex(KeyIndex.build([(<span class="st">'krsna'</span>, <span class="dv">0</span>), (<span class="st">'krsna'</span>, <span class="dv">2</span>), (<span class="st">'rama'</span>, <span class="dv">1</span>), (<span class="st">'ramayana'</span>, <span class="dv">3</span>), (<span class="st">'कृष्ण'</span>, <span class="dv">2</span>)]))</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>test_eq(_k.lookup(<span class="st">'krsna'</span>).tolist(), [<span class="dv">0</span>, <span class="dv">2</span>])</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>test_eq(_k.lookup(<span class="st">'rama'</span>).tolist(), [<span class="dv">1</span>])</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>test_eq(_k.lookup(<span class="st">'rama'</span>, prefix<span class="op">=</span><span class="va">True</span>).tolist(), [<span class="dv">1</span>, <span class="dv">3</span>])</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>test_eq(_k.lookup(<span class="st">'कृ'</span>, prefix<span class="op">=</span><span class="va">True</span>).tolist(), [<span class="dv">2</span>])</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>test_eq(_k.lookup(<span class="st">'sita'</span>).tolist(), [])</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(KeyIndex(KeyIndex.build([]))), <span class="dv">0</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>_ks <span class="op">=</span> KeyIndex(stored(_root, <span class="st">'keys'</span>, <span class="st">'k'</span>, <span class="kw">lambda</span>: KeyIndex.build([(<span class="st">'a'</span>, <span class="dv">1</span>), (<span class="st">'ab'</span>, <span class="dv">2</span>)])))</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>test_eq(_ks.lookup(<span class="st">'a'</span>, prefix<span class="op">=</span><span class="va">True</span>).tolist(), [<span class="dv">1</span>, <span class="dv">2</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="a-vector-matrix" class="level2">
+<h2 class="anchored" data-anchor-id="a-vector-matrix">A vector matrix</h2>
+<p>There are two ways to find the stored vectors nearest a query vector. Exact search compares the query with every vector and returns the true nearest. Approximate nearest-neighbour (ANN) search walks a prebuilt graph, here usearch’s HNSW index from <code>get_store(ann=True)</code>, and returns nearly the nearest in far fewer comparisons. ANN is the right choice for a very large store; it costs an index that has to be built and kept in step with the table.</p>
+<p><a href="https://Karthik777.github.io/litesearch/store.html#vecmatrix"><code>VecMatrix</code></a> is exact search done fast. It holds a store’s embeddings as one float32 matrix with every row scaled to unit length, so one matrix product with the normalised query gives the cosine similarity of every row at once. There is no index to keep in step. <code>vec_search</code> in <code>litesearch.core</code> is also exact, but it computes each distance in SQL on every query; <a href="https://Karthik777.github.io/litesearch/store.html#vecmatrix"><code>VecMatrix</code></a> reads the vectors once and keeps them in memory, or memory-mapped through <a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a>. The matrix takes 4 bytes per dimension per row, so 100,000 rows of 256 dimensions is about 100 MB.</p>
+<p><code>VecMatrix.build(tbl)</code> reads the vectors in rowid order, optionally narrowed by a SQL <code>where</code>, and returns the arrays. Pass the <code>dtype</code> the vectors were stored as; the default is float16. <code>search(q, k)</code> returns <code>(rowid, similarity)</code> pairs, most similar first, with equal scores in row order. <code>rows=</code> limits the search to some positions in the matrix, such as the rows of one book. These are positions, not rowids.</p>
+<p>Embeddings have no FTS signature, so pick the <a href="https://Karthik777.github.io/litesearch/store.html#stored"><code>stored</code></a> key yourself: the row count and the highest rowid, or a counter your own writes increase.</p>
+<div id="0f4455b8" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:56.748424+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:56.752875+00:00&quot;,&quot;total&quot;:0.004456634000007398}}" data-execution_count="8">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/store.py#L68" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="vecmatrix" class="level3">
+<h3 class="anchored" data-anchor-id="vecmatrix">VecMatrix</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> VecMatrix(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    a</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Search a store’s embeddings by exact cosine similarity, held as one unit-length float32 matrix.</em></p>
+</section>
+</div>
+<div id="a3b0cee0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>_vd <span class="op">=</span> database(sem_search<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>_vd.execute(<span class="st">'create table v(name text, embedding blob)'</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> nm, e <span class="kw">in</span> [(<span class="st">'a'</span>, [<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>]), (<span class="st">'b'</span>, [<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>]), (<span class="st">'c'</span>, [<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>]), (<span class="st">'none'</span>, <span class="va">None</span>)]:</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    _vd.execute(<span class="st">'insert into v values(?, ?)'</span>, [nm, <span class="va">None</span> <span class="cf">if</span> e <span class="kw">is</span> <span class="va">None</span> <span class="cf">else</span> np.array(e, np.float16).tobytes()])</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>_vm <span class="op">=</span> VecMatrix(VecMatrix.build(_vd.t.v))</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(_vm), <span class="dv">3</span>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>_hits <span class="op">=</span> _vm.search(np.array([<span class="dv">1</span>, <span class="fl">.1</span>, <span class="dv">0</span>], np.float16).tobytes(), k<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>test_eq([i <span class="cf">for</span> i, _ <span class="kw">in</span> _hits], [<span class="dv">1</span>, <span class="dv">3</span>])<span class="op">;</span> <span class="cf">assert</span> _hits[<span class="dv">0</span>][<span class="dv">1</span>] <span class="op">&gt;</span> _hits[<span class="dv">1</span>][<span class="dv">1</span>]</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>test_eq(VecMatrix(VecMatrix.build(_vd.t.v, where<span class="op">=</span><span class="st">"name='b'"</span>)).search([<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>], k<span class="op">=</span><span class="dv">5</span>)[<span class="dv">0</span>][<span class="dv">0</span>], <span class="dv">2</span>)</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>_vs <span class="op">=</span> VecMatrix(stored(_root, <span class="st">'vecs'</span>, <span class="st">'k'</span>, <span class="kw">lambda</span>: VecMatrix.build(_vd.t.v)))</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(_vs.m, np.memmap) <span class="kw">and</span> _vs.search([<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>], k<span class="op">=</span><span class="dv">1</span>)[<span class="dv">0</span>][<span class="dv">0</span>] <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>test_eq(VecMatrix(VecMatrix.build(_vd.t.v, where<span class="op">=</span><span class="st">'0'</span>)).search([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>]), [])</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>test_eq([i <span class="cf">for</span> i, _ <span class="kw">in</span> _vm.search([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>], k<span class="op">=</span><span class="dv">5</span>, rows<span class="op">=</span>[<span class="dv">1</span>, <span class="dv">2</span>])], [<span class="dv">3</span>, <span class="dv">2</span>])   <span class="co"># within matrix rows 1 and 2: c, then b</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>test_eq(_vm.search([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>], rows<span class="op">=</span>[]), [])</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>_vd.execute(<span class="st">'create table vi(id integer primary key, embedding blob)'</span>)   <span class="co"># rowid read under its alias's name</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>_vd.execute(<span class="st">'insert into vi values(7, ?)'</span>, [np.array([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>], np.float16).tobytes()])</span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>test_eq(VecMatrix(VecMatrix.build(_vd.t.vi)).search([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>])[<span class="dv">0</span>][<span class="dv">0</span>], <span class="dv">7</span>)</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>_vt <span class="op">=</span> VecMatrix(<span class="bu">dict</span>(ids<span class="op">=</span>np.arange(<span class="dv">4</span>), m<span class="op">=</span>np.array([[<span class="dv">1</span>, <span class="dv">0</span>], [<span class="dv">0</span>, <span class="dv">1</span>], [<span class="dv">0</span>, <span class="dv">1</span>], [<span class="dv">0</span>, <span class="dv">1</span>]], np.float32)))</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>test_eq([i <span class="cf">for</span> i, _ <span class="kw">in</span> _vt.search([<span class="dv">0</span>, <span class="dv">1</span>], k<span class="op">=</span><span class="dv">2</span>)], [<span class="dv">1</span>, <span class="dv">2</span>])   <span class="co"># equals in row order</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

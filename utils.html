@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Encoders that turn text and images into vectors for semantic search, from fast static models to ONNX transformers, plus a fallback that needs no download">
+
+<title>utils – litesearch</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-da67263a7df5340935003c9d91ab9053.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="utils – litesearch">
+<meta property="og:description" content="Encoders that turn text and images into vectors for semantic search, from fast static models to ONNX transformers, plus a fallback that needs no download">
+<meta property="og:site_name" content="litesearch">
+<meta name="twitter:title" content="utils – litesearch">
+<meta name="twitter:description" content="Encoders that turn text and images into vectors for semantic search, from fast static models to ONNX transformers, plus a fallback that needs no download">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">litesearch</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./utils.html">utils</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">litesearch</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./postfix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">postfix</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">cli</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tree.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tree</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">api</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./doc_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">doc eval</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tier_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">configuration tiers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ingest_eval.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ingestion performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./sanskrit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sanskrit</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./quality.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">quality</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">store</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#encoders-and-embeddings" id="toc-encoders-and-embeddings" class="nav-link active" data-scroll-target="#encoders-and-embeddings">Encoders and embeddings</a>
+  <ul class="collapse">
+  <li><a href="#fastencode-transformer-models-through-onnx" id="toc-fastencode-transformer-models-through-onnx" class="nav-link" data-scroll-target="#fastencode-transformer-models-through-onnx">FastEncode: transformer models through ONNX</a></li>
+  </ul></li>
+  <li><a href="#image-encoding" id="toc-image-encoding" class="nav-link" data-scroll-target="#image-encoding">Image encoding</a></li>
+  <li><a href="#text-and-images-in-one-space" id="toc-text-and-images-in-one-space" class="nav-link" data-scroll-target="#text-and-images-in-one-space">Text and images in one space</a></li>
+  <li><a href="#embedding-a-pdf-without-a-store" id="toc-embedding-a-pdf-without-a-store" class="nav-link" data-scroll-target="#embedding-a-pdf-without-a-store">Embedding a PDF without a store</a></li>
+  <li><a href="#embedding-with-no-model" id="toc-embedding-with-no-model" class="nav-link" data-scroll-target="#embedding-with-no-model">Embedding with no model</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="utils.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">utils</h1>
+</div>
+
+<div>
+  <div class="description">
+    Encoders that turn text and images into vectors for semantic search, from fast static models to ONNX transformers, plus a fallback that needs no download
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="encoders-and-embeddings" class="level2">
+<h2 class="anchored" data-anchor-id="encoders-and-embeddings">Encoders and embeddings</h2>
+<p>Keyword search finds rows that share words with the query. Semantic search finds rows that mean something close to it, even with no word in common: “car” can find a passage about automobiles. It works by turning each piece of text into an embedding, a fixed-length list of numbers (a vector) placed so that texts with similar meanings sit close together. The model that does this is the encoder. At indexing time the encoder embeds every chunk and the vectors are stored; at query time it embeds the query, and the search returns the chunks whose vectors are nearest.</p>
+<p>A query and the documents it searches must be embedded by the same encoder. Vectors from two different models live in unrelated spaces, so comparing them gives meaningless distances without any error. This is why a store records which encoder wrote it (see <a href="https://Karthik777.github.io/litesearch/utils.html#encoder_id"><code>encoder_id</code></a> below).</p>
+<p>litesearch’s default encoder is <a href="https://Karthik777.github.io/litesearch/utils.html#static_embedder"><code>static_embedder()</code></a>, which loads <a href="https://github.com/MinishLab/model2vec">model2vec</a>’s <code>potion-multilingual-128M</code>. A model2vec model is static: it holds one precomputed vector per token and embeds a text by averaging the vectors of its tokens. There is no neural network to run, so it needs no GPU and no ONNX runtime, and it embedded about 8,600 chunks of 500 characters a second on an Apple-silicon Mac. It returns 256-dimensional float32 vectors and covers many scripts, Devanagari included. <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> uses it unless you pass another encoder. <code>static_code_embedder()</code> loads <code>potion-code-16M-v2</code>, a model2vec model trained on source code; nothing in litesearch uses it by default, so pass it yourself if you index code. Both functions cache the model per name, so every caller shares one copy. The multilingual model is about 500 MB.</p>
+<p><code>evals/</code> found that the choice of encoder moves retrieval quality less than chunk size or reranking do. Across four encoders the spread was 0.018 to 0.046 weighted MRR, and the static model won one of the three test corpora outright.</p>
+<p>When a transformer is worth the extra time, <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> runs one through ONNX Runtime. The dicts in the next cell name models that have been tried with it; each gives the Hugging Face repository, the ONNX file inside it and, where the model needs them, prompt templates. You can pass any of these, any other model2vec model name to <a href="https://Karthik777.github.io/litesearch/utils.html#static_embedder"><code>static_embedder</code></a>, or your own object with an <code>.encode</code> method.</p>
+<div id="3aa9061f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:53.301028+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.283575+00:00&quot;,&quot;total&quot;:0.9825543069999867}}" data-execution_count="4">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L50" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="static_embedder" class="level3">
+<h3 class="anchored" data-anchor-id="static_embedder">static_embedder</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> static_embedder(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model_nm:<span class="bu">str</span><span class="op">=</span><span class="st">'minishlab/potion-multilingual-128M'</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>The model2vec model <code>model_nm</code>, loaded once and shared by every caller.</em></p>
+</section>
+</div>
+<div id="7e983fc1" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.289675+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.295037+00:00&quot;,&quot;total&quot;:0.005366885999990245}}" data-execution_count="6">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L86" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="ort_path" class="level3">
+<h3 class="anchored" data-anchor-id="ort_path">ort_path</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> ort_path(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    p</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em><code>p</code>, or hard links to it and its external data files in one real folder when <code>p</code> is a symlink into the Hugging Face cache.</em></p>
+</section>
+</div>
+<div id="1caaa042" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.295170+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.300621+00:00&quot;,&quot;total&quot;:0.005428150000000187}}" data-execution_count="7">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L69" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="download_model" class="level3">
+<h3 class="anchored" data-anchor-id="download_model">download_model</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> download_model(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    repo_id:<span class="bu">str</span><span class="op">=</span><span class="st">'onnx-community/embeddinggemma-300m-ONNX'</span>, <span class="co"># HF repo id</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    md:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># optional explicit local dir; else the HF cache is used</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    filename:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># one file inside the repo; None downloads the whole repo</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    token:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># Hugging Face token; defaults to the HF_TOKEN environment variable</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>The local path of a Hugging Face model repo, or one file in it, downloading only what is not already cached.</em></p>
+</section>
+</div>
+<section id="fastencode-transformer-models-through-onnx" class="level3">
+<h3 class="anchored" data-anchor-id="fastencode-transformer-models-through-onnx">FastEncode: transformer models through ONNX</h3>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> runs a text embedding model exported to ONNX, a portable format for neural networks, with ONNX Runtime. It works with most ONNX models that ship a Hugging Face tokenizer. On first use it downloads the model with <a href="https://Karthik777.github.io/litesearch/utils.html#download_model"><code>download_model</code></a>, which reuses the local Hugging Face cache when the files are already there. The default model is EmbeddingGemma 300M, which gives 768-dimensional vectors.</p>
+<p>Each text is split into tokens, cut off at the smaller of the model’s own limit and 512 tokens (<code>max_seq_len</code> replaces the 512), and run through the model. The per-token outputs are averaged into one vector, scaled to length 1 when <code>normalize=True</code>, and returned as float16 by default. Texts are sent in batches of <code>batch_size</code>, <code>parallel</code> runs batches on that many threads, and <code>stream=True</code> returns the batches one by one instead of one joined array. <code>quantize='int8'</code> or <code>'uint8'</code> writes a smaller quantized copy of the model beside the original on first use and runs that instead.</p>
+<p>Many embedding models are trained to see a short prefix that says whether a text is a document or a query, such as <code>search_query:</code> for nomic models. <code>encode_document</code> and <code>encode_query</code> add the prefix from the model’s <code>prompt</code> templates; <code>encode</code> adds none.</p>
+<p>FastEncode needs onnxruntime, which is not installed with litesearch (<code>pip install onnxruntime</code>). If the model fails to download or load, the constructor prints the error instead of raising, and every later <code>encode</code> call prints a message and returns None. Check the result before you store it. Qwen embedding models handle their padding token differently and do not work with FastEncode yet.</p>
+<div id="755054a3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.314328+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.320906+00:00&quot;,&quot;total&quot;:0.006582258999998203}}" data-execution_count="9">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L100" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="fastencode" class="level3">
+<h3 class="anchored" data-anchor-id="fastencode">FastEncode</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> FastEncode(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    model_dict:fastcore.basics.AttrDict<span class="op">=</span>{<span class="st">'model'</span>: <span class="st">'onnx-community/embeddinggemma-300m-ONNX'</span>, <span class="st">'onnx_path'</span>: <span class="st">'onnx/model.onnx'</span>, <span class="st">'prompt'</span>: {<span class="st">'document'</span>: <span class="st">'title: none | text: </span><span class="sc">{text}</span><span class="st">'</span>, <span class="st">'query'</span>: <span class="st">'task: search result | query: </span><span class="sc">{text}</span><span class="st">'</span>}}, <span class="co"># a model dict above: repo, ONNX file path and prompt templates</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    repo_id:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># Hugging Face repo with an ONNX file, used instead of `model_dict`</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    md:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># local folder holding the model files</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    md_nm:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># path of the ONNX file inside the model folder</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    normalize:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># scale each vector to length 1</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    dtype:<span class="bu">type</span><span class="op">=</span>float16, <span class="co"># output dtype</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    tti:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># pass token type ids to the model, as BERT-style models expect; also set by `model_dict.tti`</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    prompt:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># dict with `document` and `query` templates containing `{text}`</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    hf_token:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># Hugging Face token; defaults to the HF_TOKEN environment variable</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    batch_size:<span class="bu">int</span><span class="op">=</span><span class="dv">32</span>, <span class="co"># texts per ONNX call</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    parallel:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, <span class="co"># threads that encode batches at once; 0 encodes in the calling thread</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    quantize:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># run a quantized copy of the model: None, 'int8' or 'uint8'</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    max_seq_len:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># token limit per text in place of 512; the model's own limit still applies (e.g. 64 for SigLIP2)</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A text encoder that runs a Hugging Face ONNX model with ONNX Runtime.</em></p>
+</section>
+</div>
+<div id="941dceff" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># download_model resolves to a local dir with the model files; repeated calls are network-free</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>p <span class="op">=</span> download_model(embedding_gemma.model)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Path(p).exists() <span class="kw">and</span> (Path(p)<span class="op">/</span><span class="st">'config.json'</span>).exists(), p</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Path(download_model(embedding_gemma.model)).samefile(p)  <span class="co"># idempotent</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Path(_cached_snapshot(embedding_gemma.model)).samefile(p)  <span class="co"># scan_cache_dir hit, no network</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> _cached_snapshot(<span class="st">'does-not/exist-xyz'</span>) <span class="kw">is</span> <span class="va">None</span>           <span class="co"># missing repo -&gt; None, never raises</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'download_model cache test passed:'</span>, p)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>/Users/71293/code/litesearch/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>download_model cache test passed: /Users/71293/.cache/huggingface/hub/models--onnx-community--embeddinggemma-300m-ONNX/snapshots/5090578d9565bb06545b4552f76e6bc2c93e4a66</code></pre>
+</div>
+</div>
+<div id="ca1660a3" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># a cached model's external data sits in a different blob folder; ort_path puts both in one real folder</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>q <span class="op">=</span> ort_path(Path(p)<span class="op">/</span>embedding_gemma.onnx_path)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> q.resolve().parent <span class="op">==</span> Path(<span class="ss">f'</span><span class="sc">{</span>q<span class="sc">}</span><span class="ss">_data'</span>).resolve().parent, q</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> ort_path(Path(p)<span class="op">/</span>embedding_gemma.onnx_path) <span class="op">==</span> q  <span class="co"># reuses the links</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> ort_path(Path(p)<span class="op">/</span><span class="st">'config.json'</span>) <span class="op">==</span> Path(p)<span class="op">/</span><span class="st">'config.json'</span>  <span class="co"># nothing beside it to link</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="531b52e4" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.389110+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.396710+00:00&quot;,&quot;total&quot;:0.007603990000006888}}" data-execution_count="12">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L216" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="query_encoder" class="level3">
+<h3 class="anchored" data-anchor-id="query_encoder">query_encoder</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> query_encoder(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    embedder:FastEncode<span class="op">|</span>StaticModel</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A function that embeds a list of queries with <code>embedder</code>, using its query prompt when it has one.</em></p>
+</section>
+</div>
+<div id="fae29ce1" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.396851+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.404576+00:00&quot;,&quot;total&quot;:0.0077297740000119575}}" data-execution_count="13">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L210" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="doc_encoder" class="level3">
+<h3 class="anchored" data-anchor-id="doc_encoder">doc_encoder</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> doc_encoder(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    embedder:FastEncode<span class="op">|</span>StaticModel</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A function that embeds a list of documents with <code>embedder</code>, using its document prompt when it has one.</em></p>
+</section>
+</div>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#doc_encoder"><code>doc_encoder</code></a> and <a href="https://Karthik777.github.io/litesearch/utils.html#query_encoder"><code>query_encoder</code></a> give every encoder the same shape: a function that takes a list of strings and returns their vectors. For a <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> they call <code>encode_document</code> or <code>encode_query</code>, so the model’s prompts are added. For anything else, a model2vec model or your own object, both call <code>.encode</code> and the two functions behave the same. <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> builds both from the encoder you give it.</p>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#encoder_id"><code>encoder_id</code></a> names the model behind an encoder object, for example <code>minishlab/potion-multilingual-128M</code>, with <code>+int8</code> appended for a quantized <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>. A string is returned as it is, and an encoder it cannot name gives <code>''</code>. <a href="https://Karthik777.github.io/litesearch/api.html#index"><code>Index</code></a> passes the name to <code>get_store(encoder=...)</code>, which records it with the store the first time and raises <a href="https://Karthik777.github.io/litesearch/core.html#storemismatch"><code>StoreMismatch</code></a> if the store is later opened with a different one. Without that check, adding vectors from a second model to an existing store would return wrong neighbours with no error. An empty name never conflicts, so a custom encoder with no name is not checked.</p>
+<div id="d1e416d7" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.407549+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.415724+00:00&quot;,&quot;total&quot;:0.008180807999991657}}" data-execution_count="15">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L225" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="encoder_id" class="level3">
+<h3 class="anchored" data-anchor-id="encoder_id">encoder_id</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> encoder_id(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    e</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>The model name of an encoder, such as its Hugging Face repo, or ’’ when it has none.</em></p>
+</section>
+</div>
+</section>
+</section>
+<section id="image-encoding" class="level2">
+<h2 class="anchored" data-anchor-id="image-encoding">Image encoding</h2>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#fastencodeimage"><code>FastEncodeImage</code></a> embeds images the way <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a> embeds text, so you can find pictures that look alike: store a vector per image, embed a query image, and search. It takes Pillow images, file paths or image bytes. Each image is converted to RGB, resized to a square of the model’s input size (224 pixels by default) without cropping, normalised with the model’s mean and standard deviation, and run through the ONNX model. Where the model returns one output per image patch, those are averaged into one vector. The default model is nomic-embed-vision v1.5, with 768-dimensional float16 vectors. <code>batch_size</code>, <code>parallel</code> and <code>stream</code> work as in <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>, and the method is <code>embed</code> rather than <code>encode</code>. Like <a href="https://Karthik777.github.io/litesearch/utils.html#fastencode"><code>FastEncode</code></a>, it needs onnxruntime and returns None from <code>embed</code> when the model failed to load.</p>
+<div id="6c40b325" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.431845+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.443859+00:00&quot;,&quot;total&quot;:0.012023153999990654}}" data-execution_count="17">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L236" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="fastencodeimage" class="level3">
+<h3 class="anchored" data-anchor-id="fastencodeimage">FastEncodeImage</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> FastEncodeImage(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    model_dict:fastcore.basics.AttrDict<span class="op">=</span>{<span class="st">'model'</span>: <span class="st">'nomic-ai/nomic-embed-vision-v1.5'</span>, <span class="st">'onnx_path'</span>: <span class="st">'onnx/model.onnx'</span>, <span class="st">'img_size'</span>: <span class="dv">224</span>, <span class="st">'mean'</span>: [<span class="fl">0.485</span>, <span class="fl">0.456</span>, <span class="fl">0.406</span>], <span class="st">'std'</span>: [<span class="fl">0.229</span>, <span class="fl">0.224</span>, <span class="fl">0.225</span>]}, <span class="co"># a model dict above: repo, ONNX file path, input size, mean and std</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    normalize:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># scale each vector to length 1</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    dtype:<span class="bu">type</span><span class="op">=</span>float16, <span class="co"># output dtype</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    batch_size:<span class="bu">int</span><span class="op">=</span><span class="dv">16</span>, <span class="co"># images per ONNX call</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    parallel:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, <span class="co"># threads that encode batches at once; 0 encodes in the calling thread</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    hf_token:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># Hugging Face token; defaults to the HF_TOKEN environment variable</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>An image encoder that runs a CLIP-style Hugging Face ONNX model with ONNX Runtime.</em></p>
+</section>
+</div>
+</section>
+<section id="text-and-images-in-one-space" class="level2">
+<h2 class="anchored" data-anchor-id="text-and-images-in-one-space">Text and images in one space</h2>
+<p>To search images with a text query, the text and image vectors have to come from models trained together, so that a caption and its picture land close to each other. There are two ways to get that here.</p>
+<p>Some repositories ship a text model and an image model together, such as SigLIP2. <a href="https://Karthik777.github.io/litesearch/utils.html#fastencodemultimodal"><code>FastEncodeMultimodal</code></a> loads both from one repository and gives you <code>encode_text</code> and <code>encode_image</code>. The default, <code>siglip2_so400m</code>, reads images at 512 pixels and cuts text at 64 tokens.</p>
+<p>Other models come as a matched pair in separate repositories. nomic-embed-text v1.5 and nomic-embed-vision v1.5 both produce 768-dimensional vectors in the same space, so load <code>FastEncode(nomic_text_v15)</code> and <code>FastEncodeImage(nomic_vision_v15)</code> separately and compare their vectors directly.</p>
+<div id="2a557381" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.450197+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.459893+00:00&quot;,&quot;total&quot;:0.009700720000012097}}" data-execution_count="19">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L305" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="fastencodemultimodal" class="level3">
+<h3 class="anchored" data-anchor-id="fastencodemultimodal">FastEncodeMultimodal</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> FastEncodeMultimodal(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    model_dict:fastcore.basics.AttrDict<span class="op">=</span>{<span class="st">'model'</span>: <span class="st">'onnx-community/siglip2-so400m-patch16-512-ONNX'</span>, <span class="st">'vision_onnx'</span>: <span class="st">'onnx/vision_model.onnx'</span>, <span class="st">'text_onnx'</span>: <span class="st">'onnx/text_model.onnx'</span>, <span class="st">'img_size'</span>: <span class="dv">512</span>, <span class="st">'mean'</span>: [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>], <span class="st">'std'</span>: [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>], <span class="st">'max_seq_len'</span>: <span class="dv">64</span>}, <span class="co"># a model dict with `vision_onnx` and `text_onnx` file paths</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    normalize:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># scale each vector to length 1</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    dtype:<span class="bu">type</span><span class="op">=</span>float16, <span class="co"># output dtype</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    batch_size_text:<span class="bu">int</span><span class="op">=</span><span class="dv">32</span>, <span class="co"># texts per ONNX call</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    batch_size_image:<span class="bu">int</span><span class="op">=</span><span class="dv">16</span>, <span class="co"># images per ONNX call</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    parallel:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, <span class="co"># threads that encode batches at once; 0 encodes in the calling thread</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    hf_token:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># Hugging Face token; defaults to the HF_TOKEN environment variable</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A text and image encoder pair loaded from one Hugging Face repo, such as SigLIP2.</em></p>
+</section>
+</div>
+<div id="20a9736cc0c16102" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.460094+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.461130+00:00&quot;,&quot;total&quot;:0.0010431599999947139}}" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> base64, io, os</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> IPython.display <span class="im">import</span> display</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="t70w21a0uqr" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create 4 synthetic RGB images without needing any files</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>test_imgs <span class="op">=</span> [Image.fromarray(np.random.randint(<span class="dv">0</span>, <span class="dv">255</span>, (<span class="dv">224</span>, <span class="dv">224</span>, <span class="dv">3</span>), dtype<span class="op">=</span>np.uint8)) <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">4</span>)]</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>img_enc <span class="op">=</span> FastEncodeImage()  <span class="co"># default: nomic_vision_v15 (768-dim)</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Basic embed</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>embs <span class="op">=</span> img_enc.embed(test_imgs)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.shape <span class="op">==</span> (<span class="dv">4</span>, <span class="dv">768</span>), <span class="ss">f'Expected (4, 768), got </span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.dtype <span class="op">==</span> np.float16</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Basic image embed: shape=</span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">, dtype=</span><span class="sc">{</span>embs<span class="sc">.</span>dtype<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Batching — batch_size=2 vs batch_size=4 must match</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>embs_b2 <span class="op">=</span> img_enc.embed(test_imgs, batch_size<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>embs_b4 <span class="op">=</span> img_enc.embed(test_imgs, batch_size<span class="op">=</span><span class="dv">4</span>)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs_b2.shape <span class="op">==</span> embs_b4.shape <span class="op">==</span> (<span class="dv">4</span>, <span class="dv">768</span>)</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.allclose(embs_b2.astype(np.float32), embs_b4.astype(np.float32), atol<span class="op">=</span><span class="fl">1e-3</span>), <span class="st">'image batching results mismatch'</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Image batching test passed'</span>)</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Stream</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>stream_res <span class="op">=</span> img_enc.embed(test_imgs, batch_size<span class="op">=</span><span class="dv">2</span>, stream<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">hasattr</span>(stream_res, <span class="st">'__iter__'</span>)</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.concatenate(<span class="bu">list</span>(stream_res)).shape <span class="op">==</span> (<span class="dv">4</span>, <span class="dv">768</span>)</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Image stream test passed'</span>)</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Parallel</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>embs_par <span class="op">=</span> img_enc.embed(test_imgs, batch_size<span class="op">=</span><span class="dv">2</span>, parallel<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.allclose(embs_b2.astype(np.float32), embs_par.astype(np.float32), atol<span class="op">=</span><span class="fl">1e-3</span>), <span class="st">'image parallel results mismatch'</span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Image parallel test passed'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Basic image embed: shape=(4, 768), dtype=float16
+Image batching test passed
+Image stream test passed
+Image parallel test passed</code></pre>
+</div>
+</div>
+<div id="jf5tbllweeh" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co"># nomic paired — text (FastEncode) + vision (FastEncodeImage) share the same 768-dim space</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>nomic_enc     <span class="op">=</span> FastEncode(nomic_text_v15, parallel<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>nomic_img_enc <span class="op">=</span> FastEncodeImage(nomic_vision_v15)</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>t_emb <span class="op">=</span> nomic_enc.encode([<span class="st">'What does the Eiffel Tower look like?'</span>,<span class="st">'What does the Eiffel Tower look like?'</span>,<span class="st">'What does the Eiffel Tower look like?'</span>])</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>i_emb <span class="op">=</span> nomic_img_enc.embed([Image.fromarray(np.random.randint(<span class="dv">0</span>, <span class="dv">255</span>, (<span class="dv">224</span>, <span class="dv">224</span>, <span class="dv">3</span>), dtype<span class="op">=</span>np.uint8))])</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> t_emb.shape <span class="op">==</span> (<span class="dv">3</span>, <span class="dv">768</span>), <span class="ss">f'Expected (3, 768), got </span><span class="sc">{</span>t_emb<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> i_emb.shape <span class="op">==</span> (<span class="dv">1</span>, <span class="dv">768</span>), <span class="ss">f'Expected (1, 768), got </span><span class="sc">{</span>i_emb<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> t_emb.dtype <span class="op">==</span> i_emb.dtype <span class="op">==</span> np.float16</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'nomic paired: text=</span><span class="sc">{</span>t_emb<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">, image=</span><span class="sc">{</span>i_emb<span class="sc">.</span>shape<span class="sc">}</span><span class="ss"> — same space, ready for cross-modal search'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+
+<style>
+    progress { appearance: none; border: none; border-radius: 4px; width: 300px;
+        height: 20px; vertical-align: middle; background: #e0e0e0; }
+
+    progress::-webkit-progress-bar { background: #e0e0e0; border-radius: 4px; }
+    progress::-webkit-progress-value { background: #2196F3; border-radius: 4px; }
+    progress::-moz-progress-bar { background: #2196F3; border-radius: 4px; }
+
+    progress:not([value]) {
+        background: repeating-linear-gradient(45deg, #7e7e7e, #7e7e7e 10px, #5c5c5c 10px, #5c5c5c 20px); }
+
+    progress.progress-bar-interrupted::-webkit-progress-value { background: #F44336; }
+    progress.progress-bar-interrupted::-moz-progress-value { background: #F44336; }
+    progress.progress-bar-interrupted::-webkit-progress-bar { background: #F44336; }
+    progress.progress-bar-interrupted::-moz-progress-bar { background: #F44336; }
+    progress.progress-bar-interrupted { background: #F44336; }    
+
+    table.fastprogress { border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }
+    table.fastprogress th, table.fastprogress td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; }
+    table.fastprogress thead tr { background: #f8f9fa; font-weight: bold; }
+    table.fastprogress tbody tr:nth-of-type(even) { background: #f8f9fa; }
+</style>
+</div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>nomic paired: text=(3, 768), image=(1, 768) — same space, ready for cross-modal search</code></pre>
+</div>
+</div>
+</section>
+<section id="embedding-a-pdf-without-a-store" class="level2">
+<h2 class="anchored" data-anchor-id="embedding-a-pdf-without-a-store">Embedding a PDF without a store</h2>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts"><code>encode_pdf_texts</code></a> and <a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_images"><code>encode_pdf_images</code></a> embed a PDF and hand back plain tuples, leaving the table layout to you. Use them when you keep vectors in your own schema instead of a litesearch store.</p>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts"><code>encode_pdf_texts</code></a> chunks the PDF with <code>pdf_chunks</code>, or with your own <code>chunk_fn</code>, embeds the chunks with the encoder’s <code>encode_document</code>, and returns <code>(page, chunk_idx, text, embedding)</code> for each, with pages counted from 1. <a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_images"><code>encode_pdf_images</code></a> saves every PNG and JPEG image in the PDF to a temporary folder, embeds them with an image encoder, and returns <code>(page, image_bytes, embedding)</code>. Its pages are counted from 0, unlike <a href="https://Karthik777.github.io/litesearch/utils.html#encode_pdf_texts"><code>encode_pdf_texts</code></a>. Both return lists.</p>
+<div id="0ab32be3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.469282+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.475412+00:00&quot;,&quot;total&quot;:0.006131756000002042}}" data-execution_count="22">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L347" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="encode_pdf_images" class="level3">
+<h3 class="anchored" data-anchor-id="encode_pdf_images">encode_pdf_images</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> encode_pdf_images(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    doc, <span class="co"># PdfDocument</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    enc, <span class="co"># an image encoder with `embed`, such as FastEncodeImage</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>fastcore.foundation.L:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Every PNG and JPEG image in a PDF with its embedding, as <code>(page, img_bytes, emb)</code> tuples with pages counted from 0.</em></p>
+</section>
+</div>
+<div id="61fb27ab" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.475531+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.480414+00:00&quot;,&quot;total&quot;:0.004888220999987425}}" data-execution_count="23">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L337" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="encode_pdf_texts" class="level3">
+<h3 class="anchored" data-anchor-id="encode_pdf_texts">encode_pdf_texts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> encode_pdf_texts(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    doc, <span class="co"># PdfDocument</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    enc, <span class="co"># a text encoder with `encode_document`, such as FastEncode</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    chunk_fn:NoneType<span class="op">=</span><span class="va">None</span>, <span class="co"># function from the document to [(page, chunk_idx, text)]; default doc.pdf_chunks</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kw</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>fastcore.foundation.L: <span class="co"># passed to doc.pdf_chunks, which accepts only `chunker`</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Every text chunk of a PDF with its embedding, as <code>(page, chunk_idx, text, emb)</code> tuples.</em></p>
+</section>
+</div>
+<div id="16d5063e59c2511" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>enc <span class="op">=</span> FastEncode(parallel<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>embs <span class="op">=</span> enc.encode_document([<span class="st">'This is a test'</span>, <span class="st">'Another test'</span>]<span class="op">*</span><span class="dv">32</span>, batch_size<span class="op">=</span><span class="dv">4</span>)</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.shape <span class="op">==</span> (<span class="dv">64</span>, <span class="dv">768</span>), <span class="ss">f'Expected (2, 768), got </span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.dtype <span class="op">==</span> np.float16</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Basic encode: shape=</span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">, dtype=</span><span class="sc">{</span>embs<span class="sc">.</span>dtype<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>embs</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Basic encode: shape=(64, 768), dtype=float16</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>array([[ 0.05777 ,  0.001723,  0.002573, ..., -0.0618  , -0.00662 ,
+         0.03174 ],
+       [ 0.02936 , -0.00818 , -0.00916 , ..., -0.02847 , -0.00226 ,
+         0.02846 ],
+       [ 0.05777 ,  0.001723,  0.002573, ..., -0.0618  , -0.00662 ,
+         0.03174 ],
+       ...,
+       [ 0.02936 , -0.00818 , -0.00916 , ..., -0.02847 , -0.00226 ,
+         0.02846 ],
+       [ 0.05777 ,  0.001723,  0.002573, ..., -0.0618  , -0.00662 ,
+         0.03174 ],
+       [ 0.02936 , -0.00818 , -0.00916 , ..., -0.02847 , -0.00226 ,
+         0.02846 ]], shape=(64, 768), dtype=float16)</code></pre>
+</div>
+</div>
+<div id="ae5ebc88de9090f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>enc_q <span class="op">=</span> FastEncode(AttrDict(embedding_gemma, onnx_path<span class="op">=</span><span class="st">'onnx/model_q4.onnx'</span>))</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embedding_gemma.onnx_path <span class="op">==</span> <span class="st">'onnx/model.onnx'</span>  <span class="co"># the shared model dict is untouched</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>embs <span class="op">=</span> enc_q.encode_document([<span class="st">'This is a test'</span>, <span class="st">'Another test'</span>])</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.shape <span class="op">==</span> (<span class="dv">2</span>, <span class="dv">768</span>), <span class="ss">f'Expected (2, 768), got </span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs.dtype <span class="op">==</span> np.float16</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'q4 encode: shape=</span><span class="sc">{</span>embs<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">, dtype=</span><span class="sc">{</span>embs<span class="sc">.</span>dtype<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>embs</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Basic encode: shape=(2, 768), dtype=float16</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>array([[ 0.05777 ,  0.001723,  0.002573, ..., -0.0618  , -0.00662 ,
+         0.03174 ],
+       [ 0.02936 , -0.00818 , -0.00916 , ..., -0.02847 , -0.00226 ,
+         0.02846 ]], shape=(2, 768), dtype=float16)</code></pre>
+</div>
+</div>
+<div id="c5dfc1b1b1c0a41c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Batching — 30 texts in batch_size=8 vs batch_size=100 must produce identical results</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>texts <span class="op">=</span> [<span class="ss">f'sample text number </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">'</span> <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">30</span>)]</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>embs_b8   <span class="op">=</span> enc.encode_document(texts, batch_size<span class="op">=</span><span class="dv">8</span>)</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>embs_b100 <span class="op">=</span> enc.encode_document(texts, batch_size<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> embs_b8.shape <span class="op">==</span> embs_b100.shape <span class="op">==</span> (<span class="dv">30</span>, <span class="dv">768</span>)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.allclose(embs_b8.astype(np.float32), embs_b100.astype(np.float32), atol<span class="op">=</span><span class="fl">1e-3</span>), <span class="st">'batching results mismatch'</span></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Batching test passed: </span><span class="sc">{</span>embs_b8<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Batching test passed: (30, 768)</code></pre>
+</div>
+</div>
+<div id="62429df2872580ae" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Stream — stream=True returns an iterable of batch arrays rather than one concatenated array</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>stream_results <span class="op">=</span> enc.encode_document(texts, batch_size<span class="op">=</span><span class="dv">10</span>, stream<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">hasattr</span>(stream_results, <span class="st">'__iter__'</span>), <span class="st">'stream should be iterable'</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>concatenated <span class="op">=</span> np.concatenate(<span class="bu">list</span>(stream_results))</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> concatenated.shape <span class="op">==</span> (<span class="dv">30</span>, <span class="dv">768</span>)</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Stream test passed'</span>)</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Parallel — 4 thread workers should give same embeddings as single-threaded</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>embs_par <span class="op">=</span> enc.encode_document(texts, batch_size<span class="op">=</span><span class="dv">8</span>, parallel<span class="op">=</span><span class="dv">4</span>)</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.allclose(embs_b8.astype(np.float32), embs_par.astype(np.float32), atol<span class="op">=</span><span class="fl">1e-3</span>), <span class="st">'parallel results mismatch'</span></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Parallel test passed'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Stream test passed</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Parallel test passed</code></pre>
+</div>
+</div>
+<div id="p02hvgtb9th" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Semantic QA — modernbert should rank the transformer/attention passage highest</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>modern_enc <span class="op">=</span> FastEncode(modernbert)</span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>passages <span class="op">=</span> [</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">'The Transformer is a model architecture using self-attention mechanisms.'</span>,</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">'Recurrent neural networks process sequences step by step.'</span>,</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">'The model uses encoder and decoder stacks connected by attention.'</span>,</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">'Convolutional networks excel at image recognition tasks.'</span>,</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>doc_embs <span class="op">=</span> modern_enc.encode_document(passages).astype(np.float32)</span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>query <span class="op">=</span> <span class="st">'What architecture replaces recurrence with self-attention?'</span></span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a>q_emb <span class="op">=</span> modern_enc.encode_query([query]).astype(np.float32)</span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a>sims <span class="op">=</span> (doc_embs <span class="op">@</span> q_emb.T).flatten()</span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a>best <span class="op">=</span> <span class="bu">int</span>(sims.argmax())</span>
+<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> sims[best] <span class="op">&gt;</span> <span class="fl">0.3</span>, <span class="ss">f'Expected similarity &gt; 0.3, got </span><span class="sc">{</span>sims[best]<span class="sc">:.3f}</span><span class="ss">'</span></span>
+<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">any</span>(w <span class="kw">in</span> passages[best].lower() <span class="cf">for</span> w <span class="kw">in</span> [<span class="st">'attention'</span>, <span class="st">'transformer'</span>, <span class="st">'encoder'</span>])</span>
+<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Semantic QA test passed: best match sim=</span><span class="sc">{</span>sims[best]<span class="sc">:.3f}</span><span class="ss">'</span>)</span>
+<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'Best: </span><span class="sc">{</span>passages[best]<span class="sc">}</span><span class="ss">'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Semantic QA test passed: best match sim=0.527
+Best: The Transformer is a model architecture using self-attention mechanisms.</code></pre>
+</div>
+</div>
+</section>
+<section id="embedding-with-no-model" class="level2">
+<h2 class="anchored" data-anchor-id="embedding-with-no-model">Embedding with no model</h2>
+<p><a href="https://Karthik777.github.io/litesearch/utils.html#hash_embed"><code>hash_embed</code></a> makes vectors without any model or download, and gives the same vectors on every run and every machine. It lowercases each text, takes every run of 3 to 5 consecutive characters (character n-grams), hashes each run with CRC32 into one of 256 slots, counts the hits per slot, and scales the result to length 1. Two texts score high when they share many character runs, so the vectors measure spelling, not meaning: “rank fusion” is close to “rank fusions”, but “cat” and “feline” score near zero.</p>
+<p>It has two uses. One is matching names, such as people or places, where shared spelling is most of the signal anyway. The other is an index built where no real encoder can be downloaded, for example in a sandbox without network access.</p>
+<div id="ab2d0a63" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.486226+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.492618+00:00&quot;,&quot;total&quot;:0.006394978999992418}}" data-execution_count="25">
+<hr>
+<p><a href="https://github.com/Karthik777/litesearch/blob/main/litesearch/utils.py#L368" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="hash_embed" class="level3">
+<h3 class="anchored" data-anchor-id="hash_embed">hash_embed</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> hash_embed(</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>    texts, <span class="co"># strings to embed</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>    ndim:<span class="bu">int</span><span class="op">=</span><span class="dv">256</span>, <span class="co"># length of each vector</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>    ngram:<span class="bu">tuple</span><span class="op">=</span>(<span class="dv">3</span>, <span class="dv">5</span>), <span class="co"># shortest and longest character run to hash</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>    dtype:<span class="bu">type</span><span class="op">=</span>float16</span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Unit-length vectors from hashed character n-grams, which match spelling rather than meaning and need no model.</em></p>
+</section>
+</div>
+<div id="247136916120" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-10-22T07:23:54.493212+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-10-22T07:23:54.495101+00:00&quot;,&quot;total&quot;:0.0018927490000066882}}" data-execution_count="26">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litesearch.utils <span class="im">import</span> hash_embed</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> hash_embed([<span class="st">'rank fusion'</span>, <span class="st">'rank fusion'</span>, <span class="st">'a wholly unrelated sentence'</span>]).astype(np.float32)</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> v.shape <span class="op">==</span> (<span class="dv">3</span>, <span class="dv">256</span>)</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> (v[<span class="dv">0</span>] <span class="op">==</span> v[<span class="dv">1</span>]).<span class="bu">all</span>()                 <span class="co"># same string, same vector</span></span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> v[<span class="dv">0</span>] <span class="op">@</span> v[<span class="dv">1</span>] <span class="op">&gt;</span> v[<span class="dv">0</span>] <span class="op">@</span> v[<span class="dv">2</span>]            <span class="co"># and a shared spelling scores above an unshared one</span></span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">abs</span>(np.linalg.norm(v[<span class="dv">0</span>]) <span class="op">-</span> <span class="dv">1</span>) <span class="op">&lt;</span> <span class="fl">1e-2</span> <span class="co"># unit length, so a dot product is a cosine</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="6807d2c9dddc" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Devanagari is n-grammed as characters, so a codepoint is never cut in half</span></span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> hash_embed([<span class="st">'सत्यमेव जयते'</span>, <span class="st">'सत्यमेव जयते'</span>])[<span class="dv">0</span>].tolist() <span class="op">==</span> hash_embed([<span class="st">'सत्यमेव जयते'</span>])[<span class="dv">0</span>].tolist()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Karthik777\.github\.io\/litesearch");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Karthik777/litesearch/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
