@@ -16,7 +16,7 @@ dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
     "fastlite>=0.2.4",
-    "model2vec>=0.7.0",
+    "laghu>=0.2.1",
     "tokenizers>=0.22.2",
     "pdf-oxide>=0.3.17",
     "pdflite>=0.0.1",
@@ -43,7 +43,7 @@ dev = [
     "flashrank>=0.2.10",         # `rerank=True`, imported on use
     "onnx>=1.22.0",              # `FastEncode`, imported on use
     "onnxruntime>=1.24.3",       # `FastEncode`, imported on use
-    "model2vec[distill]>=0.7.0", # evals/
+    "model2vec[distill]>=0.7.0,<0.10", # evals/
     "datasets>=5.0.1",           # evals/
     "rishi>=0.0.2",              # evals/
     "fastprogress>=1.1.5",       # evals/

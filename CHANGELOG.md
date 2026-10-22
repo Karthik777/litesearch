@@ -1,5 +1,9 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.54
+- `static_embedder` and `static_code_embedder` load their models with laghu, which maps the embedding table and the vocabulary from disk instead of copying them into each process. The default model's private memory in a fresh process is 80 MB instead of 1,373 MB, and potion-code-16M-v2's 112 MB instead of 164 MB. laghu gives model2vec 0.9's vectors whichever model2vec is installed; before, an install that resolved model2vec 0.10 wrote different vectors into the same stores. Encoding with the default model is about three times slower, because laghu tokenizes it in Python.
+- litesearch depends on laghu instead of model2vec. The `dev` extra keeps `model2vec[distill]`, below 0.10.
+
 ## 0.1.53
 - `spec`, `pkg2files`, `pkg2chunks` and `installed_packages` take `path`, a list of site-packages folders, and look packages up there instead of in the running interpreter. `pkg_dist(pkg, path)` finds a distribution the same way. A standard-library name still resolves from the interpreter.
 - `dir2files` and `pkg2files` walk through `globsafe`, which skips a symlink loop, a dangling link or an unreadable folder and carries on. Before, a link pointing at itself raised `OSError: Too many levels of symbolic links` and stopped the walk.

@@ -48,9 +48,9 @@ bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quanti
 
 @cache
 def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
-    'The model2vec model `model_nm`, loaded once and shared by every caller.'
-    from model2vec import StaticModel
-    m = StaticModel.from_pretrained(model_nm, force_download=False)
+    'The model2vec model `model_nm`, loaded once with laghu and shared by every caller.'
+    import laghu
+    m = laghu.load(model_nm, fallback=False)   # a model2vec fallback would cost about 1.3 GB, and model2vec 0.10 gives other vectors
     m.ls_id = model_nm   # potion leaves base_model_name empty, so encoder_id has nothing else to read
     return m
 
@@ -207,13 +207,13 @@ class FastEncode:
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
-def doc_encoder(embedder:'FastEncode|StaticModel'):
+def doc_encoder(embedder:'FastEncode|LeanModel'):
 	'A function that embeds a list of documents with `embedder`, using its document prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_document(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
 
-def query_encoder(embedder:'FastEncode|StaticModel'):
+def query_encoder(embedder:'FastEncode|LeanModel'):
 	'A function that embeds a list of queries with `embedder`, using its query prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
