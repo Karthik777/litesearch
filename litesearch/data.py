@@ -2,11 +2,11 @@
 
 # %% auto #0
 __all__ = ['skip_folder_re', 'skip_file_re', 'code_exts', 'file_exts', 'PROFILES', 'PLUGIN_GROUP', 'MIN_PARALLEL_FILES', 'QSTOP',
-           'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'spec', 'pyparse', 'ipynb_parse', 'non_py_sigs',
-           'chunk_texts', 'Profile', 'load_plugins', 'register_profile', 'profile_for', 'file_parse', 'pkg2files',
-           'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc', 'mk_wider', 'kw', 'pre',
-           'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md', 'clean_md', 'fix_layout', 'needs_ocr', 'ocr_parse',
-           'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
+           'pdf_parse', 'chunk_markdown', 'chunk_spans', 'repo_root', 'pkg_dist', 'spec', 'pyparse', 'ipynb_parse',
+           'non_py_sigs', 'chunk_texts', 'Profile', 'load_plugins', 'register_profile', 'profile_for', 'file_parse',
+           'globsafe', 'pkg2files', 'dir2files', 'pkg2chunks', 'dir2chunks', 'installed_packages', 'clean', 'add_wc',
+           'mk_wider', 'kw', 'pre', 'img2png', 'png_det', 'images_to_pdf', 'mv_skill_md', 'clean_md', 'fix_layout',
+           'needs_ocr', 'ocr_parse', 'orphan_vals', 'oxide_parse', 'pdf_doc', 'pdf_md', 'scrambled_layout']
 
 # %% ../nbs/02_data.ipynb #8a1e955269e0d234
 from fastcore.all import L,concat,patch,ifnone,Path,delegates,globtastic,parallel,type2str,first,filter_keys,in_,fdelegates,defaults,find_file_parents
@@ -129,12 +129,13 @@ def chunk_spans(text:str,            # text to split
 
 # %% ../nbs/02_data.ipynb #d47391264283f71c
 from importlib.util import find_spec as fs
-from importlib.metadata import distribution as dist, distributions as dists, version
-from importlib.machinery import ModuleSpec
-import ast, re
+from importlib.metadata import Distribution, version
+from importlib.machinery import ModuleSpec, PathFinder
+import ast, os, re, sys
 from ast import get_source_segment as gs
 from fastcore.basics import fdelegates, true
 from fastcore.nbio import read_nb
+from fastcore.xtras import compile_re, exttypes, walk_join
 
 # %% ../nbs/02_data.ipynb #e2d83d2c61b7dfe2
 skip_folder_re = r'^[.]|^(?:tests?|examples?|docs?|build|dist|_proc|_docs|_site|_site_libs|node_modules|__pycache__)$'
@@ -150,23 +151,34 @@ def _pkg_name(pkg:str) -> str:
 	'The package name from a requirement string such as `rishi[all]>=0.1`.'
 	return re.split(r'[\[<>=!~;]', pkg, maxsplit=1)[0].strip()
 
-def _pkg_dist(pkg:str):
+def _dkw(path:list=None) -> dict:
+	'The `Distribution.discover` keywords that search the folders in `path`, or the running interpreter when it is empty.'
+	return dict(path=list(map(str, path))) if path else {}
+
+def pkg_dist(pkg:str,        # package name or requirement string
+             path:list=None  # site-packages folders to search; None searches the running interpreter
+            ):
 	'The installed distribution for a package name or requirement string, or None.'
 	pkg = _pkg_name(pkg)
 	for nm in L(pkg, pkg.replace('-', '_'), pkg.replace('_', '-')).unique():
-		try: return dist(nm)
-		except ModuleNotFoundError: pass
-	return None
+		if d := first(Distribution.discover(name=nm, **_dkw(path))): return d
 
-def spec(pkg:str) -> ModuleSpec | None:
+def _find(name:str, path:list=None) -> ModuleSpec | None:
+	'The top-level module `name` on `path`, or on the running interpreter when `path` is empty; the standard library is found either way.'
+	if not path: return fs(name)
+	return PathFinder.find_spec(name, list(map(str, path))) or (fs(name) if name in sys.stdlib_module_names else None)
+
+def spec(pkg:str,        # import or distribution name, or requirement string
+         path:list=None  # site-packages folders to search; None searches the running interpreter
+        ) -> ModuleSpec | None:
 	'The importlib `ModuleSpec` for a package, found by import name or distribution name, or None.'
 	try:
 		pkg = _pkg_name(pkg)
-		if s := fs(pkg) or fs(pkg.replace('-', '_')): return s
-		if not (d:= _pkg_dist(pkg)): return None
-		if tl:=d.read_text('top_level.txt'): return s if (s:=fs(tl.splitlines()[0])) else None
+		if s := _find(pkg, path) or _find(pkg.replace('-', '_'), path): return s
+		if not (d:= pkg_dist(pkg, path)): return None
+		if tl:=d.read_text('top_level.txt'): return _find(tl.splitlines()[0], path)
 		chk = lambda f: len(f.parts) >= 2 and f.name=='__init__.py' and not f.parts[0].endswith('.dist-info')
-		if p:= L(d.files).filter(chk).map(lambda f: f.parts[0]): return fs(first(p))
+		if p:= L(d.files).filter(chk).map(lambda f: f.parts[0]): return _find(first(p), path)
 		return None
 	except ModuleNotFoundError: return None
 
@@ -288,33 +300,75 @@ def file_parse(p:Path=None,  # path to the file
     return L()
 
 
+# %% ../nbs/02_data.ipynb #6dc42b0f
+def globsafe(path:Path|str='.',  # folder to walk
+             recursive:bool=True, maxdepth:int=None, symlinks:bool=True, file_glob:str=None, file_re:str=None,
+             path_glob:str=None, path_re:str=None, folder_re:str=None, skip_file_glob:str=None, skip_file_re:str=None,
+             skip_folder_re:str=None, func:callable=walk_join, ret_folders:bool=False, sort:bool=True,
+             types:str|list=None, exts:str|list=None
+)->L:
+	'`globtastic` that skips symlink loops, dangling links and unreadable folders instead of raising.'
+	from fnmatch import fnmatch
+	if (path := Path(path)).is_file(): return L([path])
+	if not recursive: skip_folder_re = '.'
+	exts = L(exts).map(lambda e: e.split(',')).concat() + exttypes(types)
+	if exts: file_re = f"({'|'.join(re.escape(e if e.startswith('.') else f'.{e}') for e in exts)})$"
+	file_re, folder_re, path_re = compile_re(file_re), compile_re(folder_re), compile_re(path_re)
+	skip_file_re, skip_folder_re = compile_re(skip_file_re), compile_re(skip_folder_re)
+	def keep_file(root, name):
+		fname = os.path.join(root, name)
+		return ((not path_glob or fnmatch(fname, path_glob)) and (not path_re or path_re.search(fname)) and
+		        (not file_glob or fnmatch(name, file_glob)) and (not file_re or file_re.search(name)) and
+		        (not skip_file_glob or not fnmatch(name, skip_file_glob)) and (not skip_file_re or not skip_file_re.search(name)))
+	def walk(root, depth, rp, anc):
+		try: entries = list(os.scandir(root))
+		except OSError: return
+		if sort: entries.sort(key=lambda e: e.name)
+		for e in entries:
+			try:
+				isdir = e.is_dir(follow_symlinks=symlinks)
+				if e.is_symlink() and not os.path.exists(e.path): continue
+			except OSError: continue
+			if not isdir:
+				if keep_file(root, e.name): yield func(root, e.name)
+				continue
+			if skip_folder_re and skip_folder_re.search(e.name): continue
+			keep = not folder_re or folder_re.search(os.path.join(root, e.name))
+			if ret_folders and keep: yield func(root, e.name)
+			if keep and (maxdepth is None or depth < maxdepth-1):
+				crp = os.path.realpath(e.path) if e.is_symlink() else os.path.join(rp, e.name)
+				if crp not in anc: yield from walk(e.path, depth+1, crp, anc | {crp})
+	rp = os.path.realpath(path)
+	return L(walk(str(path), 0, rp, {rp}))
+
 # %% ../nbs/02_data.ipynb #a8efe72ac0b7468a
-@delegates(globtastic)
+@delegates(globsafe)
 def pkg2files(pkg:str,								# installed package, by import or distribution name
               skip_file_re=skip_file_re,  # regex of file names to skip
               skip_folder_re=skip_folder_re,  # regex of folder names to skip
               func=Path,						    # applied to each path, such as Path or str
-			  **kwargs								# passed to globtastic, such as `exts=code_exts`
+              path:list=None,  # site-packages folders to look in; None looks in the running interpreter
+			  **kwargs								# passed to globsafe, such as `exts=code_exts`
 )->L:
 	'Every file in an installed package\'s folder, skipping tests, docs, build output and hidden files.'
-	if not (nm := spec(pkg)): return L()
+	if not (nm := spec(pkg, path)): return L()
 	if nm.origin: o = Path(nm.origin).parent
 	elif nm.submodule_search_locations: o= Path(nm.submodule_search_locations[0])
 	else: return L()
-	return globtastic(o, folder_re=nm.name, skip_folder_re=skip_folder_re,
-	                  skip_file_re=skip_file_re, func=func, **kwargs)
+	return globsafe(o, folder_re=nm.name, skip_folder_re=skip_folder_re,
+	                skip_file_re=skip_file_re, func=func, **kwargs)
 
 # %% ../nbs/02_data.ipynb #41872245b3652853
-@delegates(globtastic)
+@delegates(globsafe)
 def dir2files(dir:str,  # folder to walk
               skip_file_re=skip_file_re,  # regex of file names to skip
               skip_folder_re=skip_folder_re,  # regex of folder names to skip
               func=Path,  # applied to each path, such as Path or str
-              **kwargs  # passed to globtastic, such as `exts=` or `skip_file_glob=`
+              **kwargs  # passed to globsafe, such as `exts=` or `skip_file_glob=`
               )->L:
 	'Every file under a folder, skipping tests, docs, build output and hidden files.'
 	if not (rt :=Path(dir)).exists(): return L()
-	return globtastic(rt, skip_folder_re=skip_folder_re, skip_file_re=skip_file_re, func=func, **kwargs)
+	return globsafe(rt, skip_folder_re=skip_folder_re, skip_file_re=skip_file_re, func=func, **kwargs)
 
 # %% ../nbs/02_data.ipynb #33217682f16a1c9c
 # Below this many files a process pool costs more to start than the parse it saves.
@@ -329,12 +383,13 @@ def pkg2chunks(pkg:str,             # package name
                imports:bool=False,  # include import statements as code chunks
                n_workers:int=None,  # parse workers; 0 is serial, None picks by file count
                threadpool:bool=False, # threads rather than processes (see `_parse_files`)
+               path:list=None,      # site-packages folders to read the package from; None uses the running interpreter
                **kw                 # passed to pkg2files, such as `exts=code_exts`
 )->L:
     'Chunks for every file of an installed package, with the package name and version in their metadata.'
-    pkg, ver = _pkg_name(pkg), getattr(_pkg_dist(pkg), 'version', None)
+    pkg, ver = _pkg_name(pkg), getattr(pkg_dist(pkg, path), 'version', None)
     upd_v = lambda d: d['metadata'].update(dict(package=pkg, version=ver)) or d
-    files = pkg2files(pkg, **kw)
+    files = pkg2files(pkg, path=path, **kw)
     return _parse_files(files, n_workers, threadpool, imports=imports).filter(true).concat().map(upd_v)
 
 @delegates(dir2files)
@@ -354,7 +409,8 @@ def dir2chunks(dir:str,             # directory path
 # %% ../nbs/02_data.ipynb #256e1606821e7674
 def installed_packages(nms:list=None,    # package names or requirement strings; None lists every installed package
                        pyproject:bool=False,  # also include the dependencies in the current repository's pyproject.toml
-                       xtras:str|None=None       # comma-separated `[dependency-groups]` from pyproject.toml to include too
+                       xtras:str|None=None,      # comma-separated `[dependency-groups]` from pyproject.toml to include too
+                       path:list=None            # site-packages folders to look in; None looks in the running interpreter
 )->L:
     'The names of installed packages, all of them or only those asked for, leaving out the standard library.'
     if pyproject:
@@ -370,7 +426,7 @@ def installed_packages(nms:list=None,    # package names or requirement strings;
         nms = set(nms).union(tlp) if nms else tlp
     not_stdlib = lambda d: d.metadata.get('Author-email') not in ('Python', None)
     try:
-        pkgs = L(nms).map(_pkg_dist).filter(true) if nms else L(dists())
+        pkgs = L(nms).map(lambda n: pkg_dist(n, path)).filter(true) if nms else L(Distribution.discover(**_dkw(path)))
         return pkgs.filter(not_stdlib).map(lambda d: d.metadata['Name'])
     except Exception as e: print(f'Error checking installed packages: {e}')
 
