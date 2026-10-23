@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.58
+- An HNSW sidecar is written to a temporary file in the same folder and renamed over the old one, so another connection or process never loads a part-written index. A save that fails leaves the previous sidecar whole. Before, usearch wrote the sidecar in place.
+
 ## 0.1.57
 - laghu-rs is installed on every platform with Python 3.11 or later, now that it has wheels for macOS, Linux and Windows. It was limited to macOS arm64.
 

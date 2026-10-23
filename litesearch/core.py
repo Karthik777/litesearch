@@ -7,7 +7,7 @@ __all__ = ['BUSY_TIMEOUT_MS', 'NP_DTYPE', 'STORE_STAMP', 'RERANK_FANOUT', 'sql_i
            'rank_fts', 'correct', 'rerank_hits']
 
 # %% ../nbs/01_core.ipynb #508322702d73b25a
-from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_
+from fastcore.all import Path, patch, merge, ifnone, first, L, chunked, filter_keys, not_, in_, atomic_save
 from fastlite import Database
 from apswutils.db import Table
 from apswutils.utils import cursor_row2dict, hash_record
@@ -316,11 +316,12 @@ def get_index(self:Database,        # database connection
 
 @patch
 def _save_index(self:Database, name):
-    'Save store `name`\'s HNSW index to its file, when the database is on disk.'
+    'Save store `name`\'s HNSW index to its file, when the database is on disk; a reader never sees a part-written file.'
     m = self._ann_meta(name)
     if not (m and m['path'] and name in self.ann_indices): return
-    (idx := self.ann_indices[name]).save(m['path'])
-    if not isinstance(idx, ExactIndex): _stale(m['path']).unlink(missing_ok=True)
+    if isinstance(idx := self.ann_indices[name], ExactIndex): return idx.save(m['path'])
+    with atomic_save(m['path']) as f: idx.save(f.name)
+    _stale(m['path']).unlink(missing_ok=True)
 
 # %% ../nbs/01_core.ipynb #a2795bc64605251
 @patch
