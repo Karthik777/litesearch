@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.57
+- laghu-rs is installed on every platform with Python 3.11 or later, now that it has wheels for macOS, Linux and Windows. It was limited to macOS arm64.
+
 ## 0.1.56
 - Needs laghu 0.3.1, whose Rust split accepts any `tokenizers` 0.23.x, not only the 0.23.2 laghu-rs was built with. In an environment with `tokenizers` 0.23 the whole path from text to vector then runs in Rust. litesearch keeps its `tokenizers>=0.22.2` floor: transformers 5.3 requires `tokenizers` 0.23.0 or lower, so a higher floor would conflict with it.
 

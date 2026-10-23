@@ -2495,7 +2495,11 @@ version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/44/bc/5ef40c967a1d7f7d0b20596f3f4dd823bb9f3a63d5a1d4d16b696b1b181b/laghu_rs-0.1.0.tar.gz", hash = "sha256:1a7c53a046409d106321c2a7f82426bef8ff92ff46653d67bca243c893dababf", size = 13347, upload-time = "2026-10-23T01:07:51.143Z" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/fe/fbbca157e3079d5800142166b66a32662c85f3cf309b316bc8a9ac8e8f33/laghu_rs-0.1.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:aba008029cebd704cd59668aef49984daa17e7d7ba84e4062c27155b971e2cfe", size = 1455339, upload-time = "2026-10-23T02:29:10.522Z" },
     { url = "https://files.pythonhosted.org/packages/31/42/adeeb276ae50300ae576984890957fa0f1a76b601a64830a24c741b7d599/laghu_rs-0.1.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:e84833cbf3a890f2366f094f71f68c4e3cb8f9c740904b36c0e81a6ec4e588cd", size = 1422348, upload-time = "2026-10-23T01:07:49.575Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/9b/0e66db298c63cb0de7209d466379a14835c17ef939757d889a2e2eff3452/laghu_rs-0.1.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:304100a2ff768c86f8198f25a13a45a838785f02914d3dd8e049910e66b8e07a", size = 1520711, upload-time = "2026-10-23T02:29:11.986Z" },
+    { url = "https://files.pythonhosted.org/packages/40/95/cbb23ec4e6289045bf9720918bb7b7b1a2bb1e0c56bc25593d8662544d5e/laghu_rs-0.1.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e388d58ffa1c6641140ee213b736ab9e62c39c4f06d2280d4683babe5f17fe4c", size = 1552510, upload-time = "2026-10-23T02:29:13.045Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/78/115d44905e7dddcceb2a7c2c5fa54136111a34b1de45e4a827b58ec49fac/laghu_rs-0.1.0-cp311-abi3-win_amd64.whl", hash = "sha256:2c87dea6619f53cb265216b008a750b29a055d17b5949842b9b82711dbfce3f6", size = 1399658, upload-time = "2026-10-23T02:29:14.197Z" },
 ]
 
 [[package]]
@@ -2571,7 +2575,7 @@ dependencies = [
     { name = "codesigs" },
     { name = "fastlite" },
     { name = "laghu" },
-    { name = "laghu-rs", marker = "python_full_version >= '3.11' and platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "laghu-rs", marker = "python_full_version >= '3.11'" },
     { name = "pdf-oxide" },
     { name = "pdflite" },
     { name = "pillow" },
@@ -2617,7 +2621,7 @@ requires-dist = [
     { name = "jupyterlab", marker = "extra == 'dev'" },
     { name = "jupyterlab-quarto", marker = "extra == 'dev'" },
     { name = "laghu", specifier = ">=0.3.1" },
-    { name = "laghu-rs", marker = "python_full_version >= '3.11' and platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.1.0" },
+    { name = "laghu-rs", marker = "python_full_version >= '3.11'", specifier = ">=0.1.0" },
     { name = "model2vec", extras = ["distill"], marker = "extra == 'dev'", specifier = ">=0.7.0,<0.10" },
     { name = "nbdev", marker = "extra == 'dev'" },
     { name = "notebook", marker = "extra == 'dev'" },
