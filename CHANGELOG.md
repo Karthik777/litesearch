@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.55
+- Needs laghu 0.3.0, and installs laghu-rs on macOS arm64 with Python 3.11 or later, where a wheel is published. laghu then segments and pools in Rust: the default model embeds about 3.5 to 4 times faster than with laghu alone, with the same vectors. Elsewhere laghu runs in pure Python as before.
+
 ## 0.1.54
 - `static_embedder` and `static_code_embedder` load their models with laghu, which maps the embedding table and the vocabulary from disk instead of copying them into each process. The default model's private memory in a fresh process is 80 MB instead of 1,373 MB, and potion-code-16M-v2's 112 MB instead of 164 MB. laghu gives model2vec 0.9's vectors whichever model2vec is installed; before, an install that resolved model2vec 0.10 wrote different vectors into the same stores. Encoding with the default model is about three times slower, because laghu tokenizes it in Python.
 - litesearch depends on laghu instead of model2vec. The `dev` extra keeps `model2vec[distill]`, below 0.10.

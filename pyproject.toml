@@ -16,7 +16,9 @@ dependencies = [
     "chonkie>=1.6.0",
     "codesigs>=0.0.2",
     "fastlite>=0.2.4",
-    "laghu>=0.2.1",
+    "laghu>=0.3.0",
+    # only where a laghu-rs wheel is published; elsewhere pip would compile Rust from the sdist
+    "laghu-rs>=0.1.0; sys_platform == 'darwin' and platform_machine == 'arm64' and python_version >= '3.11'",
     "tokenizers>=0.22.2",
     "pdf-oxide>=0.3.17",
     "pdflite>=0.0.1",
