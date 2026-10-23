@@ -2473,7 +2473,7 @@ wheels = [
 
 [[package]]
 name = "laghu"
-version = "0.3.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastcore" },
@@ -2484,9 +2484,9 @@ dependencies = [
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f6/a3/5559263616828ad8383ded289108f7650a835124fd7dda35c6885be2f25d/laghu-0.3.0.tar.gz", hash = "sha256:406d12e4bcd22f2c3eb450e3a148c594ca7df7cceafef31637dc84a52c693baf", size = 27319, upload-time = "2026-10-23T01:10:22.213Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/f0/b1492f25df7fb5144baff2c909120f9b2b3ac3ed08bf2bc8b2c42931a591/laghu-0.3.1.tar.gz", hash = "sha256:ff4eb92a6a67038f67e0cf498bbffd54b836d8ef74e33ebf3946c339a56f389d", size = 27905, upload-time = "2026-10-23T01:26:08.566Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/d8/4166f3404b27a9d52e0cb1050aee5541908e0bdd410ae95b0cebdcba143d/laghu-0.3.0-py3-none-any.whl", hash = "sha256:984a1ac21414c39b39635858c718eacc7a0918e6e5d77bfe738fec955a7be970", size = 29203, upload-time = "2026-10-23T01:10:20.885Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/fa/c6137cefc4006dfe72d1aeead4fb0b313833e5833eafe8cf62effbc55946/laghu-0.3.1-py3-none-any.whl", hash = "sha256:b320c16880a784dc2d0495373c1b7e0d915a11d20e4213d4de38d9addd00b6af", size = 29809, upload-time = "2026-10-23T01:26:07.458Z" },
 ]
 
 [[package]]
@@ -2616,7 +2616,7 @@ requires-dist = [
     { name = "flashrank", marker = "extra == 'dev'", specifier = ">=0.2.10" },
     { name = "jupyterlab", marker = "extra == 'dev'" },
     { name = "jupyterlab-quarto", marker = "extra == 'dev'" },
-    { name = "laghu", specifier = ">=0.3.0" },
+    { name = "laghu", specifier = ">=0.3.1" },
     { name = "laghu-rs", marker = "python_full_version >= '3.11' and platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.1.0" },
     { name = "model2vec", extras = ["distill"], marker = "extra == 'dev'", specifier = ">=0.7.0,<0.10" },
     { name = "nbdev", marker = "extra == 'dev'" },
