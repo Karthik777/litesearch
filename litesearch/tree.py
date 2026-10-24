@@ -15,17 +15,14 @@ import re, sys, tempfile
 from multiprocessing import get_context
 import numpy as np
 from contextlib import nullcontext
-from .core import (sql_in, rowid_sel, NP_DTYPE, rrf_all, process_content, write_txn, db_lock,
-        rerank_hits, RERANK_FANOUT)
+from .core import sql_in, rowid_sel, NP_DTYPE, rrf_all, process_content, write_txn, db_lock, rerank_hits, RERANK_FANOUT
 from .data import chunk_markdown
 
 # %% ../nbs/06_tree.ipynb #19d522c82ab234ee
 _md_head  = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
 _fence    = re.compile(r'^\s{0,3}(```+|~~~+)')
-_STRUCT = ('BOOK','TITLE','PART','ANNEX','APPENDIX','CANTO','CHAPTER','ADHYAYA','SECTION','SUBTITLE',
-           'ARTICLE','RULE','CLAUSE','LESSON','SCHEDULE')
-_chapter  = re.compile(r'^\s{0,6}#{0,6}\s*(' + '|'.join(_STRUCT) + r')\s+([IVXLCDM]+|\d+[A-Za-z]?)'
-                       r'\b[\s.:—-]*(.{0,80})$', re.I)
+_STRUCT = ('BOOK','TITLE','PART','ANNEX','APPENDIX','CANTO','CHAPTER','ADHYAYA','SECTION','SUBTITLE', 'ARTICLE','RULE','CLAUSE','LESSON','SCHEDULE')
+_chapter  = re.compile(r'^\s{0,6}#{0,6}\s*(' + '|'.join(_STRUCT) + r')\s+([IVXLCDM]+|\d+[A-Za-z]?)\b[\s.:—-]*(.{0,80})$', re.I)
 _STRUCT_RANK = {'book':0, 'title':0, 'part':0, 'annex':0, 'appendix':0, 'canto':0,
                 'chapter':1, 'adhyaya':1, 'section':2, 'subtitle':2,
                 'article':3, 'rule':3, 'clause':3, 'lesson':3, 'schedule':3}

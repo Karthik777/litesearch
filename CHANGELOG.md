@@ -1,5 +1,11 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.59
+- WAL connections use a 64 MiB `journal_size_limit`. `upsert_all` and `Table.sync` attempt a TRUNCATE checkpoint after writing. Checkpoints wait up to 50 ms for busy readers. Busy checkpoints return without an error. Open transactions skip checkpoints. An open reader snapshot can keep the WAL above the limit.
+- Bulk writes default to 1000 rows per transaction. `upsert_all` commits each batch unless an outer transaction is open. Earlier batches remain committed if a later batch fails.
+- Connections opened by litesearch set their own busy timeout before APSW runs its opening pragmas. The default is 30 seconds. APSW defaults and unrelated connections are not changed. Supplied connections keep their timeout unless `busy_timeout` is given.
+- `busy_window` is a deprecated no-op. Its argument is ignored. The deprecated `parallel` arguments remain accepted and ignored.
+
 ## 0.1.58
 - An HNSW sidecar is written to a temporary file in the same folder and renamed over the old one, so another connection or process never loads a part-written index. A save that fails leaves the previous sidecar whole. Before, usearch wrote the sidecar in place.
 
