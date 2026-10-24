@@ -78,10 +78,12 @@ def _lock_for(locks, c):
 
 def db_lock(db):
     'The re-entrant lock litesearch holds while it works on `db`\'s connection.'
-    return db.conn.lock if isinstance(db.conn, Conn) else _lock_for(_conn_locks, db.conn)
+    c = db.conn
+    if isinstance(c, _StatementConn): return _lock_for(_conn_locks, c.raw)
+    return c.lock if isinstance(c, Conn) else _lock_for(_conn_locks, c)
 
 def _load_lock(db):
-    "The lock `get_index` and `usearch_sql` load under: a shared `Conn`'s own, which its statements take anyway, else one no `db_lock` holder waits on."
+    'The connection lock used for index and extension loading.'
     return db.conn.lock if isinstance(db.conn, Conn) else _lock_for(_load_locks, db.conn)
 
 @contextmanager
@@ -647,6 +649,14 @@ class Conn:
         else: self._do(setattr, self.raw, k, v)   # `row_trace`, `exec_trace`: apsw has to see them
     def __repr__(self): return f'<Conn {self.filename}>'
 
+class _StatementConn(Conn):
+    'Serialise calls and materialise rows without holding the statement lock across transactions.'
+    def __init__(self, c):
+        super().__init__(c)
+        self.lock = _lock_for(_load_locks, c)
+    def _do(self, f, *a, **k):
+        with self.lock: return f(*a, **k)
+
 class _Backup:
     'A backup whose calls hold the destination connection\'s lock, and whose steps also hold the source\'s.'
     def __init__(self, b, dst, src): self._b, self._dst, self._src = b, dst, src
@@ -683,7 +693,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     register_sanskrit(_db)
     _db._fts_tokenizers = _tokenizers_ok(_db.conn)
     _db._sem_search = sem_search
-    if shared: _db.conn = Conn(_db.conn)
+    if not isinstance(_db.conn, Conn): _db.conn = Conn(_db.conn) if shared else _StatementConn(_db.conn)
     return _db
 
 @patch

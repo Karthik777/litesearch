@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.60
+- Connections serialise statements and read their results under a connection lock. Concurrent readers no longer raise `ThreadingViolationError`. Ordinary connections use a statement lock separate from `db_lock`. A caller can hold `db_lock` while workers read the connection. Statements materialise all result rows in memory.
+
 ## 0.1.59
 - WAL connections use a 64 MiB `journal_size_limit`. `upsert_all` and `Table.sync` attempt a TRUNCATE checkpoint after writing. Checkpoints wait up to 50 ms for busy readers. Busy checkpoints return without an error. Open transactions skip checkpoints. An open reader snapshot can keep the WAL above the limit.
 - Bulk writes default to 1000 rows per transaction. `upsert_all` commits each batch unless an outer transaction is open. Earlier batches remain committed if a later batch fails.
