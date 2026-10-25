@@ -6,6 +6,7 @@
 - `vec_search` returns rows at the same distance in rowid order. Before, their order depended on the SQLite query plan.
 - `SANSKRIT_TOKENIZE` is `'adhara'` when adhara is installed. adhara gives the tokens of `simplify casefold 1 sanskrit unicodewords`. `register_sanskrit` still registers the Python tokenizer as `sanskrit`, so tables made with it keep working.
 - The index page is shorter. It has a new section on the packages under `database()`: apsw, apswutils, fastlite and adhara.
+- `import litesearch` sets `ORT_DISABLE_TELEMETRY=1` unless it is already set. onnxruntime reads it when it starts and then runs no telemetry thread. flashrank's reranker and the ONNX encoders use onnxruntime. Its telemetry thread could abort a process during exit, with `libc++abi: terminating ... recursive_mutex lock failed` and exit code 134. A backtrace of the abort shows the thread handling an upload's response while `exit()` tore down onnxruntime's telemetry. About 1 in 10 runs of the test suite in one process ended this way.
 
 | 10 searches on a vishalakshi vault of 181,290 chunks | 0.1.60 | 0.1.61 |
 |---|---|---|

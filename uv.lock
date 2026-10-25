@@ -19,14 +19,14 @@ resolution-markers = [
 
 [[package]]
 name = "adhara"
-version = "0.1.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e3/14/f27367dfee8fd6e0dc7caada6107da517a839346910ca6e48d8e41ff91e1/adhara-0.1.0.tar.gz", hash = "sha256:50c1edeb97c58ab9c3c5284ce58904f0974dabeffcb6564cf1ace4f0aed64df2", size = 220987, upload-time = "2026-10-25T03:19:00.623Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/2f/84e19b15cb8d5f91c9f915d865d379f0ffe617b6d72050799d6e79580d30/adhara-0.1.1.tar.gz", hash = "sha256:2797ff3bd072efa425019a65b51c5e89897ba503139dcfcbadd5f0319dcb2d5c", size = 222448, upload-time = "2026-10-25T05:31:17.516Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/d3/711c720198db05a1d7803872c95cfb73f7c06eef95d13dac5a177f14bfc6/adhara-0.1.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:311582790ee77fc712ff4d9b50e2c556c10ba5b2455a3f5c8bc39ff6852af6bd", size = 1389444, upload-time = "2026-10-25T03:18:53.417Z" },
-    { url = "https://files.pythonhosted.org/packages/ed/51/c9d90412a7ad3be535e2793c5213a3fbb0ac85b35fa3ccc156d4ce494231/adhara-0.1.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c18cdde659165c0b991e8fb45bdb3e7b66e6a62455f0bd84a8846733b22c0969", size = 1196280, upload-time = "2026-10-25T03:18:55.477Z" },
-    { url = "https://files.pythonhosted.org/packages/75/29/5d6ae6a7dbced3702d86e4c2c05e17522cf13f07b3ef137fb2820b186fdb/adhara-0.1.0-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:b50be333acee4e3f01530d2aeeb0a541362eff32485298fa94f8ec4a067dd8d9", size = 1567161, upload-time = "2026-10-25T03:18:57.033Z" },
-    { url = "https://files.pythonhosted.org/packages/5f/e3/fc372c19fdcbe8000d33e6e5050c36b5e0f4895538909078da603d9e5206/adhara-0.1.0-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:f812b85b0b16b678275b5b5d01a83ee5eb9e049dde079019459fc9a0e4b71ec9", size = 2257444, upload-time = "2026-10-25T03:18:58.917Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/82/4cfb85c8d829165d507a3b03ab1dbac8384f9ba12dd2298b569a213f9ae1/adhara-0.1.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:5678214071c55888c11d3906cdb370818e20de60da7bca034b342f86815f9edf", size = 1390802, upload-time = "2026-10-25T05:31:10.979Z" },
+    { url = "https://files.pythonhosted.org/packages/01/b7/7bd8b3e67421444ce3d388b3e9d817eef01ad1f4b8c28f8fc5726440daa4/adhara-0.1.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:79517dab5b1dbe98f156471b1a0abaf87c8655ed0b6ae8f2e9928ac2f737025c", size = 1197511, upload-time = "2026-10-25T05:31:12.865Z" },
+    { url = "https://files.pythonhosted.org/packages/de/f8/40003f7339f1002e77b7294e5cc8db4ffd513ec80989eb8697c4de1099c3/adhara-0.1.1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:42a3425fd743e32b80c6eb602ba34c172a77ec0e37981d6224e6e24249ee62fc", size = 1569191, upload-time = "2026-10-25T05:31:14.364Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/74/0fda86545dbd6809f5171ee730016dc9e08eb0f417a3e2e0fc8d0d91674f/adhara-0.1.1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:f4333496863cc04a092b7c2b076e69ea54d8a42ac1431d08152f2d2e4c4076d0", size = 2259388, upload-time = "2026-10-25T05:31:16.012Z" },
 ]
 
 [[package]]
@@ -2624,7 +2624,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "adhara", marker = "sys_platform != 'win32'", specifier = ">=0.1.0" },
+    { name = "adhara", marker = "sys_platform != 'win32'", specifier = ">=0.1.1" },
     { name = "chonkie", specifier = ">=1.6.0" },
     { name = "codesigs", specifier = ">=0.0.2" },
     { name = "datasets", marker = "extra == 'dev'", specifier = ">=5.0.1" },

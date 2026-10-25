@@ -7,6 +7,7 @@ __all__ = ['usearch_fix', 'cache_dir', 'cpu_model', 'usearch_lib', 'usearch_ok']
 import os, subprocess, platform, sys, json, fcntl, signal, threading, warnings
 from contextlib import contextmanager
 from fastcore.all import Path
+os.environ.setdefault('ORT_DISABLE_TELEMETRY', '1')   # onnxruntime reads it when it starts; its telemetry thread can abort the process at exit
 
 # %% ../nbs/00_postfix.ipynb #aaef4f5a5e9a9eed
 _sqlite_hints = dict(Darwin='macOS ships it in /usr/lib, and Homebrew has it as `brew install sqlite`',
