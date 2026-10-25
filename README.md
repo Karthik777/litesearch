@@ -5,22 +5,23 @@
 
 > Reading this on GitHub? The formatted [documentation](https://Karthik777.github.io/litesearch/) is easier to read.
 
-litesearch adds search to an application without a search server. Your documents, their search indexes and their vectors live in one SQLite file, and every query runs two kinds of search over them and merges the results.
+litesearch adds search to an application without a search server. Your documents, their indexes and their vectors live in one SQLite file. Each query runs a keyword search and a vector search, and litesearch merges the two result lists.
 
-The first kind is keyword search. SQLite’s FTS5 extension keeps a full-text index, which lists for every word the rows that contain it. FTS5 ranks matching rows with bm25, a score that is higher when a row contains the query’s words more often and when those words are rare in the collection. Keyword search is exact. That is what you want for names, error codes and identifiers, and it finds nothing when a document says the same thing in different words.
+| search | how it finds rows | good at | weak at |
+|----|----|----|----|
+| keyword | SQLite’s FTS5 extension keeps a full-text index: for each word, the rows that hold it. bm25 ranks the rows. A row scores higher when it holds the query’s words often and when those words are rare. | names, error codes, identifiers | the same idea in other words |
+| vector | An encoder (an embedding model) turns text into an embedding, a list of a few hundred numbers. Texts with similar meanings get embeddings that are close together. | “ending a membership” for “cancel my subscription” | exact names |
 
-The second kind is vector search. An encoder, also called an embedding model, turns a piece of text into a list of a few hundred numbers called an embedding. Texts with similar meanings get embeddings that are close together. litesearch stores an embedding beside each piece of text, embeds the query the same way, and returns the rows whose embeddings are closest. Vector search finds “ending a membership” when the user typed “cancel my subscription”, and it is weak at exact names.
-
-Each kind of search returns a ranked list. litesearch merges the two lists with Reciprocal Rank Fusion (RRF): a row earns 1/(60 + its position) from each list it appears in, and the amounts add up. A row near the top of both lists beats a row at the top of only one. RRF uses positions only, so it never has to compare a bm25 score with a vector distance, and there is nothing to tune.
+Reciprocal Rank Fusion (RRF) merges the two lists. A row gets 1/(60 + its position) from each list that holds it, and the amounts add up. RRF uses positions only. It never compares a bm25 score with a vector distance, and it has no setting to tune.
 
 There are two ways to use the library.
 
 | route | use it when | what you decide |
 |----|----|----|
-| [\[`Index`\](https://Karthik777.github.io/litesearch/api.html#index)](https://Karthik777.github.io/litesearch/api.html) | you want to search a folder of documents, a set of strings, or a code base | only whether to rerank. The encoder, vector type, chunk size, search strategy and document tree are already chosen, each from a measurement in `evals/` |
-| [\[`database()`\](https://Karthik777.github.io/litesearch/core.html#database)](https://Karthik777.github.io/litesearch/core.html) | you need your own columns, your own encoder, your own SQL, or float32 vectors | everything, including one setting (the vector dtype) that produces a wrong ranking with only a warning when you get it wrong |
+| [\[`Index`\](https://Karthik777.github.io/litesearch/api.html#index)](https://Karthik777.github.io/litesearch/api.html) | you want to search a folder of documents, a set of strings, or a code base | only whether to rerank. The encoder, vector type, chunk size, search strategy and document tree come from measurements in `evals/` |
+| [\[`database()`\](https://Karthik777.github.io/litesearch/core.html#database)](https://Karthik777.github.io/litesearch/core.html) | you need your own columns, your own encoder, your own SQL, or float32 vectors | everything, including the vector dtype. A wrong dtype gives a wrong ranking and only a warning |
 
-Start with [`Index`](https://Karthik777.github.io/litesearch/api.html#index). It is built on [`database()`](https://Karthik777.github.io/litesearch/core.html#database), and `Index.db` is the database underneath, so you can run a lower-level query against the same data whenever [`Index`](https://Karthik777.github.io/litesearch/api.html#index) does not do what you need.
+Start with [`Index`](https://Karthik777.github.io/litesearch/api.html#index). `Index.db` is the database under it. Use it when you need SQL against the same data.
 
 ## Install
 
@@ -29,13 +30,13 @@ Start with [`Index`](https://Karthik777.github.io/litesearch/api.html#index). It
 !uv add litesearch
 ```
 
-litesearch has no optional extras. Two features need a package that is not installed with it: `rerank=True` needs `flashrank`, and the ONNX encoder [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) needs `onnxruntime`. Each is imported only when you use the feature, and the error message names the package to install. `pip install litesearch` installs everything else.
+litesearch has no optional extras. `rerank=True` needs `flashrank`. The ONNX encoder [`FastEncode`](https://Karthik777.github.io/litesearch/utils.html#fastencode) needs `onnxruntime`. litesearch imports each one only when you use it, and the error names the package to install.
 
 ## Route 1: [`Index`](https://Karthik777.github.io/litesearch/api.html#index)
 
-An [`Index`](https://Karthik777.github.io/litesearch/api.html#index) is a searchable collection. `add` puts files, folders or text into it. Each document is cut into chunks, short passages of about 512 bytes, and each chunk is stored with its embedding. `search` returns the chunks that best match a query.
+An [`Index`](https://Karthik777.github.io/litesearch/api.html#index) is a searchable collection. `add` puts files, folders or text into it. [`Index`](https://Karthik777.github.io/litesearch/api.html#index) cuts each document into chunks of about 512 bytes and stores each chunk with its embedding. `search` returns the chunks that best match a query.
 
-The other methods answer questions about whole documents and sections. `sections` ranks sections instead of chunks, `read` returns the full text of one section, `toc` lists everything in the index as a table of contents, and `context` collects the best sections for a query in a form you can pass to a language model.
+Other methods work on whole documents and sections. `sections` ranks sections, `read` returns the full text of one section, `toc` lists the index as a table of contents, and `context` collects the best sections for a query, for a language model.
 
 ``` python
 ix = Index()                                        # pass a path to keep it on disk
@@ -44,7 +45,7 @@ hits = ix.search('how does multi-head attention work', limit=3)
 [(h['heading'], h['page']) for h in hits]
 ```
 
-Every hit has a `heading` and a `node_id`. While it ingests a document, [`Index`](https://Karthik777.github.io/litesearch/api.html#index) builds a document tree from the document’s headings: the document is the root, its chapters and sections are the nodes below, and each chunk records the node it belongs to. `heading` is the path of headings above the chunk, such as `attention is all you need › Abstract`, and `node_id` names the section as the document’s id, `#`, and the section’s number. A hit then tells you which section matched, which is what a reader or a model needs, and not only which 512 bytes.
+Every hit has a `heading` and a `node_id`. During `add`, [`Index`](https://Karthik777.github.io/litesearch/api.html#index) builds a document tree from the headings. The document is the root, its chapters and sections are the nodes, and each chunk records its node. `heading` is the path of headings above the chunk, such as `attention is all you need › Abstract`. `node_id` is the document id, `#`, and the section number. A hit tells you which section matched, not only which 512 bytes.
 
 ``` python
 sec = ix.sections('how does multi-head attention work', limit=2)   # ranked *sections*, not chunks
@@ -59,44 +60,31 @@ ix.read(sec[0]['node_id'])['text'][:300]            # one whole section, reassem
 ix.toc(summaries=False)                             # the corpus — no embeddings computed at all
 ```
 
-One setting is left to you. `rerank=True` passes the top 30 candidates to a cross-encoder from flashrank, a small model that reads the query and each candidate together and scores how well they match. That is slower than comparing embeddings and more accurate. In the evaluation it improved weighted MRR by 0.026 to 0.077 and was positive in all twelve measured cells. It makes a query roughly 10 times slower and downloads a 4 MB model the first time.
+You decide one setting. `rerank=True` gives the top 30 candidates to a cross-encoder from flashrank. A cross-encoder is a small model that reads the query and each candidate together and scores the match. In the evaluation it improved weighted MRR by 0.026 to 0.077, in all twelve measured cells. It makes a query about 10 times slower and downloads a 4 MB model on first use.
 
 ``` python
 ix.search('how does multi-head attention work', rerank=True)
 ```
 
-For source code, use `add_code`. It cuts Python files at top-level functions and classes using Python’s own parser. Code chunks get no document tree, so they have no `heading` or `node_id`, and `toc`, `sections` and `read` do not cover them:
+For source code, use `add_code`. It cuts Python files at top-level functions and classes with Python’s own parser. Code chunks get no document tree, so `toc`, `sections` and `read` do not cover them:
 
 ``` python
-ix.add_code('litesearch')      # a directory, or the name of an installed package
+ix.add_code('litesearch')      # a folder, or the name of an installed package
 ```
 
 ## Route 2: [`database()`](https://Karthik777.github.io/litesearch/core.html#database)
 
 [`database()`](https://Karthik777.github.io/litesearch/core.html#database) opens a SQLite database and returns a [fastlite](https://fastlite.answer.ai/) `Database`. fastlite is a thin layer over SQLite that gives each table a Python object. The first vector search loads usearch’s SQLite extension into the connection, which adds vector distance functions you can call from SQL. `db.usearch_sql()` loads it before that, for SQL of your own. Pass a file path to keep the database on disk, or nothing for one held in memory.
 
-``` python
-db = database()
-vecs = dict(v1=np.ones((100,), dtype=np.float32).tobytes(),
-            v2=np.zeros((100,), dtype=np.float32).tobytes())
-({m: db.q(f'select distance_{m}_f32(:v1,:v2) as d', vecs)[0]['d']
-  for m in ['sqeuclidean', 'divergence', 'inner', 'cosine']}
- if db.usearch_sql() else 'usearch is off here, as on macOS 14')
-```
+The cell below does by hand what [`Index`](https://Karthik777.github.io/litesearch/api.html#index) does. It loads an encoder and creates a store: a table with a text column, an embedding column and a full-text index. Then it embeds five sentences and searches them.
 
-There are four distance functions: `cosine`, `sqeuclidean` (squared Euclidean distance), `inner` (one minus the dot product) and `divergence` (Jensen-Shannon divergence). Each comes in four versions for the number type the vectors are stored in: `f32`, `f16`, `f64` and `i8`. Smaller results mean closer vectors.
-
-The cell below does by hand what [`Index`](https://Karthik777.github.io/litesearch/api.html#index) does for you. It loads an encoder, creates a store (a table with a text column, an embedding column and a full-text index), embeds five sentences, and searches them.
-
-The comment in the middle points at the one mistake that is easy to make. An embedding is stored as raw bytes, so a search has to be told the number type the bytes hold. litesearch assumes float16, which uses half the space of float32. The static encoder returns float32, so this code converts to float16 before storing. If you store float32 and search as float16, every distance comes back empty, litesearch prints a warning, and the vector half of the search returns rows in table order.
+Tell the search the number type of the stored vectors. An embedding is stored as raw bytes. litesearch assumes float16, which is half the size of float32. The static encoder returns float32, so the code converts to float16 before it stores. If you store float32 and search as float16, every distance comes back empty, litesearch prints a warning, and the vector search returns rows in table order.
 
 ``` python
+db    = database()
 enc   = static_embedder()             # model2vec: no GPU, no ONNX runtime
 store = db.get_store(hash=True, ann=True)
-
-# float16, because that is what a store holds. Handing it float32 fails quietly: every distance
-# comes back 0 and the ranking degrades to keyword-only with no error.
-emb   = lambda xs: np.asarray(enc.encode(list(xs)), dtype=np.float16)
+emb   = lambda xs: np.asarray(enc.encode(list(xs)), dtype=np.float16)   # a store holds float16
 
 texts = ['attention mechanisms in neural networks', 'transformer architecture for sequences',
          'stochastic gradient descent and learning rate schedules',
@@ -109,11 +97,46 @@ q = 'self-attention mechanism'
 db.search(q, emb([q])[0].tobytes(), columns=['content'], limit=2)
 ```
 
-[`Index`](https://Karthik777.github.io/litesearch/api.html#index) exists so that this setup is written once, correctly.
+## What is under [`database()`](https://Karthik777.github.io/litesearch/core.html#database)
+
+[`database()`](https://Karthik777.github.io/litesearch/core.html#database) returns a fastlite `Database`. Four packages sit under it, and each one has one job.
+
+| package | its job in litesearch |
+|----|----|
+| [apsw](https://github.com/rogerbinns/apsw) | the SQLite driver. It holds the connection, registers the Python FTS5 tokenizers and loads extensions. |
+| [apswutils](https://github.com/AnswerDotAI/apswutils) | the table layer over apsw. It creates tables, adds columns, inserts and upserts rows, turns on FTS5 with its triggers, and writes the SQL of a full-text search. |
+| [fastlite](https://github.com/AnswerDotAI/fastlite) | the `Database` object you use: `db.t.name` for a table, `db.q(sql)` for a query |
+| [adhara](https://github.com/vedicreader/adhara) | a SQLite extension in Rust: a native tokenizer, and an exact vector search on all cores |
+
+litesearch adds the stores, the tokenizers, the search functions and the thread safety. Your code calls litesearch and fastlite. It does not call apsw, apswutils or adhara directly.
+
+### adhara
+
+[`database()`](https://Karthik777.github.io/litesearch/core.html#database) loads adhara into each connection when adhara is installed. adhara is a dependency of litesearch on Linux and macOS. It has no Windows wheel, so on Windows litesearch works as before. If adhara does not load, [`database()`](https://Karthik777.github.io/litesearch/core.html#database) gives a warning and the search runs in Python.
+
+No function signature changes. A search returns the same rows in the same order with or without adhara. These behaviours are new:
+
+- `vec_search`, the exact vector search, asks adhara for the rowids of the nearest rows. adhara compares the query with every vector in memory, on all cores. `vec_search` then reads only those rows in SQL and computes `_dist` as before. [`Database.search`](https://Karthik777.github.io/litesearch/core.html#database.search) calls `vec_search` when `ann=False` or when `where` is set.
+- `vec_search` does not use adhara for a search with `offset`, `where_args`, an embedding column other than `embedding`, the `divergence` metric or `float64` vectors.
+- Rows at the same distance come in rowid order. Before, their order depended on the SQLite query plan.
+- `SANSKRIT_TOKENIZE` is `'adhara'`, the native form of the cross-script tokenizer. Use it for a new FTS table. A table made with `'sanskrit'` keeps working.
+- Each connection has the SQL table function `adhara_hybrid`. It runs a keyword search, a vector search and RRF in one call. The adhara README documents it.
+
+The HNSW search (`ann=True` with no `where`) and the keyword search do not use adhara. New stores keep the tokenizer chain `porter simplify casefold 1 sanskrit unicodewords`. A Swift app can read these stores with adhara’s Swift package.
+
+The table shows `Vault.search` from [vishalakshi](https://github.com/vedicreader/vishalakshi), which is built on [`Index`](https://Karthik777.github.io/litesearch/api.html#index). The vault holds 181,290 chunks, on a 14-core arm64 Mac. Each time is for 10 searches. The hits were the same with and without adhara.
+
+| search | without adhara | with adhara |
+|----|----|----|
+| no `where`: HNSW | 51 ms | 52 ms |
+| a `where` that most rows pass (3 document kinds) | 518 ms | 118 ms |
+| a `where` that few rows pass (1 document kind) | 102 ms | 130 ms |
+
+A `where` that few rows pass is slower with adhara. SQLite reads only the matching rows through an index, and adhara compares the query with every vector.
 
 ## Threads: share one connection, or give each thread its own
 
-A SQLite connection used from several threads needs care. `database(shared=True)` wraps the connection so that threads can share it safely: each statement runs on its own, and a thread that opens a transaction keeps the connection until it commits. The default connection allows one thread at a time, so the alternative is to give each thread its own [`database()`](https://Karthik777.github.io/litesearch/core.html#database) on the same file. SQLite’s WAL mode, which litesearch turns on, lets those connections read while another writes.
+A SQLite connection used from several threads needs care. `database(shared=True)` wraps the connection so that threads can share it. Each statement runs alone, and a thread that opens a transaction keeps the connection until it commits. Without `shared=True`, give each thread its own [`database()`](https://Karthik777.github.io/litesearch/core.html#database) on the same file. SQLite’s WAL mode, which litesearch turns on, lets those connections read while another writes.
 
 `python -m evals.shared_conn` measures both on a store of 20,000 rows with an HNSW index, on a 14-core arm64 Mac:
 
@@ -125,36 +148,34 @@ A SQLite connection used from several threads needs care. `database(shared=True)
 | FTS p50 / p99, 4 readers beside a writer | 106 / 193 ms | 13.4 / 33.0 ms | 1.6 / 3.4 ms |
 | resident memory, HNSW index loaded | 17 MB | 17 MB per thread | 17 MB per thread |
 
-The last column needs explaining. By default SQLite counts every memory allocation under one lock shared by the whole process, so threads on separate connections still wait for each other. Running `apsw.shutdown(); apsw.config(apsw.SQLITE_CONFIG_MEMSTATUS, 0); apsw.initialize()` before the first connection opens turns that counting off. After that, `apsw.memory_used()` returns 0. litesearch does not do this for you, because it changes the whole process.
+By default SQLite counts every memory allocation under one lock for the whole process. Threads on separate connections then wait for each other. Run `apsw.shutdown(); apsw.config(apsw.SQLITE_CONFIG_MEMSTATUS, 0); apsw.initialize()` before the first connection opens to turn the counting off. After that, `apsw.memory_used()` returns 0. litesearch does not do this, because it changes the whole process.
 
-Share one connection when your threads already share one database object and writes are short. On a shared connection, a writer that commits continuously makes readers wait a median of 106 ms. For parallel reads, or a steady writer, give each thread its own connection and turn the counting off. `evals/RESULTS.md` has the method and the results for every thread count.
+Share one connection when your threads share one database object and writes are short. For parallel reads, or a steady writer, give each thread its own connection and turn the counting off. `evals/RESULTS.md` has the method and the results for every thread count.
 
 ## What the evaluation says
 
-The defaults come from `evals/`. It runs 120 known-item queries per corpus over three corpora: EU legislation, arXiv papers and a 19th-century astrology treatise. A known-item query is one written to find a specific passage. The queries come in five styles, from a copy of the passage’s words to a paraphrase that shares none of them. The score is MRR (mean reciprocal rank: 1 if the right section is first, 1/2 if second, and so on, averaged over queries), counted per section and weighted so that three quarters of the weight falls on queries that do not copy the answer’s words. `python -m evals.decide` reproduces every number.
+The defaults come from `evals/`. It runs 120 known-item queries for each of three corpora: EU legislation, arXiv papers and a 19th-century astrology treatise. A known-item query is written to find one passage. The score is MRR (mean reciprocal rank): 1 if the right section is first, 1/2 if second, and so on. Three quarters of the weight is on queries that do not copy the words of the answer. `python -m evals.decide` gives every number.
 
-The changes above the blank row are on by default. The ones below it are off and stay off.
+The changes above the blank row are on by default. The changes below it are off.
 
 | change | change in weighted MRR | decision |
 |----|----|----|
 | [`pre()`](https://Karthik777.github.io/litesearch/data.html#pre) on the keyword search: drop stopwords, match word prefixes, join the words with OR | +0.016 to +0.093 | on since 0.1.6 |
 | 512-byte chunks instead of whole pages | +0.06 to +0.12 | the [`Index`](https://Karthik777.github.io/litesearch/api.html#index) default |
-| cross-encoder rerank | +0.026 to +0.077 | `rerank=True`, the one setting worth deciding |
+| cross-encoder rerank | +0.026 to +0.077 | `rerank=True` |
 | HNSW index for the vector search | -0.005 | on by default, for its speed |
 |  |  |  |
-| document tree, used for ranking | -0.052 to +0.011 | no difference. The tree is built for `toc`, `read` and `sections` |
-| heading text added to each chunk | about ±0.02, sign depends on the corpus | no difference |
-| more candidates without a reranker | -0.014 to -0.068 | helps only with a reranker |
+| document tree, used for ranking | -0.052 to +0.011 | off. The tree is for `toc`, `read` and `sections` |
+| heading text added to each chunk | about ±0.02, sign depends on the corpus | off |
+| more candidates without a reranker | -0.014 to -0.068 | off; it helps only with a reranker |
 | late chunking | -0.033 to -0.053 | removed; the code is in `evals/latechunk.py` |
-| entity graph | -0.070 to -0.160 | removed from `context`; lives in [vruksha](https://github.com/vedicreader/vruksha), see `evals/RESULTS.md` |
+| entity graph | -0.070 to -0.160 | removed from `context`; it is in [vruksha](https://github.com/vedicreader/vruksha) |
 
-Three results matter more than any one row.
+The choice of encoder matters little: across four encoders the spread is 0.018 to 0.046. The default, `potion-multilingual-128M`, is a static model. It looks up one vector for each token, and it indexes about 1,700 times more cheaply than a neural encoder.
 
-The choice of encoder matters little. Across `potion-32M`, `bge-small`, `jina-v2-sm` and `egemma-300m` the spread is 0.018 to 0.046. The static model, which looks up a vector per token instead of running a neural network, wins one corpus outright and indexes about 1,700 times more cheaply. The default is `potion-multilingual-128M`, a static model that also covers scripts other than Latin.
+The document tree does not improve ranking. It does help a language model: on a Sanskrit corpus, `context()` raises verse-level recall from 0.190 to 0.340.
 
-The document tree does not improve ranking, and it is still worth building. Ranking sections instead of chunks makes no difference. Assembling them does: on a Sanskrit corpus, `context()` nearly doubles verse-level recall over plain chunk search, from 0.190 to 0.340, the largest single effect in `evals/`.
-
-Keyword search alone beats the hybrid search on this benchmark, and the benchmark is the reason. With [`pre()`](https://Karthik777.github.io/litesearch/data.html#pre), keyword-only search beats hybrid in all 24 paired cells, because every query in the main set is a rewording of words from its target. `evals/multihop.py` builds a second set where the answer shares no word with the question. There keyword search cannot score at all, and the vector search finds the target at rank 1 between 53% and 84% of the time.
+On this benchmark, keyword search alone beats hybrid search, because each query rewords words from its target. On `evals/multihop.py`, where the answer shares no word with the question, keyword search finds nothing, and vector search puts the target first in 53% to 84% of queries.
 
 ## The other modules
 
@@ -167,17 +188,18 @@ Keyword search alone beats the hybrid search on this benchmark, and the benchmar
 | [`litesearch.sanskrit`](https://Karthik777.github.io/litesearch/sanskrit.html) | the FTS5 tokenizer that matches words across scripts |
 | [`litesearch.quality`](https://Karthik777.github.io/litesearch/quality.html) | which documents in a store only add noise to search results |
 
-Three related jobs live in separate packages. [pdflite](https://github.com/vedicreader/pdflite) reads PDFs. [ganapati](https://github.com/vedicreader/ganapati) handles Sanskrit metre, verse chunking and lemmas. [vruksha](https://github.com/vedicreader/vruksha) builds an entity graph; it measured negative for retrieval and `context` no longer calls it (see `evals/RESULTS.md`).
+Three related jobs are in other packages. [pdflite](https://github.com/vedicreader/pdflite) reads PDFs. [ganapati](https://github.com/vedicreader/ganapati) handles Sanskrit metre, verse chunking and lemmas. [vruksha](https://github.com/vedicreader/vruksha) builds an entity graph.
 
-Every store matches words across scripts, not only Sanskrit stores. A tokenizer is the part of FTS5 that splits text into the words it indexes. litesearch’s default tokenizer adds, beside each word, a copy of it reduced to plain ASCII letters, so `श्रीमाता` (Devanagari), `śrīmātā` (romanised with diacritics) and `srimata` all reach the same row. It also adds a second, looser copy that follows English spelling habits, so `Bheeshma` and `Bhishma` reach `भीष्म` and `Bhīṣma`. English words keep their own entries, so nothing that matched before stops matching. The looser copy makes the index 14.7% larger. This is the largest retrieval gain measured here: a Devanagari query finds the right verse every time (recall 1.000) with every encoder tested. The cost is that a database built with this tokenizer cannot be searched by a connection that has not registered it, which includes the plain `sqlite3` command-line tool. Open it with [`database()`](https://Karthik777.github.io/litesearch/core.html#database).
+Every store matches words across scripts. A tokenizer is the part of FTS5 that splits text into the words it indexes. litesearch’s tokenizer adds a copy of each word in plain ASCII letters, so `श्रीमाता`, `śrīmātā` and `srimata` reach the same row. It also adds a looser copy that follows English spelling, so `Bheeshma` reaches `भीष्म` and `Bhīṣma`. English words keep their own entries. The looser copy makes the index 14.7% larger. With it, a Devanagari query found the right verse every time (recall 1.000) with every encoder tested. A connection that has not registered the tokenizer cannot search the store. That includes the `sqlite3` command-line tool. Open the store with [`database()`](https://Karthik777.github.io/litesearch/core.html#database).
 
 ## Next steps
 
-- [examples/01_simple_rag.ipynb](https://Karthik777.github.io/litesearch/examples/simple_rag.html) ingests a folder of PDFs, chunks them with chonkie and reranks with FlashRank.
+- [examples/01_simple_rag.ipynb](https://Karthik777.github.io/litesearch/examples/simple_rag.html) reads a folder of PDFs, chunks them with chonkie and reranks with FlashRank.
 - [examples/02_tool_use.ipynb](https://Karthik777.github.io/litesearch/examples/tool_use.html) gives litesearch to a language model as a tool.
 - The [api page](https://Karthik777.github.io/litesearch/api.html) covers [`Index`](https://Karthik777.github.io/litesearch/api.html#index) and what each default is worth.
 - The [core page](https://Karthik777.github.io/litesearch/core.html) covers [`database`](https://Karthik777.github.io/litesearch/core.html#database), `get_store`, `search`, [`rrf_all`](https://Karthik777.github.io/litesearch/core.html#rrf_all), [`rank_fts`](https://Karthik777.github.io/litesearch/core.html#rank_fts), [`correct`](https://Karthik777.github.io/litesearch/core.html#correct), [`fts_or`](https://Karthik777.github.io/litesearch/core.html#fts_or) and `vec_search`.
 - The [tree page](https://Karthik777.github.io/litesearch/tree.html) covers `add_dir`, `toc`, `read`, `sections` and `context`.
+- [adhara](https://github.com/vedicreader/adhara) is the Rust extension under [`database()`](https://Karthik777.github.io/litesearch/core.html#database), with its Python and Swift packages.
 - [vishalakshi](https://github.com/vedicreader/vishalakshi) is a document vault built on [`Index`](https://Karthik777.github.io/litesearch/api.html#index).
 
 ## Acknowledgements

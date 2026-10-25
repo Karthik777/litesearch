@@ -1,5 +1,18 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.61
+- litesearch depends on adhara on Linux and macOS. adhara is a SQLite extension in Rust. `database()` loads it into each connection it opens. If adhara does not load, `database()` gives a warning and the search runs in Python as before. adhara has no Windows wheel.
+- `vec_search` asks adhara for the rowids of the nearest rows, then reads those rows in SQL and computes `_dist` as before. adhara compares the query with every vector in memory, on all cores. The table below has the times. A search with `offset`, `where_args`, another embedding column, the `divergence` metric or `float64` vectors does not use adhara. The HNSW search and the keyword search do not use adhara.
+- `vec_search` returns rows at the same distance in rowid order. Before, their order depended on the SQLite query plan.
+- `SANSKRIT_TOKENIZE` is `'adhara'` when adhara is installed. adhara gives the tokens of `simplify casefold 1 sanskrit unicodewords`. `register_sanskrit` still registers the Python tokenizer as `sanskrit`, so tables made with it keep working.
+- The index page is shorter. It has a new section on the packages under `database()`: apsw, apswutils, fastlite and adhara.
+
+| 10 searches on a vishalakshi vault of 181,290 chunks | 0.1.60 | 0.1.61 |
+|---|---|---|
+| no `where`: HNSW | 51 ms | 52 ms |
+| a `where` that most rows pass | 518 ms | 118 ms |
+| a `where` that few rows pass | 102 ms | 130 ms |
+
 ## 0.1.60
 - Connections serialise statements and read their results under a connection lock. Concurrent readers no longer raise `ThreadingViolationError`. Ordinary connections use a statement lock separate from `db_lock`. A caller can hold `db_lock` while workers read the connection. Statements materialise all result rows in memory.
 

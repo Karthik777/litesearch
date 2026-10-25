@@ -8,6 +8,7 @@ __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'VIRAMA', 'DEVA_DIGITS', 'DEVANAGAR
 # %% ../nbs/09_sanskrit.ipynb #70d62e22df04
 import re, unicodedata
 from functools import lru_cache
+from importlib.util import find_spec
 from fastcore.all import L, Path, ifnone
 
 VEDIC_MARKS = re.compile('['
@@ -103,7 +104,7 @@ def skeleton(k:str) -> str:
 
 
 # %% ../nbs/09_sanskrit.ipynb #244ccce093e3
-SANSKRIT_TOKENIZE = 'sanskrit'
+SANSKRIT_TOKENIZE = 'adhara' if find_spec('adhara') else 'sanskrit'
 
 def sanskrit_tokenizer(con, args):
     'Build an FTS5 tokenizer that wraps another and adds each token\'s folded keys beside it, so a query matches in any script.'
@@ -125,7 +126,7 @@ def sanskrit_tokenizer(con, args):
 def register_sanskrit(db):
     "Register the `sanskrit` FTS5 tokenizer on a connection; calling it again does nothing."
     conn = getattr(db, 'conn', db)
-    try: conn.register_fts5_tokenizer(SANSKRIT_TOKENIZE, sanskrit_tokenizer)
+    try: conn.register_fts5_tokenizer('sanskrit', sanskrit_tokenizer)
     except Exception: pass
     return db
 

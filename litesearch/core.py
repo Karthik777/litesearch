@@ -385,6 +385,14 @@ def _dtype_check(tbl, dtype, rows):
                       f'model2vec searched as float16). The ranking is meaningless.')
     return rows
 
+_ADHARA_METRICS, _ADHARA_DTYPES = ('cosine', 'inner', 'sqeuclidean'), (np.float16, np.float32, np.int8)
+
+def _adhara_ids(tbl, emb, where, emb_metric, dtype, limit):
+    "The rowids of the exact top `limit` rows, nearest first, ranked by adhara; None when adhara cannot rank this search."
+    if not (getattr(tbl.db, '_adhara', False) and limit and emb_metric in _ADHARA_METRICS and dtype in _ADHARA_DTYPES): return None
+    sql = 'select id from adhara_hybrid(?, null, ?, ?, ?, ?, ?, 0)'
+    return [r['id'] for r in tbl.db.q(sql, [tbl.name, emb, limit, where, _dtype_suffix(dtype), emb_metric])]
+
 @patch
 def vec_search(self: Table,
                emb: bytes,                    # query embedding vector (as bytes)
@@ -397,14 +405,18 @@ def vec_search(self: Table,
                limit: int | None = 50,        # max results
                offset: int | None = None,     # offset for pagination
                ) -> list:
-    "Exact vector search on any table with an embedding column: the distance to every row, nearest first."
+    "Exact vector search on any table with an embedding column: the distance to every row, nearest first, ties by rowid."
     sel_cols = [f'{c} as {c}' if c == 'rowid' else c for c in columns] if columns else ['*']
+    ids = None if offset or where_args or emb_col != 'embedding' else _adhara_ids(self, emb, where, emb_metric, dtype, limit)
+    if ids == []: return _dtype_check(self, dtype, [])
+    if ids: where, limit = sql_in('rowid', ids), len(ids)
     wh = f'{emb_col} is not null' + (f' AND {where}' if where else '')
-    if not self.db.usearch_sql(): return _dtype_check(self, dtype, _np_vec_search(self, emb, sel_cols, wh, where_args, emb_col, emb_metric, dtype, limit, offset))
-    dist = f'distance_{emb_metric}_{_dtype_suffix(dtype)}({emb_col}, :qvec)'
-    sel = ','.join(sel_cols) + f', {dist} as _dist'
-    rows = self.db.q(f'SELECT {sel} FROM [{self.name}] WHERE {wh} ORDER BY _dist LIMIT :limit OFFSET :offset',
-                dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
+    if not self.db.usearch_sql(): rows = _np_vec_search(self, emb, sel_cols, wh, where_args, emb_col, emb_metric, dtype, limit, offset)
+    else:
+        dist = f'distance_{emb_metric}_{_dtype_suffix(dtype)}({emb_col}, :qvec)'
+        sel = ','.join(sel_cols) + f', {dist} as _dist'
+        rows = self.db.q(f'SELECT {sel} FROM [{self.name}] WHERE {wh} ORDER BY _dist, rowid LIMIT :limit OFFSET :offset',
+                    dict(qvec=emb, limit=limit, offset=ifnone(offset, 0), **(where_args or {})))
     return _dtype_check(self, dtype, rows)
 
 
@@ -669,6 +681,13 @@ class _Backup:
         return (lambda *a, **kw: self._dst._do(v, *a, **kw)) if callable(v) else v
 
 # %% ../nbs/01_core.ipynb #4037ed73523beff7
+def _load_adhara(conn) -> bool:
+    "Load adhara's native tokenizer and `adhara_hybrid` into `conn`; whether they loaded."
+    try: import adhara
+    except ImportError: return False
+    try: adhara.load(conn); return True
+    except Exception as e: warnings.warn(f'adhara did not load ({e}); search runs in Python.'); return False
+
 def database(pth_or_uri:str=':memory:',     # the database name or URL
              wal:bool=True,                 # use WAL mode
              sem_search:bool=True,          # allow usearch's SQL distance functions, loaded on first use
@@ -676,7 +695,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
              shared:bool=False,             # wrap the connection in `Conn` so threads can share it
              **kw,                          # additional args to pass to apswutils database
              ) -> Database:
-    "Open a search database. Register FTS5 tokenizers. Set `journal_size_limit` in WAL mode. Load vector SQL functions on first use."
+    "Open a search database. Register FTS5 tokenizers and load adhara when it is installed. Set `journal_size_limit` in WAL mode. Load vector SQL functions on first use."
     if isinstance(pth_or_uri, (str, Path)): Path(pth_or_uri).parent.mkdir(parents=True,exist_ok=True)
     timeout = ifnone(busy_timeout, BUSY_TIMEOUT_MS)
     if isinstance(pth_or_uri, (str, Path)):
@@ -692,6 +711,7 @@ def database(pth_or_uri:str=':memory:',     # the database name or URL
     from litesearch.sanskrit import register_sanskrit
     register_sanskrit(_db)
     _db._fts_tokenizers = _tokenizers_ok(_db.conn)
+    _db._adhara = _load_adhara(_db.conn)
     _db._sem_search = sem_search
     if not isinstance(_db.conn, Conn): _db.conn = Conn(_db.conn) if shared else _StatementConn(_db.conn)
     return _db
