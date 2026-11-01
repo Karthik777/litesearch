@@ -209,11 +209,26 @@ def pyparse(p:Path=None,    # path to a python file
     def is_allowed(n): return is_mod(n) or is_assign(n) or (imports and isinstance(n, ast.ImportFrom))
     return L(tree.body).filter(is_allowed).map(n2c)
 
-def ipynb_parse(p):
+def _nb_outs(c, limit:int) -> list:
+	'The text outputs of a code cell, each cut to `limit` characters.'
+	ts = (o.get('text') or o.get('data', {}).get('text/plain', '') for o in c.get('outputs', []))
+	return [t[:limit] for t in map(''.join, ts) if t.strip()]
+
+def ipynb_parse(p,
+                outputs:bool=False,  # also keep the text outputs of each code cell, after its source
+                fences:bool=False,   # put the source of each code cell in a code fence
+                max_out:int=1000     # characters kept of each output
+               ):
 	'One chunk per cell of a notebook, with the cell type in its metadata.'
+	nb = read_nb(p)
+	lang = nb.get('metadata', {}).get('kernelspec', {}).get('language') or 'python'
 	def meta_(): return dict(path=str(p), uploaded_at=Path(p).stat().st_mtime, lang=p.suffix)
-	fn = lambda c: dict(content=c['source'], metadata = meta_() | dict(type=c['cell_type']))
-	return L(read_nb(p).cells).map(fn)
+	def text(c):
+		if c['cell_type'] != 'code': return c['source']
+		parts = [f"```{lang}\n{c['source']}\n```" if fences and c['source'].strip() else c['source']]
+		return '\n\n'.join(parts + (_nb_outs(c, max_out) if outputs else []))
+	fn = lambda c: dict(content=text(c), metadata = meta_() | dict(type=c['cell_type']))
+	return L(nb.cells).map(fn)
 
 def non_py_sigs(p):
 	'One chunk per function or class signature in a non-Python code file, read with codesigs.'
@@ -239,6 +254,7 @@ class Profile:
     detect:callable = None   # function from the file's text to bool; decides between profiles sharing an extension such as .xml
     kind:str = None          # document kind stored on the document's row, for filtering
     meta:callable = None     # function from a chunk's text to a dict, stored as the chunk's `metadata` JSON
+    nb_kw:dict = None        # keyword arguments for `ipynb_parse` when the default reader reads a notebook, such as `dict(outputs=True)`
     def claims(self, suffix:str) -> bool:
         return not self.exts or suffix.lower() in {f".{e.strip().lstrip('.')}".lower()
                                                    for e in self.exts.split(',') if e.strip()}

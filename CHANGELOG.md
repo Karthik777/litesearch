@@ -2,6 +2,9 @@
 
 ## 0.1.62
 - New `fold_text(s)` in `litesearch.sanskrit` folds a whole string as `fold_token` folds one word. Devanagari goes to ASCII, Latin letters lose their marks, and all letters go to lower case. Spaces, punctuation and the letters of other scripts stay. It also applies the Unicode compatibility fold, so `ﬁ` becomes `fi`. It has no cache, so it can fold a passage. `fold_token` does not change.
+- `ipynb_parse(p, outputs=False, fences=False, max_out=1000)`. `fences=True` puts the source of each code cell in a code fence, in the language of the notebook's kernel. `outputs=True` adds the text outputs of each code cell after its source, each cut to `max_out` characters. Images and HTML outputs are left out. The defaults give the same chunks as before.
+- New `Profile` field `nb_kw`: keyword arguments for `ipynb_parse` when a profile with no `parse` reads a notebook. `Profile('nb_full', exts='.ipynb', nb_kw=dict(outputs=True, fences=True))` makes `add_file` and `add_dir` keep the fences and the outputs.
+- `add_file(profile=name)` with a registered profile that has no `parse` now reads the file with the default reader. Before, it failed.
 
 ## 0.1.61
 - litesearch depends on adhara on Linux and macOS. adhara is a SQLite extension in Rust. `database()` loads it into each connection it opens. If adhara does not load, `database()` gives a warning and the search runs in Python as before. adhara has no Windows wheel.

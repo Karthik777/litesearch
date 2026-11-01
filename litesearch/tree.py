@@ -544,13 +544,14 @@ def _parse_doc(args):
     if (prof := profile_for(p, name=profile)) is not None and prof.parse:
         pages, pmeta = prof.parse(p)
         return list(pages), dict(pmeta or {}), (prof.kind or prof.name), prof.name
-    if profile: return None                       # asked for a profile this process does not have
+    if profile and prof is None: return None      # asked for a profile this process does not have
     if p.suffix.lower() == '.pdf':
         from litesearch.data import pdf_parse
         return list(enumerate(pdf_parse(str(p), out_path=assets))), {}, 'pdf', None
     if p.suffix.lower() == '.ipynb':
         from litesearch.data import ipynb_parse
-        return [(0, '\n\n'.join(c['content'] for c in ipynb_parse(p)))], {}, 'notebook', None
+        nb_kw = getattr(prof, 'nb_kw', None) or {}
+        return [(0, '\n\n'.join(c['content'] for c in ipynb_parse(p, **nb_kw)))], {}, 'notebook', None
     return [(0, p.read_text(errors='replace'))], {}, (p.suffix.lstrip('.').lower() or 'text'), None
 
 @patch
