@@ -207,14 +207,14 @@ class FastEncode:
 		return self.encode(L(lns).map(lambda l: prompt.format(text=l) if prompt else l), **kw)
 
 # %% ../nbs/03_utils.ipynb #be4247f2dac19633
-def doc_encoder(embedder:'FastEncode|LeanModel'):
-	'A function that embeds a list of documents with `embedder`, using its document prompt when it has one.'
+def doc_encoder(embedder):
+	'A function that embeds a list of documents with `embedder` (a `FastEncode` or a laghu `LeanModel`), using its document prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_document(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
 
-def query_encoder(embedder:'FastEncode|LeanModel'):
-	'A function that embeds a list of queries with `embedder`, using its query prompt when it has one.'
+def query_encoder(embedder):
+	'A function that embeds a list of queries with `embedder` (a `FastEncode` or a laghu `LeanModel`), using its query prompt when it has one.'
 	is_fe= isinstance(embedder, FastEncode)
 	def _(txts, **kw): return embedder.encode_query(txts, **kw) if is_fe else embedder.encode(L(txts))
 	return _
