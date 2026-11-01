@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['VEDIC_MARKS', 'DANDA', 'DDANDA', 'VIRAMA', 'DEVA_DIGITS', 'DEVANAGARI', 'SANSKRIT_TOKENIZE', 'CITE_RE', 'strip_vedic',
-           'deva2ascii', 'detect_script', 'fold_token', 'roman_fold', 'skeleton', 'sanskrit_tokenizer',
+           'deva2ascii', 'detect_script', 'fold_token', 'fold_text', 'roman_fold', 'skeleton', 'sanskrit_tokenizer',
            'register_sanskrit', 'cite_parts']
 
 # %% ../nbs/09_sanskrit.ipynb #70d62e22df04
@@ -59,9 +59,9 @@ def deva2ascii(s:str) -> str:
         out.append(ch); i += 1
     return ''.join(out)
 
-def _latn_fold(s:str) -> str:
+def _latn_fold(s:str, form:str='NFD') -> str:
     'Strip diacritics from IAST or ISO 15919 text and lowercase it.'
-    d = unicodedata.normalize('NFD', s)
+    d = unicodedata.normalize(form, s)
     return ''.join(c for c in d if unicodedata.category(c) != 'Mn').lower()
 
 DEVANAGARI = re.compile('[ऀ-ॿ᳐-᳹꣠-ꣿ]')
@@ -79,6 +79,10 @@ def fold_token(s:str) -> str:
     'Fold one token, in Devanagari or Latin script, to its lowercase ASCII index key.'
     s = strip_vedic(s)
     return _latn_fold(deva2ascii(s) if DEVANAGARI.search(s) else s)
+
+def fold_text(s:str) -> str:
+    "Fold a whole string like `fold_token`, with no cache; spaces, punctuation and the letters of other scripts stay."
+    return _latn_fold(deva2ascii(strip_vedic(s)), 'NFKD')
 
 _VOCALIC_R = re.compile(r'ri(?=[bcdfghjklmnpqstvxz])')   # Krishna's `ri` is IAST `ṛ`
 _ASPIRATE = re.compile(r'(?<=[bcdfgjklmnpqrstvxz])h')    # sh, th, dh, bh, ch: the h goes

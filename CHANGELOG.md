@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.62
+- New `fold_text(s)` in `litesearch.sanskrit` folds a whole string as `fold_token` folds one word. Devanagari goes to ASCII, Latin letters lose their marks, and all letters go to lower case. Spaces, punctuation and the letters of other scripts stay. It also applies the Unicode compatibility fold, so `ﬁ` becomes `fi`. It has no cache, so it can fold a passage. `fold_token` does not change.
+
 ## 0.1.61
 - litesearch depends on adhara on Linux and macOS. adhara is a SQLite extension in Rust. `database()` loads it into each connection it opens. If adhara does not load, `database()` gives a warning and the search runs in Python as before. adhara has no Windows wheel.
 - `vec_search` asks adhara for the rowids of the nearest rows, then reads those rows in SQL and computes `_dist` as before. adhara compares the query with every vector in memory, on all cores. The table below has the times. A search with `offset`, `where_args`, another embedding column, the `divergence` metric or `float64` vectors does not use adhara. The HNSW search and the keyword search do not use adhara.
