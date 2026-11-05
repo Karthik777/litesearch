@@ -15,6 +15,7 @@ from apsw.fts5 import register_tokenizers, map_tokenizers
 from contextlib import contextmanager
 import apsw, apsw.bestpractice, threading, weakref
 import numpy as np, warnings, math, re, hashlib
+from collections import Counter
 from .data import pre, kw
 from .sanskrit import fold_token, skeleton as _skeleton
 from .postfix import usearch_ok, usearch_lib
@@ -146,6 +147,18 @@ def forget_ensured(self:Database, store:str=None):
     self.ann_indices.pop(store, None)
 
 # %% ../nbs/01_core.ipynb #752be578bb3e57df
+def _check_vecs(tbl, rows):
+    'Raise `StoreMismatch` when `rows` hold vectors of another size than the store\'s, so a store never holds two sizes.'
+    ns = {len(e) for r in rows if isinstance(e := r.get('embedding'), (bytes, bytearray, memoryview)) and len(e)}
+    if not ns: return
+    m = tbl.db._ann_meta(tbl.name)
+    if m and m['ndim']: want = m['ndim'] * np.dtype(NP_DTYPE.get(m['dtype'], np.float16)).itemsize
+    else: want = (first(tbl.db.q(f'select length(embedding) n from [{tbl.name}] where embedding is not null limit 1')) or {}).get('n')
+    bad = sorted(ns - {want}) if want else sorted(ns) if len(ns) > 1 else []
+    if bad: raise StoreMismatch((f'store {tbl.name!r} holds vectors of {want} bytes, not ' if want else
+        f'one write to store {tbl.name!r} mixes vectors of ') + ', '.join(f'{b} bytes' for b in bad)
+        + '. Two vector sizes in one index do not compare: call reset_vecs() and re-encode the whole store.')
+
 def upsert_all(tbl,            # target Table, with `pk` declared as its primary key
                rows,           # dicts of scalars, upserted on `pk`
                pk,             # primary-key column name or tuple of them
@@ -156,6 +169,7 @@ def upsert_all(tbl,            # target Table, with `pk` declared as its primary
     if not rows: return 0
     pks = (pk,) if isinstance(pk, str) else tuple(pk)
     cols = list(dict.fromkeys(k for r in rows for k in r))
+    if 'embedding' in cols: _check_vecs(tbl, rows)
     sets = [c for c in cols if c not in set(pks)]
     do = ('update set ' + ', '.join(f'[{c}]=excluded.[{c}]' for c in sets)) if sets else 'nothing'
     sql = (f'insert into [{tbl.name}] ({", ".join(f"[{c}]" for c in cols)}) '
@@ -300,11 +314,18 @@ def _ann_meta(self:Database, name):
     return first(self.t.usearch_indices(where=f'name={name!r}')) if 'usearch_indices' in self.t else None
 
 @patch
-def _vecs(self:Table, dtype=np.float16):
-    'The rowids and vectors of the rows that have an embedding, as an int64 array and a 2-D array.'
+def _vecs(self:Table, dtype=np.float16, ndim:int=None):
+    'The rowids and vectors of the rows whose vectors have `ndim` values, else the most common length; warns naming the rowids skipped.'
     rows = L(self(select=f'{rowid_sel()}, embedding')).filter(lambda r: r['embedding'])
     if not rows: return np.zeros(0, np.int64), None
-    return np.array(rows.itemgot('rowid'), dtype=np.int64), np.stack([np.frombuffer(b, dtype=dtype) for b in rows.itemgot('embedding')])
+    ks, vs = rows.itemgot('rowid'), [np.frombuffer(b, dtype=dtype) for b in rows.itemgot('embedding')]
+    n = Counter(map(len, vs))
+    nd = ndim if ndim in n else n.most_common(1)[0][0]
+    if bad := [k for k, v in zip(ks, vs) if len(v) != nd]:
+        warnings.warn(f'{self.name!r}: skipped {len(bad)} rows whose vectors are not {nd} long, rowids {bad[:10]}'
+                      f'{" ..." if len(bad) > 10 else ""}. Re-encode them, or call reset_vecs() and re-encode the store.')
+    keep = [i for i, v in enumerate(vs) if len(v) == nd]
+    return np.array([ks[i] for i in keep], dtype=np.int64), np.stack([vs[i] for i in keep])
 
 @patch
 def get_index(self:Database,        # database connection
@@ -325,7 +346,10 @@ def get_index(self:Database,        # database connection
             # a torn sidecar is rebuilt from the table, like a stale one
             try: idx.load(p); load = False
             except RuntimeError: idx = Index(**kw)
-        if load and len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16)))[0]): idx.add(*kv); built = ok
+        if load and len((kv := self.t[name]._vecs(NP_DTYPE.get(m['dtype'], np.float16), m['ndim']))[0]):
+            # a table whose vectors are all another size than registered waits for `rebuild_index`, which re-registers it
+            if kv[1].shape[1] == m['ndim']: idx.add(*kv); built = ok
+            else: warnings.warn(f'{name!r}: the table holds {kv[1].shape[1]}-long vectors, not {m["ndim"]}: call rebuild_index()')
         self.ann_indices[name] = idx   # only once filled: a reader outside the lock takes what it finds here
         if built: self._save_index(name)
         return idx
@@ -517,7 +541,7 @@ def rebuild_index(self:Table, dtype=None):
         m = self.db._ann_meta(self.name)
         assert m, f'{self.name!r} is not an ANN store'
         dt = dtype or NP_DTYPE.get(m['dtype'], np.float16)
-        keys, vecs = self._vecs(dt)
+        keys, vecs = self._vecs(dt, m['ndim'])
         self.db.ann_indices.pop(self.name, None)
         if not len(keys):
             if not m['ndim']: return 0                                   # never had vectors; nothing to clear
@@ -529,6 +553,17 @@ def rebuild_index(self:Table, dtype=None):
         idx.add(keys, vecs)
         self.db._save_index(self.name)
         return idx.size
+
+@patch
+def reset_vecs(self:Table):
+    'Clear every vector in the store and empty its HNSW index, so the store can be re-encoded at a new size.'
+    with db_lock(self.db):
+        self.db.execute(f'update [{self.name}] set embedding=NULL where embedding is not null')
+        if m := self.db._ann_meta(self.name):
+            self.db.execute('update usearch_indices set ndim=NULL where name=?', [self.name])
+            self.db.ann_indices.pop(self.name, None)
+            if m['path']: Path(m['path']).unlink(missing_ok=True); _stale(m['path']).unlink(missing_ok=True)
+        _checkpoint(self.db)
 
 # %% ../nbs/01_core.ipynb #e93f1fcef2e928f3
 @patch
