@@ -1,5 +1,10 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.63
+- A store refuses to write a vector whose size differs from the store's `ndim`. `upsert_all` raises `StoreMismatch` before the write. Before, the rows were stored and the store held two sizes.
+- `get_index` and `rebuild_index` keep only the vectors of the store's size and warn with the count and the first rowids of the others. Before, a store with two sizes raised `ValueError` in `np.stack`, so an index could not be built.
+- New `Table.reset_vecs(encoder=None)` clears all vectors, the store's `ndim` and its index file, and records the encoder that will re-encode the store.
+
 ## 0.1.62
 - New `fold_text(s)` in `litesearch.sanskrit` folds a whole string as `fold_token` folds one word. Devanagari goes to ASCII, Latin letters lose their marks, and all letters go to lower case. Spaces, punctuation and the letters of other scripts stay. It also applies the Unicode compatibility fold, so `ﬁ` becomes `fi`. It has no cache, so it can fold a passage. `fold_token` does not change.
 - `ipynb_parse(p, outputs=False, fences=False, max_out=1000)`. `fences=True` puts the source of each code cell in a code fence, in the language of the notebook's kernel. `outputs=True` adds the text outputs of each code cell after its source, each cut to `max_out` characters. Images and HTML outputs are left out. The defaults give the same chunks as before.
