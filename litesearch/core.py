@@ -555,7 +555,7 @@ def rebuild_index(self:Table, dtype=None):
         return idx.size
 
 @patch
-def reset_vecs(self:Table):
+def reset_vecs(self:Table, encoder:str=None): # the encoder to record for the store, as `encoder_id` names it
     'Clear every vector in the store and empty its HNSW index, so the store can be re-encoded at a new size.'
     with db_lock(self.db):
         self.db.execute(f'update [{self.name}] set embedding=NULL where embedding is not null')
@@ -563,6 +563,9 @@ def reset_vecs(self:Table):
             self.db.execute('update usearch_indices set ndim=NULL where name=?', [self.name])
             self.db.ann_indices.pop(self.name, None)
             if m['path']: Path(m['path']).unlink(missing_ok=True); _stale(m['path']).unlink(missing_ok=True)
+        if encoder is not None:
+            self.db._stamp_store(self.name)
+            self.db.execute('update store_meta set encoder=? where name=?', [encoder, self.name])
         _checkpoint(self.db)
 
 # %% ../nbs/01_core.ipynb #e93f1fcef2e928f3
