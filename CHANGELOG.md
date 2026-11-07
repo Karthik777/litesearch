@@ -1,5 +1,8 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.64
+- The package author is "karthik". Before, it was "71293".
+
 ## 0.1.63
 - A store refuses to write a vector whose size differs from the store's `ndim`. `upsert_all` raises `StoreMismatch` before the write. Before, the rows were stored and the store held two sizes.
 - `get_index` and `rebuild_index` keep only the vectors of the store's size and warn with the count and the first rowids of the others. Before, a store with two sizes raised `ValueError` in `np.stack`, so an index could not be built.
