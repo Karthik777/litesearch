@@ -7,7 +7,7 @@ __all__ = ['DTYPE', 'HIT_COLS', 'Index']
 import numpy as np
 from fastcore.all import Path, patch, chunked
 from apswutils.utils import hash_record
-from .core import database, rerank_hits, RERANK_FANOUT, db_lock, sql_in
+from .core import database, rerank_hits, RERANK_FANOUT, db_lock, sql_in, write_txn
 from .data import dir2chunks, pkg2chunks
 from .tree import DOC_EXTS, is_path, source_key, doc_hash
 from .utils import static_embedder, doc_encoder, query_encoder, encoder_id
@@ -16,18 +16,28 @@ from .utils import static_embedder, doc_encoder, query_encoder, encoder_id
 DTYPE, HIT_COLS = np.float16, ['content', 'metadata', 'node_id', 'page', 'heading', 'doc_id']
 
 # %% ../nbs/07_api.ipynb #9e17018e0b48
+_LEGACY = 'minishlab/potion-multilingual-128M'   # the default that wrote stores before 0.1.65; a store from before stamps records no encoder
+
+def _stamped(db, name):
+    '''The static model store `name` records; `_LEGACY` for a store with vectors that records none; `static_embedder()` for a new store.
+    A recorded encoder laghu cannot load also gives `static_embedder()`, and opening the store then raises `StoreMismatch`.'''
+    was = ((db._store_meta(name) or {}).get('encoder') or '') if name in db.t else ''
+    if not was and name in db.t and db.q(f'select 1 from [{name}] where embedding is not null limit 1'): was = _LEGACY
+    try: return static_embedder(was) if was else static_embedder()
+    except Exception: return static_embedder()
+
 class Index:
     "A searchable collection: add files, code or text, then query it with a string."
     def __init__(self,
                  path=':memory:',     # sqlite file; omit for in-memory
-                 encoder=None,        # an object with `.encode`, or a `FastEncode` (default: static potion-multilingual-128M)
+                 encoder=None,        # an object with `.encode`, or a `FastEncode` (default: the static model the store records, else blink-multilingual-64M)
                  name:str='store',    # chunk table, if you want several corpora in one file
                  ann:bool=True,       # maintain an HNSW index for the vector leg
                  db=None,             # an open Database to share, for several corpora in one file
                  ):
         self.path, self.name, self.ann = str(path), name, ann
         self.db = db if db is not None else database(path)
-        self.encoder = static_embedder() if encoder is None else encoder
+        self.encoder = _stamped(self.db, name) if encoder is None else encoder
         self._doc, self._qry = doc_encoder(self.encoder), query_encoder(self.encoder)
         self.t = self.db.get_tree(name, ann=ann, encoder=encoder_id(self.encoder))
         self.store = self.t.store
@@ -160,3 +170,32 @@ def context(self:Index,
             **kw) -> dict:
     'The sections that best answer `q` with their text and tree position, plus related sections, for a prompt.'
     return self.db.context(q, self.qemb(q), store=self.name, where=where, **kw)
+
+# %% ../nbs/07_api.ipynb #40613d6c
+@patch
+def reencode(self:Index,
+             encoder=None,    # the new encoder (default: `static_embedder()`)
+             batch:int=4096,  # chunks embedded at a time
+             ) -> int:
+    '''Embed every chunk again with `encoder`, record it as the store\'s encoder, rebuild the HNSW index, and return the number of chunks.
+    The store changes in one transaction: after a failure it holds its old vectors and encoder. Stop other processes that write the store first.'''
+    enc = static_embedder() if encoder is None else encoder
+    if not encoder_id(enc): raise ValueError('reencode needs an encoder that `encoder_id` names, so the store can record it')
+    new = doc_encoder(enc)
+    with db_lock(self.db):
+        rows = self.db.q(f"select rowid, content, heading, embedding from [{self.name}] where trim(coalesce(content, '')) != ''")
+        full = [f"{r['heading']}\n\n{r['content']}" if r['heading'] else r['content'] for r in rows]
+        vecs = []
+        for i in range(0, len(rows), batch):
+            rs, fs = rows[i:i + batch], full[i:i + batch]
+            vf, vc = self.emb(fs), self.emb([r['content'] for r in rs])
+            txt = [r['content'] if r['heading'] and r['embedding'] == c.tobytes() != f.tobytes() else t for r, t, f, c in zip(rs, fs, vf, vc)]
+            vecs += [v.tobytes() for v in np.asarray(new(txt), dtype=DTYPE)]
+        try:
+            with write_txn(self.db):
+                self.store.reset_vecs(encoder=encoder_id(enc))
+                self.db.conn.cursor().executemany(f'update [{self.name}] set embedding=? where rowid=?', list(zip(vecs, (r['rowid'] for r in rows))))
+        finally:
+            if self.db._ann_meta(self.name): self.store.rebuild_index()
+        self.encoder, self._doc, self._qry = enc, new, query_encoder(enc)
+    return len(rows)

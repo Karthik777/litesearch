@@ -16,8 +16,10 @@ The old notes (consolidation, graph and ingestion performance, Sanskrit design, 
 
 ## Index defaults
 
-- **`Index` is the front door.** Static `potion-multilingual-128M`, float16, 512-character chunks, `pre()` on the FTS leg, an HNSW leg and a document tree.
+- **`Index` is the front door.** Static `blink-multilingual-64M` (`potion-multilingual-128M` until 0.1.65), float16, 512-character chunks, `pre()` on the FTS leg, an HNSW leg and a document tree.
   Why: chunk size and `pre()` gave the largest gains (+0.06 to +0.14 and up to +0.33). The encoder changed little (0.018 to 0.046 spread) at 1,700 times less index cost. The tree is a wash for ranking but gives `toc`, `read` and `sections`. (0.1.23, 0.1.24) `litesearch/api.py`, `static_embedder` in `litesearch/utils.py`.
+- **blink replaces potion as the default, and an existing store keeps its encoder.** `Index` without an `encoder` opens a store with the static model the store records. `reencode` moves a store to another encoder.
+  Why: blink matched potion on vishalakshi's evaluation and raised recall at 10 on vedicreader's 166 hard questions from 9.6% to 26.5%. Opening an old store with the new default would raise `StoreMismatch`. (0.1.65) `_stamped` and `reencode` in `litesearch/api.py`.
 - **`rerank=True` is the one choice for the caller.** It fetches 30 candidates first (`RERANK_FANOUT`), because a rerank of 10 only reorders 10. It gave +0.026 to +0.077 at about 10 times the latency. (0.1.23) `litesearch/core.py`.
 - **Static models load with laghu**, which maps the model from disk. Private memory fell from 1,373 MB to 80 MB. No model2vec fallback. (0.1.54) `static_embedder`.
 - **A store is stamped with its encoder.** Another encoder raises `StoreMismatch`. (0.1.35) `litesearch/core.py`.

@@ -171,7 +171,7 @@ The changes above the blank row are on by default. The changes below it are off.
 | late chunking | -0.033 to -0.053 | removed; the code is in `evals/latechunk.py` |
 | entity graph | -0.070 to -0.160 | removed from `context`; it is in [vruksha](https://github.com/vedicreader/vruksha) |
 
-The choice of encoder matters little: across four encoders the spread is 0.018 to 0.046. The default, `potion-multilingual-128M`, is a static model. It looks up one vector for each token, and it indexes about 1,700 times more cheaply than a neural encoder.
+The choice of encoder matters little: across four encoders the spread is 0.018 to 0.046. The default, `blink-multilingual-64M`, is a static model. It replaced `potion-multilingual-128M`, which scored the same here and lower on Sanskrit and Tamil texts. It looks up one vector for each token, and it indexes about 1,700 times more cheaply than a neural encoder.
 
 The document tree does not improve ranking. It does help a language model: on a Sanskrit corpus, `context()` raises verse-level recall from 0.190 to 0.340.
 

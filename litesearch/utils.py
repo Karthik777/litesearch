@@ -47,11 +47,11 @@ bge_instr = AttrDict(document="{text}",query="{text}")
 bge_model = AttrDict(model='TaylorAI/bge-micro-v2', onnx_path='onnx/model_quantized.onnx',prompt=bge_instr, tti=True)
 
 @cache
-def static_embedder(model_nm='minishlab/potion-multilingual-128M'):
+def static_embedder(model_nm='minishlab/blink-multilingual-64M'):
     'The model2vec model `model_nm`, loaded once with laghu and shared by every caller.'
     import laghu
     m = laghu.load(model_nm, fallback=False)   # a model2vec fallback would cost about 1.3 GB, and model2vec 0.10 gives other vectors
-    m.ls_id = model_nm   # potion leaves base_model_name empty, so encoder_id has nothing else to read
+    m.ls_id = model_nm   # potion and blink leave base_model_name empty, so encoder_id has nothing else to read
     return m
 
 static_code_embedder = bind(static_embedder, model_nm='minishlab/potion-code-16M-v2')

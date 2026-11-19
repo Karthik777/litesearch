@@ -2485,7 +2485,7 @@ wheels = [
 
 [[package]]
 name = "laghu"
-version = "0.3.1"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastcore" },
@@ -2496,22 +2496,22 @@ dependencies = [
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/f0/b1492f25df7fb5144baff2c909120f9b2b3ac3ed08bf2bc8b2c42931a591/laghu-0.3.1.tar.gz", hash = "sha256:ff4eb92a6a67038f67e0cf498bbffd54b836d8ef74e33ebf3946c339a56f389d", size = 27905, upload-time = "2026-10-23T01:26:08.566Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/07/032d5acc06d64c0b6d79316442b5acd8ba2a89cd02fc0cd98a0e5ace38fb/laghu-0.4.1.tar.gz", hash = "sha256:92cd7eb153184d12b23284e34624818a1d8bc041fb040c18af69b8859fb3b6fd", size = 29129, upload-time = "2026-11-19T00:37:18.733Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/fa/c6137cefc4006dfe72d1aeead4fb0b313833e5833eafe8cf62effbc55946/laghu-0.3.1-py3-none-any.whl", hash = "sha256:b320c16880a784dc2d0495373c1b7e0d915a11d20e4213d4de38d9addd00b6af", size = 29809, upload-time = "2026-10-23T01:26:07.458Z" },
+    { url = "https://files.pythonhosted.org/packages/91/e6/b1804b69e4d6e754cd9ad2c9c2ba270e4b2fcd95a002a9d4597e2f75e1ec/laghu-0.4.1-py3-none-any.whl", hash = "sha256:b772e5ab1683c5e59d549190d086a8d59eaeb9ff4faa1e340bcfe82d3200278e", size = 30981, upload-time = "2026-11-19T00:37:17.449Z" },
 ]
 
 [[package]]
 name = "laghu-rs"
-version = "0.1.0"
+version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/44/bc/5ef40c967a1d7f7d0b20596f3f4dd823bb9f3a63d5a1d4d16b696b1b181b/laghu_rs-0.1.0.tar.gz", hash = "sha256:1a7c53a046409d106321c2a7f82426bef8ff92ff46653d67bca243c893dababf", size = 13347, upload-time = "2026-10-23T01:07:51.143Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/6e/3bb13c4bde81864ecca29562d9d67587af15f7aa678d9f0d7859fdc25fb8/laghu_rs-0.2.2.tar.gz", hash = "sha256:f5ab9b0b3bf5c3fa0ed733fecf8db59063a6778a832294afe485438724fff7fa", size = 18113, upload-time = "2026-11-19T00:36:12.895Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/fe/fbbca157e3079d5800142166b66a32662c85f3cf309b316bc8a9ac8e8f33/laghu_rs-0.1.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:aba008029cebd704cd59668aef49984daa17e7d7ba84e4062c27155b971e2cfe", size = 1455339, upload-time = "2026-10-23T02:29:10.522Z" },
-    { url = "https://files.pythonhosted.org/packages/31/42/adeeb276ae50300ae576984890957fa0f1a76b601a64830a24c741b7d599/laghu_rs-0.1.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:e84833cbf3a890f2366f094f71f68c4e3cb8f9c740904b36c0e81a6ec4e588cd", size = 1422348, upload-time = "2026-10-23T01:07:49.575Z" },
-    { url = "https://files.pythonhosted.org/packages/f9/9b/0e66db298c63cb0de7209d466379a14835c17ef939757d889a2e2eff3452/laghu_rs-0.1.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:304100a2ff768c86f8198f25a13a45a838785f02914d3dd8e049910e66b8e07a", size = 1520711, upload-time = "2026-10-23T02:29:11.986Z" },
-    { url = "https://files.pythonhosted.org/packages/40/95/cbb23ec4e6289045bf9720918bb7b7b1a2bb1e0c56bc25593d8662544d5e/laghu_rs-0.1.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e388d58ffa1c6641140ee213b736ab9e62c39c4f06d2280d4683babe5f17fe4c", size = 1552510, upload-time = "2026-10-23T02:29:13.045Z" },
-    { url = "https://files.pythonhosted.org/packages/a9/78/115d44905e7dddcceb2a7c2c5fa54136111a34b1de45e4a827b58ec49fac/laghu_rs-0.1.0-cp311-abi3-win_amd64.whl", hash = "sha256:2c87dea6619f53cb265216b008a750b29a055d17b5949842b9b82711dbfce3f6", size = 1399658, upload-time = "2026-10-23T02:29:14.197Z" },
+    { url = "https://files.pythonhosted.org/packages/21/ea/9d17635a928c8756fdf95cd9a6a85397dad5f9d309b8528071dbad54a6e1/laghu_rs-0.2.2-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1d48082d0c59fae4951d791190f8e863ea3306d8288abd7519dcd14e70d8f1d4", size = 1484096, upload-time = "2026-11-19T00:36:05.663Z" },
+    { url = "https://files.pythonhosted.org/packages/29/7c/a3e7283950e4a4f0505da6306974a2bd1019e1589e1eab9c5fd18427284c/laghu_rs-0.2.2-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:085ea068583f23828837feede6d60941c4905a35f4bbcfe96fe8c627da0137c7", size = 1418206, upload-time = "2026-11-19T00:36:07.648Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/99/7e9340d279bf0d9ff6558e006a04ea708f0d9ed358d132b19b2e8a21daf1/laghu_rs-0.2.2-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:e0d342ab277944338a6c0a23e82b91a9414587fe025e7242b8230e138d92f741", size = 1554263, upload-time = "2026-11-19T00:36:08.822Z" },
+    { url = "https://files.pythonhosted.org/packages/08/e2/436d8a4ef4aca00f0b0d9fcde8310d4d61c29c294eec0328d1b0bc52f573/laghu_rs-0.2.2-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:283a6f527100fd4a22aa515e14778455a68ca09b25a29186de5733de061e1f3f", size = 1586558, upload-time = "2026-11-19T00:36:10.297Z" },
+    { url = "https://files.pythonhosted.org/packages/42/a1/099d3cf8bbcc476c154f0fa97e543be77973c1238897482ec2fde0c458af/laghu_rs-0.2.2-cp311-abi3-win_amd64.whl", hash = "sha256:0832e196d50823888d91be3cdb6c4c10aa125bdd9bf59425c02fd59a546808db", size = 1430735, upload-time = "2026-11-19T00:36:11.657Z" },
 ]
 
 [[package]]
@@ -2634,8 +2634,8 @@ requires-dist = [
     { name = "flashrank", marker = "extra == 'dev'", specifier = ">=0.2.10" },
     { name = "jupyterlab", marker = "extra == 'dev'" },
     { name = "jupyterlab-quarto", marker = "extra == 'dev'" },
-    { name = "laghu", specifier = ">=0.3.1" },
-    { name = "laghu-rs", marker = "python_full_version >= '3.11'", specifier = ">=0.1.0" },
+    { name = "laghu", specifier = ">=0.4.1" },
+    { name = "laghu-rs", marker = "python_full_version >= '3.11'", specifier = ">=0.2.2" },
     { name = "model2vec", extras = ["distill"], marker = "extra == 'dev'", specifier = ">=0.7.0,<0.10" },
     { name = "nbdev", marker = "extra == 'dev'" },
     { name = "notebook", marker = "extra == 'dev'" },

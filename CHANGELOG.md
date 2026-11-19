@@ -1,5 +1,11 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.65
+- litesearch needs `laghu>=0.4.1` and `laghu-rs>=0.2.2`, which tokenize blink in Rust.
+- `static_embedder()` loads `minishlab/blink-multilingual-64M`. Before, it loaded `minishlab/potion-multilingual-128M`. On vedicreader's 166 hard questions, recall at 10 rose from 9.6% to 26.5%. On vishalakshi's evaluation the two scored the same.
+- `Index` without an `encoder` opens an existing store with the static model the store records. A store with vectors that records no encoder opens with `potion-multilingual-128M`, the default that wrote it. A new store gets `static_embedder()`. Before, `Index` always used `static_embedder()`, so a store written with another model raised `StoreMismatch`.
+- New `Index.reencode(encoder=None)` embeds every chunk again with `encoder` (default `static_embedder()`), records it as the store's encoder and rebuilds the HNSW index. Each chunk is embedded in the form it was added in: with its heading, or as text alone for `add_code`. `reencode` finds the form by comparing the stored vector with the current encoder's vectors for both forms. The store changes in one transaction, so after a failure it keeps its old vectors and encoder. `reencode` raises `ValueError` for an encoder that `encoder_id` cannot name. Stop other processes that write the store before you call it.
+
 ## 0.1.64
 - The package author is "karthik". Before, it was "71293".
 
