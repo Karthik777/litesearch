@@ -1,5 +1,11 @@
 # Release notes <!-- do not remove -->
 
+## 0.1.66
+- litesearch needs `laghu>=0.4.2` and `laghu-rs>=0.2.3`.
+- `static_code_embedder()` gives each text the same vector in any batch. Before, laghu padded each potion-code-16M-v2 text to the longest text in its batch, and the pad ids entered the mean. A short text beside a long one moved to cosine 0.96 of its true vector.
+- `static_code_embedder()` tokenizes potion-code-16M-v2 in Rust: 85,164 chunks per second against 57,367 in Python.
+- A kosha or litesearch store written with the old laghu keeps its padded vectors. The encoder id does not change, so the store is not re-encoded by itself. Call `Index.reencode(static_code_embedder())` to rebuild it with the same model.
+
 ## 0.1.65
 - litesearch needs `laghu>=0.4.1` and `laghu-rs>=0.2.2`, which tokenize blink in Rust.
 - `static_embedder()` loads `minishlab/blink-multilingual-64M`. Before, it loaded `minishlab/potion-multilingual-128M`. On vedicreader's 166 hard questions, recall at 10 rose from 9.6% to 26.5%. On vishalakshi's evaluation the two scored the same.
